@@ -15,7 +15,7 @@ const mineDay = w => w.crew_lead_id === state.user.id || (w.work_day_crew || [])
 export async function load() {
   const q = async (p) => { try { const { data, error } = await p; if (error) throw error; return data || []; } catch { return null; } };
   const t = today(), since = addDays(t, -14), M = isManager();
-  const [projects, reports, visits, drones, team, wdays, sync, pushErr, inbox] = await Promise.all([
+  const [projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq] = await Promise.all([
     q(sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id')),
     q(sb.from('field_reports').select('monday_item_id,project_id,project_label,report_date,crew,work,had_issues,issues,photos').gte('report_date', since).order('report_date', { ascending: false })),
     M ? q(sb.from('spec_visits').select('*')) : [],
@@ -25,8 +25,9 @@ export async function load() {
     M ? q(sb.from('sync_log').select('created_at').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)) : [],
     M ? q(sb.from('sync_log').select('entity,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],
     q(sb.rpc('my_inbox')),
+    M ? q(sb.from('shift_requests').select('id,user_id').eq('status', 'pending')) : [],
   ]);
-  const data = { projects, reports, visits, drones, team, wdays, sync, pushErr, inbox };
+  const data = { projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq };
   if (projects) await cache.set('home2', data); else Object.assign(data, (await cache.get('home2')) || {});
   return data;
 }
@@ -48,6 +49,7 @@ export function alerts(d) {
     const left = daysBetween(t, p.pilot_license_expiry);
     if (left <= 45) out.push({ tone: left <= 14 ? 'bad' : 'warn', ic: 'shield', title: `רישיון המטיס של ${p.full_name.split(' ')[0]} ${left < 0 ? 'פג' : `פג בעוד ${left} ימים`}`, sub: `בתוקף עד ${dm(p.pilot_license_expiry)}` });
   });
+  if ((d.shiftReq || []).length) out.push({ tone: 'warn', ic: 'clock', title: `${d.shiftReq.length} בקשות תיקון שעות ממתינות לאישור`, sub: 'עובדים ששכחו להחתים או ביקשו עריכה', href: '#/attendance' });
   if ((d.pushErr || []).length) out.push({ tone: 'warn', ic: 'alert', title: 'שליחה למאנדי נכשלה', sub: String(d.pushErr[0].error || '').slice(0, 90) });
   const nd = (d.visits || []).filter(v => !v.visit_date);
   if (nd.length) out.push({ tone: '', ic: 'calendar', title: `${nd.length} סיורי אפיון בלי תאריך`, sub: nd.map(v => v.lead_name).join(' · ') });

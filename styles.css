@@ -391,3 +391,6 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .monthbar b{font-family:var(--f-display)}
 .dayline b{font-size:.92rem;direction:ltr;text-align:right}
 .maplink{text-decoration:underline;cursor:pointer}
+.req{margin:2px 0 6px;padding:10px 12px;border-radius:12px;background:var(--card2);display:flex;flex-direction:column;gap:4px;border-inline-start:4px solid var(--muted)}
+.req.warn{border-color:var(--warn)} .req.ok{border-color:var(--ok)} .req.bad{border-color:var(--bad)}
+.req .mreply{color:var(--ink);font-weight:500}
