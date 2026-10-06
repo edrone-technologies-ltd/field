@@ -106,6 +106,7 @@ export async function renderProject(el, id, tab = 'o') {
         ${kv('clipboard', 'דגשים לצוות', p.work_notes ? esc(p.work_notes) : '<span class="muted">אין דגשים</span>', M ? 'notes' : '')}
         ${p.summary ? kv('chat', 'תמונת ביצוע', esc(p.summary)) : ''}
         ${f ? kv('shield', 'כספים', `${f.price_net ? '₪' + nf(f.price_net) + ' נטו' : '—'}${f.gross_pct ? ` · רווח ${nf(f.gross_pct)}%` : ''}${f.payment_status ? ' · ' + esc(f.payment_status) : ''}`) : ''}
+        ${M ? `<button class="lrow kv" id="share" type="button"><span class="mic">${icon('send', 19)}</span><span class="grow"><b>קישור התקדמות ללקוח</b><small>עמוד עם סטטוס ותמונות — בלי מחירים, שעות או שמות</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
         ${s && can('specs') ? `<a class="lrow kv" href="#/site/${esc(s.slug)}"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>אפיון האתר</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
       </div>
       <div id="gal"></div>
@@ -115,6 +116,21 @@ export async function renderProject(el, id, tab = 'o') {
     if (phs.length) signedUrls('media', phs.map(o => o.x)).then(u => { const g = $('#gal'); if (g) { g.innerHTML = `<section><h3 class="sh">מהשטח</h3><div class="gallery">${phs.slice(0, 9).map(o => `<button data-z="${esc(u[o.x])}"><img src="${esc(u[o.x])}" alt="" loading="lazy"><span>${dm(o.d)}</span></button>`).join('')}</div></section>`; $$('[data-z]', g).forEach(b => b.onclick = () => zoom(b.dataset.z, '')); } });
     $$('[data-x]', box).forEach(b => b.onclick = () => closeIssue(b.dataset.x, () => overview(box)));
     $$('[data-act]', box).forEach(r => r.onclick = () => r.dataset.act === 'site' ? siteSheet() : notesSheet());
+    const sh = $('#share', box); if (sh) sh.onclick = shareSheet;
+  }
+  async function shareSheet() {
+    const { data: list } = await sb.from('project_shares').select('*').eq('project_id', id).eq('revoked', false).order('created_at', { ascending: false });
+    const url = t => location.origin + location.pathname.replace(/[^/]*$/, '') + 'share.html?t=' + t;
+    const active = (list || []).filter(x => new Date(x.expires_at) > new Date());
+    sheet(`<h3>קישור התקדמות ללקוח</h3><div class="small muted">הלקוח רואה סטטוס, ימי עבודה, אחוז התקדמות ותמונות "אחרי". לא רואה מחירים, שעות, שמות עובדים או תקלות. הקישור פג אחרי 60 יום.</div>
+      ${active.map(x => `<div class="lrow"><span class="grow"><b dir="ltr" style="font-size:.78rem;word-break:break-all">${esc(url(x.token))}</b><small>נפתח ${x.views} פעמים · בתוקף עד ${new Date(x.expires_at).toLocaleDateString('he-IL')}</small></span>
+        <span class="stack" style="gap:4px"><button class="chip" data-cp="${x.token}">העתקה</button><button class="chip" data-rv="${x.token}">ביטול</button></span></div>`).join('')}
+      <div class="row-btns"><button class="btn ghost" data-close>סגירה</button><button class="btn primary" id="mk">${active.length ? 'קישור חדש' : 'יצירת קישור'}</button></div>`, (s2, close) => {
+      const copy = async t => { try { if (navigator.share) await navigator.share({ title: p.name, url: url(t) }); else { await navigator.clipboard.writeText(url(t)); toast('הקישור הועתק'); } } catch { } };
+      $$('[data-cp]', s2).forEach(b => b.onclick = () => copy(b.dataset.cp));
+      $$('[data-rv]', s2).forEach(b => b.onclick = async () => { await sb.from('project_shares').update({ revoked: true }).eq('token', b.dataset.rv); close(); toast('הקישור בוטל'); });
+      $('#mk', s2).onclick = async () => { const { data, error } = await sb.from('project_shares').insert({ project_id: id, created_by: state.user.id }).select().single(); if (error) return toast(error.message); close(); copy(data.token); shareSheet(); };
+    });
   }
   function siteSheet() {
     sheet(`<h3>שיוך לאתר</h3><div class="small muted">השיוך מחבר את הפרויקט לאפיון של האתר, וממנו נבנית תכנית העבודה.</div>
