@@ -1,5 +1,5 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy } from '../lib/core.js';
+import { sb, state, can, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
@@ -13,7 +13,7 @@ const STAT = { new: ['', 'לא מולא'], draft: ['warn', 'טיוטה'], done: 
 async function fetchSites() {
   try {
     const { data, error } = await sb.from('sites')
-      .select('id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,buildings(id,specs(status,days_expected))')
+      .select('id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,kind,lead_group,lead_stage,visit_date,lead_owner,buildings(id,specs(status,days_expected))')
       .eq('is_active', true).order('name');
     if (error) throw error;
     await cache.set('sites', data); return data;
@@ -30,20 +30,32 @@ async function fetchSite(slug) {
   } catch { return await cache.get('site:' + slug); }
 }
 
-// ---------- רשימת אתרים ----------
+// ---------- רשימת אפיונים: כל ליד ממאנדי + אתרים מרובי מבנים ----------
+const ORDER = ['ממתין לסיור אפיון', 'לידים חדשים', 'בטיפול', 'בדיון / פגישה', 'אתרים מרובי מבנים', 'אפיון בוצע — ממתין להצעה', 'ממתין להצעת קבלן משנה', 'הצעה נשלחה', 'הצעה לא אושרה — פנייה חוזרת', 'הומרו לפרויקט'];
+const FOLDED = new Set(['הצעה נשלחה', 'הצעה לא אושרה — פנייה חוזרת', 'הומרו לפרויקט']);
 export async function renderSites(el) {
-  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><h1>אפיונים</h1></header><div class="list" id="sl"><div class="skel"></div><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1>אפיונים</h1></header>
+    <input type="search" class="search" id="sq" placeholder="חיפוש ליד, לקוח או אתר"><div id="sl" class="stack lg"><div class="skel"></div><div class="skel"></div></div>`;
   const sites = await fetchSites();
   const urls = await signedUrls('plans', sites.map(s => s.cover_path).filter(Boolean));
-  $('#sl').innerHTML = sites.length ? sites.map(s => {
-    const n = s.buildings.length, done = s.buildings.filter(b => (b.specs?.[0] || b.specs)?.status === 'done').length;
-    const days = s.buildings.reduce((t, b) => t + Number((b.specs?.[0] || b.specs)?.days_expected || 0), 0);
-    return `<button class="item" data-s="${esc(s.slug)}">${s.cover_path ? `<img src="${esc(urls[s.cover_path])}" alt="">` : ''}
-      <span class="t"><b>${esc(s.name)}</b><small>${n} מבנים · ${done} הושלמו${days ? ` · ${nf(days)} ימי עבודה` : ''}</small>
-      <span class="progress" style="margin-top:7px"><i style="width:${n ? Math.round(done / n * 100) : 0}%"></i></span></span>
-      <span class="pill ${done === n && n ? 'ok' : done ? 'warn' : ''}">${done}/${n}</span></button>`;
-  }).join('') : `<div class="empty">אין אתרים משויכים אליך עדיין.</div>`;
-  $$('#sl .item').forEach(b => b.onclick = () => location.hash = '#/site/' + b.dataset.s);
+  const st = s => { const n = s.buildings.length, done = s.buildings.filter(b => (b.specs?.[0] || b.specs)?.status === 'done').length, draft = s.buildings.some(b => (b.specs?.[0] || b.specs)?.status === 'draft'); return { n, done, draft }; };
+  const row = s => { const { n, done, draft } = st(s); const lead = s.kind === 'lead';
+    const sub = lead ? [s.visit_date ? 'סיור ' + dm(s.visit_date) : null, s.contact_name, s.lead_owner].filter(Boolean).join(' · ') : `${n} מבנים · ${done} הושלמו`;
+    return `<button class="item" data-s="${esc(s.slug)}" data-one="${lead && n === 1 ? s.buildings[0].id : ''}" data-q="${esc(s.name + ' ' + (s.contact_name || ''))}">${s.cover_path ? `<img src="${esc(urls[s.cover_path])}" alt="">` : `<span class="rep-ph">${icon('clipboard', 22)}</span>`}
+      <span class="t"><b>${esc(s.name)}</b><small>${esc(sub)}</small>${!lead ? `<span class="progress" style="margin-top:7px"><i style="width:${n ? Math.round(done / n * 100) : 0}%"></i></span>` : ''}</span>
+      <span class="pill ${done === n && n ? 'ok' : done || draft ? 'warn' : ''}">${lead ? (done === n && n ? 'בוצע' : draft || done ? 'בתהליך' : 'פתיחה') : `${done}/${n}`}</span></button>`; };
+  const groups = {}; sites.forEach(s => { const g = s.kind === 'lead' ? (s.lead_group || 'לידים חדשים') : 'אתרים מרובי מבנים'; (groups[g] ||= []).push(s); });
+  const keys = [...ORDER.filter(k => groups[k]), ...Object.keys(groups).filter(k => !ORDER.includes(k))];
+  const draw = q => {
+    $('#sl').innerHTML = keys.map(k => { const list = groups[k].filter(s => !q || (s.name + ' ' + (s.contact_name || '')).includes(q)); if (!list.length) return '';
+      const fold = FOLDED.has(k) && !q;
+      return fold ? `<details class="fold"><summary><span class="sh">${esc(k)}</span><span class="count">${list.length}</span></summary><div class="list">${list.map(row).join('')}</div></details>`
+        : `<section><div class="sh-row"><h3 class="sh">${esc(k)}</h3><span class="count">${list.length}</span></div><div class="list">${list.map(row).join('')}</div></section>`; }).join('')
+      || `<div class="empty-card"><span><b>לא נמצא</b><small>לידים חדשים במאנדי מופיעים כאן תוך כמה דקות</small></span></div>`;
+    $$('#sl .item').forEach(b => b.onclick = () => location.hash = b.dataset.one ? `#/b/${b.dataset.s}/${b.dataset.one}` : '#/site/' + b.dataset.s);
+  };
+  $('#sq').oninput = e => draw(e.target.value.trim());
+  draw('');
 }
 
 // ---------- אתר: מבנים + צ'אט ----------
@@ -74,6 +86,9 @@ export async function renderSite(el, slug, tab = 'b') {
       const th = b.plan_images[0] && thumbs[b.plan_images[0].storage_path];
       return `<button class="item" data-b="${b.id}">${th ? `<img src="${esc(th)}" alt="">` : ''}<span class="t"><b>${esc(b.name)}</b><small>${esc(b.subtitle ? b.subtitle + ' · ' : '')}${meta}</small></span><span class="pill ${c}">${t}</span></button>`;
     }).join('')}</div>`).join('');
+  body.insertAdjacentHTML('beforeend', `<button class="btn ghost block" id="addb" style="margin-top:12px">${icon('plus', 18)} הוספת מבנה</button>`);
+  $('#addb').onclick = async () => { const n = await ask('שם המבנה', { placeholder: 'למשל: בניין B, אגף מזרחי', ok: 'הוספה' }); if (!n) return;
+    const { data, error } = await sb.rpc('add_building', { s: s.id, n }); if (error) return toast(error.message); location.hash = `#/b/${slug}/${data}`; };
   $$('[data-b]', body).forEach(b => b.onclick = () => location.hash = `#/b/${slug}/${b.dataset.b}`);
 }
 
@@ -87,9 +102,11 @@ export async function renderBuilding(el, slug, bid) {
   const chips = (k, opts) => `<div class="chips">${opts.map(o => `<button type="button" class="chip" data-g="${k}" data-v="${esc(o)}" aria-pressed="${form[k] === o}">${esc(o)}</button>`).join('')}</div>`;
   const [sc, st] = STAT[spec.status];
   el.innerHTML = `<div class="top"><a class="back" id="bk" href="javascript:void 0" aria-label="חזרה ל${esc(s.name)}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><span class="grow"></span><span class="pill ${sc}" id="stp">${st}</span></div>
-    <div><div class="eyebrow">${esc(s.name)}${b.group_label ? ' · ' + esc(s.group_word) + ' ' + esc(b.group_label) : ''}</div><h2>${esc(b.name)}</h2>${b.subtitle ? `<div class="muted">${esc(b.subtitle)}</div>` : ''}</div>
+    <div>${s.kind === 'lead' && s.buildings.length === 1 ? `<div class="eyebrow">אפיון שטיפה</div><h2>${esc(s.name)}</h2>` : `<div class="eyebrow">${esc(s.name)}${b.group_label ? ' · ' + esc(s.group_word) + ' ' + esc(b.group_label) : ''}</div><h2>${esc(b.name)}</h2>`}${b.subtitle ? `<div class="muted">${esc(b.subtitle)}</div>` : ''}</div>
+    ${s.kind === 'lead' ? `<div class="menu">${[['שלב', s.lead_stage], ['היקף', s.scope_text], ['אחראי', s.lead_owner], ['תאריך סיור', s.visit_date ? dm(s.visit_date) : null], ['הערות מהליד', s.lead_notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}
+      <a class="lrow" href="#/site/${esc(slug)}"><span class="grow"><b>${s.buildings.length > 1 ? `כל המבנים בליד (${s.buildings.length})` : 'יש כמה מבנים? הוספת מבנה'}</b></span><span class="chev">${icon('chev', 18)}</span></a></div>` : `
     <div class="kpis"><div class="kpi"><b>${b.facade_area_m2 ? nf(b.facade_area_m2) : 'למדידה'}</b><span>${b.facade_area_m2 ? 'מ"ר לפי התכנית' : 'שטח חזיתות'}</span></div>
-      <div class="kpi"><b>${b.floors ? nf(b.floors) : '—'}</b><span>קומות</span></div><div class="kpi"><b>${b.plan_source === 'plans' ? b.plan_images.length : 'סקיצה'}</b><span>${b.plan_source === 'plans' ? 'חזיתות בתכנית' : 'מקור'}</span></div></div>
+      <div class="kpi"><b>${b.floors ? nf(b.floors) : '—'}</b><span>קומות</span></div><div class="kpi"><b>${b.plan_source === 'plans' ? b.plan_images.length : 'סקיצה'}</b><span>${b.plan_source === 'plans' ? 'חזיתות בתכנית' : 'מקור'}</span></div></div>`}
     ${b.office_note ? `<div class="note">${esc(b.office_note)}</div>` : ''}
     ${contactCard(s.contact_name, s.contact_phone)}
     ${b.plan_images.length ? `<div><h3>${b.plan_source === 'plans' ? 'החזיתות מהתכנית' : 'מיקום בסקיצה'}</h3><div class="small muted">גוללים הצידה, לחיצה מגדילה</div></div>
@@ -182,6 +199,6 @@ export async function renderBuilding(el, slug, bid) {
       await save(true); location.hash = '#/site/' + slug;
     };
   }
-  $('#bk').onclick = async () => { if (dirty && editable) await save(false, true); location.hash = '#/site/' + slug; };
+  $('#bk').onclick = async () => { if (dirty && editable) await save(false, true); location.hash = s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug; };
   addEventListener('hashchange', function h() { if (dirty && editable) save(false, true); removeEventListener('hashchange', h); }, { once: true });
 }

@@ -100,7 +100,7 @@ export async function renderHome(el) {
 
   if (!M) {
     const next = (d.wdays || []).filter(w => w.day > t && mineDay(w)).slice(0, 4);
-    box.innerHTML = `${myDay}<div class="qa"><button class="btn primary" id="qnew">${icon('plus', 20)} דוח חדש</button><button class="btn ghost" id="qiss">${icon('alert', 20)} תקלה</button></div>${myDay ? '' : empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
+    box.innerHTML = `${myDay}<button class="btn primary block big" id="qnew">${icon('plus', 20)} דוח חדש</button>${myDay ? '' : empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
       ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId)).join('')}</div></section>` : ''}
       ${inboxPeek(d)}`;
     bindConfirm(box); extras(); return;
@@ -117,7 +117,7 @@ export async function renderHome(el) {
     .sort((a, b) => (inField.has(b.id) - inField.has(a.id)) || (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((a.planned_from || '9') < (b.planned_from || '9') ? -1 : 1)).slice(0, 8);
 
   box.innerHTML = `
-    ${myDay}<div class="qa"><button class="btn primary" id="qnew">${icon('plus', 20)} דוח חדש</button><button class="btn ghost" id="qiss">${icon('alert', 20)} תקלה</button></div>
+    ${myDay}<button class="btn primary block big" id="qnew">${icon('plus', 20)} דוח חדש</button>
     <section><div class="sh-row"><h3 class="sh">היום בשטח</h3>${field.length ? `<span class="count">${field.length}</span>` : ''}</div>
       ${field.length ? `<div class="rail">${field.map(x => `<a class="pcard" href="${x.w ? '#/day/' + x.w.id : '#/p/' + x.p.id}"><span class="img" style="background-image:url('${cov[x.p.id]}')"></span>
         <span class="pc-b"><b>${esc(x.p.name)}</b><small>${x.w ? `${DAY_ST[x.w.status]}${x.w.report_time ? ' · ' + x.w.report_time.slice(0, 5) : ''} · ${esc((x.w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).join(', '))}` : esc(x.p.client_name || x.p.status_label || '')}</small></span></a>`).join('')}</div>`
@@ -204,8 +204,6 @@ export async function renderReports(el) {
 function extras() {
   pendingAcks(); window.__pushCard?.($('#hm'));
   const n = $('#qnew'); if (n) n.onclick = async () => (await import('./reports.js')).newReport();
-  const i = $('#qiss'); if (i) i.onclick = async () => { const m = await import('./reports.js'); const { data } = await sb.rpc('reportable_projects'); const mine = (data || []).filter(p => p.mine);
-    if (mine.length === 1) return m.issueSheet(mine[0].id); m.newReport(); };
 }
 // הודעות חשובות שמחכות לאישור שלי — בראש המסך, עד שמאשרים
 async function pendingAcks() {

@@ -4,6 +4,7 @@ import { sb, state, isManager, can, enqueue, signedUrls, addFieldPhoto, sheet, u
 
 const ROLE_CAN_SIGN = () => isManager() || state.profile.role === 'crew_lead';
 export const TYPES = [
+  { k: 'spec', ic: 'clipboard', t: 'אפיון', s: 'סיור אפיון לליד או לאתר', ok: () => can('specs'), noProject: true },
   { k: 'daily', ic: 'report', t: 'דוח ביצוע יומי', s: 'מה בוצע, שעות, צוות, חומר ותמונות', ok: () => true },
   { k: 'issue', ic: 'alert', t: 'תקלה / אירוע בטיחות', s: 'רחפן, ציוד, אתר, כמעט תאונה', ok: () => true },
   { k: 'signoff', ic: 'clipboard', t: 'החתמת לקוח — אישור ביצוע', s: 'הלקוח מאשר וחותם באצבע', ok: ROLE_CAN_SIGN },
@@ -12,16 +13,21 @@ export const TYPES = [
 
 // ---------- פתיחת דוח חדש ----------
 export async function newReport(projectId) {
-  if (!projectId) {
-    const { data, error } = await sb.rpc('reportable_projects'); if (error) return toast(error.message);
-    return sheet(`<h3>דוח חדש · על איזה פרויקט?</h3><input type="search" class="search" id="rq" placeholder="חיפוש פרויקט">
-      <div class="list" id="rl">${(data || []).map(p => `<button class="lrow" data-p="${p.id}" data-n="${esc(p.name + ' ' + (p.client_name || ''))}"><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.client_name, p.status_label].filter(Boolean).join(' · '))}</small></span>${p.mine ? '<span class="pill lime">שלי</span>' : ''}</button>`).join('')}</div>
-      <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
-      $('#rq', s).oninput = e => $$('[data-p]', s).forEach(b => b.hidden = !b.dataset.n.includes(e.target.value.trim()));
-      $$('[data-p]', s).forEach(b => b.onclick = async () => { await sb.rpc('join_project', { p: b.dataset.p }); close(); pickType(b.dataset.p); });
-    });
-  }
-  pickType(projectId);
+  if (projectId) return pickType(projectId);
+  // מהבית: קודם סוג הדוח, ואז (אם צריך) הפרויקט
+  sheet(`<h3>דוח חדש</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}</div>
+    <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
+    $$('[data-t]', s).forEach(b => b.onclick = () => { close(); const t = TYPES.find(x => x.k === b.dataset.t); if (t.noProject) return open(t.k); pickProject(pid => open(t.k, pid)); });
+  });
+}
+async function pickProject(then) {
+  const { data, error } = await sb.rpc('reportable_projects'); if (error) return toast(error.message);
+  sheet(`<h3>על איזה פרויקט?</h3><input type="search" class="search" id="rq" placeholder="חיפוש פרויקט">
+    <div class="list" id="rl">${(data || []).map(p => `<button class="lrow" data-p="${p.id}" data-n="${esc(p.name + ' ' + (p.client_name || ''))}"><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.client_name, p.status_label].filter(Boolean).join(' · '))}</small></span>${p.mine ? '<span class="pill lime">שלי</span>' : ''}</button>`).join('')}</div>
+    <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
+    $('#rq', s).oninput = e => $$('[data-p]', s).forEach(b => b.hidden = !b.dataset.n.includes(e.target.value.trim()));
+    $$('[data-p]', s).forEach(b => b.onclick = async () => { try { await sb.rpc('join_project', { p: b.dataset.p }); } catch {} close(); then(b.dataset.p); });
+  });
 }
 function pickType(pid) {
   sheet(`<h3>איזה דוח?</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}</div>
@@ -30,6 +36,7 @@ function pickType(pid) {
   });
 }
 export function open(k, pid) {
+  if (k === 'spec') { location.hash = '#/specs'; return; }
   if (k === 'daily') return dailyDate(pid);
   if (k === 'issue') return issueSheet(pid);
   if (k === 'signoff') location.hash = '#/signoff/' + pid;
