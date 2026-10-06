@@ -80,7 +80,7 @@ export async function renderDay(el, id) {
 
   function header() {
     const s = stage();
-    return `<div class="top"><button class="back" onclick="location.hash='#/today'">→ הימים שלי</button><span class="grow"></span>${statusPill(D.day)}</div>
+    return `<div class="top"><a class="back" href="#/" onclick="if(history.length>1){history.back();return false}" aria-label="חזרה"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><span class="grow"></span>${statusPill(D.day)}</div>
       <div><div class="eyebrow">${dayLabel(D.day.day)}${D.day.is_last_day ? ' · יום אחרון בפרויקט' : ''}</div><h2>${esc(P.name || '')}</h2>
         ${D.day.day_goal ? `<div class="muted small">${esc(D.day.day_goal)}</div>` : ''}</div>
       <ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? '✓' : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`;

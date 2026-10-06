@@ -32,8 +32,7 @@ async function fetchSite(slug) {
 
 // ---------- רשימת אתרים ----------
 export async function renderSites(el) {
-  el.innerHTML = `<div class="top"><button class="back" onclick="location.hash='#/'">→ בית</button></div>
-    <div><div class="eyebrow">אפיונים</div><h1>בחירת אתר</h1></div><div class="list" id="sl"><div class="skel"></div><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><h1>אפיונים</h1></header><div class="list" id="sl"><div class="skel"></div><div class="skel"></div></div>`;
   const sites = await fetchSites();
   const urls = await signedUrls('plans', sites.map(s => s.cover_path).filter(Boolean));
   $('#sl').innerHTML = sites.length ? sites.map(s => {
@@ -55,7 +54,7 @@ export async function renderSite(el, slug, tab = 'b') {
   const n = s.buildings.length, done = s.buildings.filter(b => b.spec?.status === 'done').length;
   const days = s.buildings.reduce((t, b) => t + Number(b.spec?.days_expected || 0), 0);
   const thumbs = await signedUrls('plans', s.buildings.map(b => b.plan_images[0]?.storage_path).filter(Boolean));
-  el.innerHTML = `<div class="top"><button class="back" onclick="location.hash='#/specs'">→ כל האתרים</button><span class="grow"></span>
+  el.innerHTML = `<div class="top"><a class="back" href="#/specs" aria-label="חזרה"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><span class="grow"></span>
       ${s.classification === 'restricted' ? '<span class="pill warn">אתר מוגבל</span>' : ''}</div>
     <div><div class="eyebrow">סיור אפיון</div><h1>${esc(s.name)}</h1></div>
     ${contactCard(s.contact_name, s.contact_phone)}

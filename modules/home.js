@@ -1,168 +1,192 @@
-// מסך ראשי: מה דורש תשומת לב, לו"ז, מה קורה בשטח, פרויקטים. הכל מהנתונים שמסונכרנים ממאנדי.
-import { sb, state, can, isManager, cache, $, $$, esc, nf, ROLE_HE, initials } from '../lib/core.js';
+// בית: עונה רק על "מה קורה היום ומה צריך אותי". כל השאר בלשוניות.
+// מנהל: היום בשטח · לטיפול (3 הכי חשובים) · השבוע · פרויקטים פעילים. עובד שטח: היום שלי · הימים הקרובים · הודעות.
+import { sb, state, can, isManager, cache, covers, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo } from '../lib/core.js';
 
-const ISO = d => d.toISOString().slice(0, 10);
-const today = () => ISO(new Date());
-const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return ISO(d); };
-const DOW = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-const dayName = s => { const t = today(); return s === t ? 'היום' : s === addDays(t, 1) ? 'מחר' : `יום ${DOW[new Date(s + 'T12:00:00').getDay()]}`; };
-const dm = s => s ? `${+s.slice(8, 10)}.${+s.slice(5, 7)}` : '';
+const today = () => isoDay();
+const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
-const STATUS_TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'קביעת מועד': 'warn', 'תואם - ממתין לביצוע': 'warn', 'אושר מול לקוח': 'warn', 'פיילוט': '', 'הסתיים — ממתין לתשלום': 'ok' };
 const ARCHIVE = 'group_mm5052gw';
+export const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'קביעת מועד': 'warn', 'תואם - ממתין לביצוע': 'warn', 'אושר מול לקוח': 'warn', 'הסתיים — ממתין לתשלום': 'ok' };
+const DAY_ST = { planned: 'מתוכנן', en_route: 'בדרך', on_site: 'באתר', working: 'בעבודה', issue: 'תקלה', done: 'נסגר' };
+const RANK = { 'בביצוע': 0, 'תואם - ממתין לביצוע': 1, 'אושר מול לקוח': 2, 'קביעת מועד': 3, 'תקוע': 4 };
+const isOpen = p => p.monday_group !== ARCHIVE && !String(p.status_label || '').startsWith('הסתיים');
+const mineDay = w => w.crew_lead_id === state.user.id || (w.work_day_crew || []).some(c => c.user_id === state.user.id);
 
-async function load() {
+export async function load() {
   const q = async (p) => { try { const { data, error } = await p; if (error) throw error; return data || []; } catch { return null; } };
-  const since = addDays(today(), -14);
-  const [projects, reports, visits, drones, team, specs, fin, sync, pushErr, wdays] = await Promise.all([
-    q(sb.from('projects').select('*').neq('monday_group', ARCHIVE)),
-    q(sb.from('field_reports').select('*').gte('report_date', since).order('report_date', { ascending: false })),
-    q(sb.from('spec_visits').select('*')),
-    q(sb.from('equipment').select('*').eq('kind', 'drone').order('name')),
-    q(sb.from('profiles').select('full_name,role,is_pilot,pilot_license_expiry,is_active')),
-    q(sb.from('sites').select('name,slug,buildings(specs(status))').eq('is_active', true)),
-    can('finance') ? q(sb.from('project_finance').select('*')) : Promise.resolve([]),
-    q(sb.from('sync_log').select('created_at,status').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)),
-    q(sb.from('sync_log').select('entity,error,created_at').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)),
-    q(sb.from('work_days').select('id,day,status,report_time,project_id,crew_lead_id,is_last_day,projects(name),work_day_crew(user_id,profiles(full_name))').gte('day', today()).lte('day', addDays(today(), 13)).order('report_time')),
+  const t = today(), since = addDays(t, -14), M = isManager();
+  const [projects, reports, visits, drones, team, wdays, sync, pushErr, inbox] = await Promise.all([
+    q(sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id')),
+    q(sb.from('field_reports').select('monday_item_id,project_id,project_label,report_date,crew,work,had_issues,issues,photos').gte('report_date', since).order('report_date', { ascending: false })),
+    M ? q(sb.from('spec_visits').select('*')) : [],
+    q(sb.from('equipment').select('id,name,health,health_detail,health_date').eq('kind', 'drone').order('name')),
+    M ? q(sb.from('profiles').select('full_name,role,is_pilot,pilot_license_expiry,is_active')) : [],
+    q(sb.from('work_days').select('id,day,status,report_time,project_id,crew_lead_id,is_last_day,day_goal,work_day_crew(user_id,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
+    M ? q(sb.from('sync_log').select('created_at').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)) : [],
+    M ? q(sb.from('sync_log').select('entity,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],
+    q(sb.rpc('my_inbox')),
   ]);
-  const data = { projects, reports, visits, drones, team, specs, fin, sync, pushErr, wdays };
-  if (projects) await cache.set('home', data);
-  else Object.assign(data, (await cache.get('home')) || {});
+  const data = { projects, reports, visits, drones, team, wdays, sync, pushErr, inbox };
+  if (projects) await cache.set('home2', data); else Object.assign(data, (await cache.get('home2')) || {});
   return data;
 }
 
-function alerts(d) {
-  const out = []; const t = today();
-  (d.drones || []).forEach(x => {
-    if (x.health === 'grounded') out.push({ tone: 'bad', title: `רחפן ${x.name} מקורקע`, sub: (x.health_detail || '').split('\n')[0].replace(/^[^֐-׿A-Za-z0-9]+/, ''), at: x.health_date });
-    else if (x.health === 'warning') out.push({ tone: 'warn', title: `רחפן ${x.name} במעקב`, sub: (x.health_detail || '').split('\n')[0] });
-  });
-  (d.projects || []).filter(p => p.status_label === 'תקוע').forEach(p => out.push({ tone: 'bad', title: `פרויקט תקוע: ${p.name}`, sub: p.client_name || '', href: '#/p/' + p.id }));
-  // פער בין מה שקורה בשטח לבין הלו"ז במאנדי
-  const recentByProject = new Map();
-  (d.reports || []).forEach(r => { if (r.project_id && !recentByProject.has(r.project_id)) recentByProject.set(r.project_id, r); });
-  (d.projects || []).forEach(p => {
-    const r = recentByProject.get(p.id);
-    if (r && daysBetween(r.report_date, t) <= 7 && !['בביצוע'].includes(p.status_label))
-      out.push({ tone: 'warn', title: `יש עבודה בשטח, הסטטוס במאנדי "${p.status_label}"`, sub: `${p.name} · דוח אחרון ${dm(r.report_date)}`, href: '#/p/' + p.id });
-  });
-  const issues = (d.reports || []).filter(r => r.had_issues && daysBetween(r.report_date, t) <= 7);
-  if (issues.length) out.push({ tone: 'warn', title: `${issues.length} דוחות שטח עם תקלות השבוע`, sub: [...new Set(issues.map(r => r.project_label))].join(' · '), href: '#/reports' });
+// ---------- מה דורש טיפול: מקובץ, הכי חמור קודם ----------
+export function alerts(d) {
+  const out = [], t = today(), P = d.projects || [];
+  const gr = (d.drones || []).filter(x => x.health === 'grounded');
+  if (gr.length) out.push({ tone: 'bad', ic: 'drone', title: gr.length > 1 ? `${gr.length} רחפנים מקורקעים` : `רחפן ${gr[0].name} מקורקע`, sub: gr.length > 1 ? gr.map(x => x.name).join(' · ') : firstLine(gr[0].health_detail), href: '#/equipment' });
+  (d.drones || []).filter(x => x.health === 'warning').forEach(x => out.push({ tone: 'warn', ic: 'drone', title: `רחפן ${x.name} במעקב`, sub: firstLine(x.health_detail), href: '#/equipment' }));
+  const stuck = P.filter(p => p.status_label === 'תקוע' && isOpen(p));
+  if (stuck.length) out.push({ tone: 'bad', ic: 'alert', title: stuck.length > 1 ? `${stuck.length} פרויקטים תקועים` : `פרויקט תקוע: ${stuck[0].name}`, sub: stuck.length > 1 ? stuck.map(p => p.name).join(' · ') : stuck[0].client_name, href: stuck.length > 1 ? '#/projects' : '#/p/' + stuck[0].id });
+  const last = new Map(); (d.reports || []).forEach(r => { if (r.project_id && !last.has(r.project_id)) last.set(r.project_id, r); });
+  const mism = P.filter(p => { const r = last.get(p.id); return r && daysBetween(r.report_date, t) <= 7 && p.status_label !== 'בביצוע' && isOpen(p); });
+  if (mism.length) out.push({ tone: 'warn', ic: 'report', title: mism.length > 1 ? `${mism.length} פרויקטים בשטח שהסטטוס שלהם במאנדי לא "בביצוע"` : `עובדים בשטח, אבל במאנדי הסטטוס "${mism[0].status_label}"`, sub: mism.map(p => p.name).join(' · '), href: mism.length > 1 ? '#/projects' : '#/p/' + mism[0].id });
+  const iss = (d.reports || []).filter(r => r.had_issues && daysBetween(r.report_date, t) <= 7);
+  if (iss.length) out.push({ tone: 'warn', ic: 'alert', title: `${iss.length} דוחות עם תקלות השבוע`, sub: [...new Set(iss.map(r => r.project_label))].join(' · '), href: '#/reports' });
   (d.team || []).filter(p => p.is_active && p.is_pilot && p.pilot_license_expiry).forEach(p => {
     const left = daysBetween(t, p.pilot_license_expiry);
-    if (left <= 45) out.push({ tone: left <= 14 ? 'bad' : 'warn', title: `רישיון המטיס של ${p.full_name} ${left < 0 ? 'פג' : `פג בעוד ${left} ימים`}`, sub: `תוקף ${dm(p.pilot_license_expiry)}` });
+    if (left <= 45) out.push({ tone: left <= 14 ? 'bad' : 'warn', ic: 'shield', title: `רישיון המטיס של ${p.full_name.split(' ')[0]} ${left < 0 ? 'פג' : `פג בעוד ${left} ימים`}`, sub: `בתוקף עד ${dm(p.pilot_license_expiry)}` });
   });
-  if ((d.pushErr || []).length) out.push({ tone: 'warn', title: `${d.pushErr.length} שליחות למאנדי נכשלו ב-24 השעות האחרונות`, sub: String(d.pushErr[0].error || '').slice(0, 120) });
-  const noDate = (d.visits || []).filter(v => !v.visit_date);
-  if (noDate.length) out.push({ tone: '', title: `${noDate.length} סיורי אפיון בלי תאריך`, sub: noDate.map(v => v.lead_name).join(' · ') });
-  return out;
+  if ((d.pushErr || []).length) out.push({ tone: 'warn', ic: 'alert', title: 'שליחה למאנדי נכשלה', sub: String(d.pushErr[0].error || '').slice(0, 90) });
+  const nd = (d.visits || []).filter(v => !v.visit_date);
+  if (nd.length) out.push({ tone: '', ic: 'calendar', title: `${nd.length} סיורי אפיון בלי תאריך`, sub: nd.map(v => v.lead_name).join(' · ') });
+  const rank = { bad: 0, warn: 1, '': 2 };
+  return out.sort((a, b) => rank[a.tone] - rank[b.tone]);
 }
+const firstLine = s => (s || '').split('\n')[0].replace(/^[^֐-׿A-Za-z0-9]+/, '').slice(0, 90);
+export const alertRow = a => `<${a.href ? `a href="${a.href}"` : 'div'} class="arow ${a.tone}"><span class="aic">${icon(a.ic, 20)}</span><span class="grow"><b>${esc(a.title)}</b>${a.sub ? `<small>${esc(a.sub)}</small>` : ''}</span>${a.href ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</${a.href ? 'a' : 'div'}>`;
 
-function agenda(d) {
-  const t = today(), end = addDays(t, 13), days = [];
-  for (let i = 0; i < 14; i++) days.push({ date: addDays(t, i), items: [] });
-  const put = (from, to, item) => days.forEach(x => { if (x.date >= from && x.date <= (to || from)) x.items.push(item); });
-  (d.projects || []).forEach(p => {
-    const f = p.planned_from || p.actual_from, to = p.planned_to || p.actual_to || f;
-    if (f && to >= t && f <= end && !String(p.status_label).startsWith('הסתיים')) put(f, to, { kind: 'p', p, tone: STATUS_TONE[p.status_label] ?? '' });
+// ---------- לו"ז: ימי שטח מהאפליקציה + טווחי פרויקטים ממאנדי + סיורי אפיון ----------
+export function schedule(d, from, n) {
+  const days = []; for (let i = 0; i < n; i++) days.push({ date: addDays(from, i), items: [] });
+  const by = new Map((d.projects || []).map(p => [p.id, p]));
+  (d.wdays || []).forEach(w => { const x = days.find(y => y.date === w.day); if (x) x.items.push({ kind: 'w', w, p: by.get(w.project_id) }); });
+  (d.projects || []).filter(isOpen).forEach(p => {
+    const f = p.planned_from || p.actual_from, to = p.planned_to || p.actual_to || f; if (!f) return;
+    days.forEach(x => { if (x.date >= f && x.date <= to && !x.items.some(it => it.p?.id === p.id)) x.items.push({ kind: 'p', p }); });
   });
-  (d.visits || []).filter(v => v.visit_date).forEach(v => put(v.visit_date, v.visit_date, { kind: 'v', v }));
-  (d.wdays || []).forEach(w => { const x = days.find(y => y.date === w.day); if (!x) return; x.items = x.items.filter(it => !(it.kind === 'p' && it.p.id === w.project_id)); x.items.unshift({ kind: 'w', w }); });
+  (d.visits || []).filter(v => v.visit_date).forEach(v => { const x = days.find(y => y.date === v.visit_date); if (x) x.items.push({ kind: 'v', v }); });
   return days;
 }
+export function evRow(it) {
+  if (it.kind === 'w') { const w = it.w; const crew = (w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', ');
+    return `<a class="ev ${w.status === 'done' ? 'ok' : 'lime'}" href="#/day/${w.id}"><b>${esc(it.p?.name || 'יום שטח')}</b><small>יום שטח${w.report_time ? ' · ' + w.report_time.slice(0, 5) : ''}${crew ? ' · ' + esc(crew) : ''}${w.status !== 'planned' ? ' · ' + DAY_ST[w.status] : ''}</small></a>`; }
+  if (it.kind === 'p') return `<a class="ev ${TONE[it.p.status_label] ?? ''}" href="#/p/${it.p.id}"><b>${esc(it.p.name)}</b><small>${esc(it.p.status_label || '')}${it.p.client_name ? ' · ' + esc(it.p.client_name) : ''}</small></a>`;
+  return `<div class="ev blue"><b>סיור אפיון · ${esc(it.v.lead_name)}</b><small>${esc(it.v.owner || '')}</small></div>`;
+}
+const dayWord = s => s === addDays(today(), 1) ? 'מחר' : `יום ${HE_DOW[new Date(s + 'T12:00').getDay()]} ${dm(s)}`;
+const empty = (ic, title, sub, tone = '') => `<div class="empty-card ${tone}"><span class="ei">${icon(ic, 26)}</span><span><b>${title}</b><small>${sub}</small></span></div>`;
 
+// ---------- מסך הבית ----------
 export async function renderHome(el) {
-  const p = state.profile, first = (p.full_name || '').split(' ')[0];
-  const h = new Date().getHours(), greet = h < 5 ? 'לילה טוב' : h < 12 ? 'בוקר טוב' : h < 17 ? 'צהריים טובים' : h < 21 ? 'ערב טוב' : 'לילה טוב';
-  const t = new Date();
-  el.innerHTML = `<div class="top"><img class="mark" src="mark.png" alt="E-Drone"><span class="grow"></span>
-      <button class="avatar" id="me" aria-label="החשבון שלי">${esc(initials(p.full_name))}</button></div>
-    <div class="hello"><div class="eyebrow">יום ${DOW[t.getDay()]} · ${t.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</div><h1>${greet}, ${esc(first)}</h1></div>
-    <div id="hm" class="stack"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>`;
-  $('#me').onclick = () => location.hash = '#/me';
-  const d = await load();
-  const box = $('#hm'); if (!box) return;
-  const A = alerts(d), days = agenda(d);
-  const active = (d.projects || []).filter(x => !String(x.status_label).startsWith('הסתיים') && x.monday_group !== ARCHIVE);
-  const now = active.filter(x => { const f = x.planned_from || x.actual_from, to = x.planned_to || x.actual_to; return f && f <= today() && (to || f) >= today(); });
-  const waitPay = (d.projects || []).filter(x => x.monday_group === 'group_mm59srsc');
-  const finBy = new Map((d.fin || []).map(f => [f.project_id, f]));
-  const owed = waitPay.reduce((s, x) => s + Number(finBy.get(x.id)?.price_gross || finBy.get(x.id)?.price_net || 0), 0);
-  const openSpecs = (d.specs || []).reduce((s, x) => s + x.buildings.filter(b => (b.specs?.[0] || b.specs)?.status !== 'done').length, 0);
-  const lastSync = d.sync?.[0]?.created_at;
+  const p = state.profile, first = (p.full_name || '').split(' ')[0], M = isManager();
+  const now = new Date(), h = now.getHours();
+  const greet = h < 5 ? 'לילה טוב' : h < 12 ? 'בוקר טוב' : h < 17 ? 'צהריים טובים' : h < 21 ? 'ערב טוב' : 'לילה טוב';
+  el.innerHTML = `<header class="hhead"><div class="grow"><div class="eyebrow">יום ${HE_DOW[now.getDay()]}, ${now.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</div><h1>${greet}, ${esc(first)}</h1></div>
+      <a class="avatar" href="#/menu" aria-label="החשבון שלי">${esc(initials(p.full_name))}</a></header>
+    <div id="hm" class="stack lg"><div class="skel tall"></div><div class="skel"></div><div class="skel"></div></div>`;
+  const d = await load(); const box = $('#hm'); if (!box) return;
+  const t = today(), P = d.projects || [];
+  const cov = await covers(P);
+  const byId = new Map(P.map(x => [x.id, x]));
+  const mine = (d.wdays || []).filter(w => w.day === t && mineDay(w));
 
-  const mine = (d.wdays || []).filter(w => w.day === today() && w.status !== 'done' && (w.crew_lead_id === state.user.id || (w.work_day_crew || []).some(c => c.user_id === state.user.id)));
+  const myDay = mine.map(w => { const pr = byId.get(w.project_id) || {}; return `<a class="photo-hero" href="#/day/${w.id}">
+      <span class="img" style="background-image:url('${cov[w.project_id] || ''}')"></span>
+      <span class="ph-top"><span class="chip-dark">יום השטח שלך${w.is_last_day ? ' · יום אחרון' : ''}</span><span class="chip-dark">${DAY_ST[w.status]}</span></span>
+      <span class="ph-bottom"><b>${esc(pr.name || '')}</b><small>${w.report_time ? 'התייצבות ' + w.report_time.slice(0, 5) : ''}${w.day_goal ? ' · ' + esc(w.day_goal) : ''}</small>
+      <span class="btn primary">${w.status === 'planned' ? 'פתיחת היום' : w.status === 'done' ? 'סיכום היום' : 'המשך היום'}</span></span></a>`; }).join('');
+
+  if (!M) {
+    const next = (d.wdays || []).filter(w => w.day > t && mineDay(w)).slice(0, 4);
+    box.innerHTML = `${myDay || empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
+      ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId)).join('')}</div></section>` : ''}
+      ${inboxPeek(d)}`;
+    return;
+  }
+
+  const A = alerts(d);
+  const inField = new Map();
+  (d.wdays || []).filter(w => w.day === t).forEach(w => inField.set(w.project_id, { p: byId.get(w.project_id), w }));
+  P.filter(isOpen).forEach(x => { const f = x.planned_from || x.actual_from, to = x.planned_to || x.actual_to || f; if (f && f <= t && to >= t && !inField.has(x.id)) inField.set(x.id, { p: x }); });
+  const field = [...inField.values()].filter(x => x.p);
+  const nextField = !field.length ? schedule(d, addDays(t, 1), 13).find(x => x.items.some(i => i.kind !== 'v')) : null;
+  const week = schedule(d, t, 7);
+  const active = P.filter(isOpen).filter(x => x.status_label !== 'פיילוט' || inField.has(x.id))
+    .sort((a, b) => (inField.has(b.id) - inField.has(a.id)) || (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((a.planned_from || '9') < (b.planned_from || '9') ? -1 : 1)).slice(0, 8);
+
   box.innerHTML = `
-    ${mine.map(w => `<a class="hero" href="#/day/${w.id}"><span class="eyebrow">יום השטח שלך היום</span><b>${esc(w.projects?.name || '')}</b><small>${w.report_time ? 'התייצבות ' + w.report_time.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון — החתמת לקוח' : ''}</small><span class="btn primary">פתיחת היום</span></a>`).join('')}
-    <div class="kpis">
-      <div class="kpi"><b>${new Set([...now.map(x => x.id), ...(d.wdays || []).filter(w => w.day === today()).map(w => w.project_id)]).size}</b><span>בשטח היום</span></div>
-      <div class="kpi"><b>${active.length}</b><span>פרויקטים פתוחים</span></div>
-      ${can('finance') ? `<div class="kpi"><b>${owed ? '₪' + nf(Math.round(owed / 1000)) + 'K' : waitPay.length}</b><span>${owed ? 'ממתין לגבייה' : 'ממתינים לתשלום'}</span></div>` : `<div class="kpi"><b>${openSpecs}</b><span>מבנים לאפיון</span></div>`}
-    </div>
-
-    ${A.length ? `<section class="stack" style="gap:8px"><h3>דורש תשומת לב</h3>${A.map(a => `<${a.href ? `a href="${a.href}"` : 'div'} class="alert ${a.tone}"><span class="dot"></span><span class="grow"><b>${esc(a.title)}</b>${a.sub ? `<small>${esc(a.sub)}</small>` : ''}</span>${a.href ? '<span class="chev">‹</span>' : ''}</${a.href ? 'a' : 'div'}>`).join('')}</section>`
-      : `<div class="card row"><span class="dot ok"></span><b>אין כרגע דברים פתוחים שדורשים טיפול</b></div>`}
-
-    <section class="stack" style="gap:8px"><div class="row"><h3 class="grow">לו"ז שבועיים</h3><span class="small muted">מתוך הלו"ז במאנדי</span></div>
-      <div class="agenda">${days.filter((x, i) => i < 2 || x.items.length).map(x => `<div class="day ${x.date === today() ? 'is-today' : ''}">
-        <div class="dlabel"><b>${dayName(x.date)}</b><span>${dm(x.date)}</span></div>
-        <div class="ditems">${x.items.length ? x.items.map(it => it.kind === 'w'
-          ? `<a class="ev ${it.w.status === 'done' ? 'ok' : 'lime'}" href="#/day/${it.w.id}"><b>${esc(it.w.projects?.name || '')}${it.w.status === 'done' ? ' · נסגר' : ''}</b><small>יום שטח${it.w.report_time ? ' · ' + it.w.report_time.slice(0, 5) : ''} · ${esc((it.w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', '))}</small></a>`
-          : it.kind === 'p'
-          ? `<a class="ev ${it.tone}" href="#/p/${it.p.id}"><b>${esc(it.p.name)}</b><small>${esc(it.p.status_label || '')}${it.p.client_name ? ' · ' + esc(it.p.client_name) : ''}</small></a>`
-          : `<div class="ev blue"><b>סיור אפיון · ${esc(it.v.lead_name)}</b><small>${esc(it.v.owner || '')}</small></div>`).join('')
-          : '<div class="ev none">אין עבודה מתוכננת</div>'}</div></div>`).join('')}</div>
+    ${myDay}
+    <section><div class="sh-row"><h3 class="sh">היום בשטח</h3>${field.length ? `<span class="count">${field.length}</span>` : ''}</div>
+      ${field.length ? `<div class="rail">${field.map(x => `<a class="pcard" href="${x.w ? '#/day/' + x.w.id : '#/p/' + x.p.id}"><span class="img" style="background-image:url('${cov[x.p.id]}')"></span>
+        <span class="pc-b"><b>${esc(x.p.name)}</b><small>${x.w ? `${DAY_ST[x.w.status]}${x.w.report_time ? ' · ' + x.w.report_time.slice(0, 5) : ''} · ${esc((x.w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).join(', '))}` : esc(x.p.client_name || x.p.status_label || '')}</small></span></a>`).join('')}</div>`
+      : empty('drone', 'אין עבודה בשטח היום', nextField ? `הבא: ${esc(nextField.items.find(i => i.kind !== 'v').p?.name || '')}, ${dayWord(nextField.date)}` : 'אין עבודה מתוכננת בשבועיים הקרובים')}
     </section>
 
-    <section class="stack" style="gap:8px"><div class="row"><h3 class="grow">מהשטח</h3><a class="small" href="#/reports">כל הדוחות ‹</a></div>
-      ${(d.reports || []).slice(0, 5).map(r => `<div class="feed"><span class="pill ${r.had_issues ? 'warn' : 'ok'}">${r.had_issues ? 'תקלה' : 'תקין'}</span>
-        <span class="grow"><b>${esc(r.project_label || 'בלי פרויקט')}</b><small>${dayName(r.report_date) === 'היום' ? 'היום' : dm(r.report_date)}${r.crew ? ' · ' + esc(r.crew) : ''}${r.work ? ' · ' + esc(r.work) : ''}</small>
-        ${r.issues ? `<small class="issue">${esc(r.issues.slice(0, 140))}</small>` : ''}</span></div>`).join('') || '<div class="empty">אין דוחות שטח בשבועיים האחרונים</div>'}
+    <section><div class="sh-row"><h3 class="sh">לטיפול</h3>${A.length > 3 ? `<a class="more" href="#/alerts">הכל (${A.length})</a>` : ''}</div>
+      ${A.length ? `<div class="alist">${A.slice(0, 3).map(alertRow).join('')}</div>` : empty('shield', 'הכל תחת שליטה', 'אין כרגע דברים פתוחים', 'ok')}
     </section>
 
-    <section class="stack" style="gap:8px"><h3>פרויקטים</h3>
-      <div class="list">${active.sort((a, b) => (a.planned_from || '9') < (b.planned_from || '9') ? -1 : 1).map(x => `<a class="item" href="#/p/${x.id}">
-        <span class="t"><b>${esc(x.name)}</b><small>${esc(x.client_name || '')}${x.planned_from ? ` · ${dm(x.planned_from)}${x.planned_to && x.planned_to !== x.planned_from ? '–' + dm(x.planned_to) : ''}` : ' · אין לו"ז'}</small></span>
-        <span class="pill ${STATUS_TONE[x.status_label] ?? ''}">${esc(x.status_label || '')}</span></a>`).join('')}</div>
+    <section><div class="sh-row"><h3 class="sh">השבוע</h3><a class="more" href="#/schedule">לו"ז מלא</a></div>
+      <div class="week" id="wk">${week.map((x, i) => `<button class="wd" data-i="${i}" aria-pressed="false"><small>${i === 0 ? 'היום' : HE_D1[new Date(x.date + 'T12:00').getDay()]}</small><b>${+x.date.slice(8)}</b><span class="dots">${x.items.slice(0, 3).map(it => `<i class="${it.kind === 'v' ? 'blue' : it.kind === 'w' ? 'lime' : TONE[it.p?.status_label] || 'grey'}"></i>`).join('')}</span></button>`).join('')}</div>
+      <div id="wkday" class="ditems"></div>
     </section>
 
-    <section class="stack" style="gap:8px"><h3>צי</h3><div class="list">${(d.drones || []).map(x => `<div class="item" style="cursor:default"><span class="dot ${x.health === 'grounded' ? 'bad' : x.health === 'warning' ? 'warn' : 'ok'}"></span>
-      <span class="t"><b>${esc(x.name)}</b><small>${x.health === 'grounded' ? 'מקורקע' : x.health === 'warning' ? 'במעקב' : 'תקין'}${x.health_date ? ' · בדיקה אחרונה ' + dm(x.health_date) : ''}</small></span></div>`).join('')}</div></section>
+    <section><div class="sh-row"><h3 class="sh">פרויקטים פעילים</h3><a class="more" href="#/projects">הכל</a></div>
+      <div class="rail">${active.map(x => `<a class="pcard sm" href="#/p/${x.id}"><span class="img" style="background-image:url('${cov[x.id]}')"><span class="pill ${TONE[x.status_label] ?? ''}">${esc(x.status_label || '')}</span></span>
+        <span class="pc-b"><b>${esc(x.name)}</b><small>${esc([x.client_name, x.planned_from ? dm(x.planned_from) : null].filter(Boolean).join(' · '))}</small></span></a>`).join('')}</div>
+    </section>
 
-    <div id="tiles"></div>
-    <div class="small muted" style="text-align:center">${lastSync ? `מסונכרן ממאנדי · ${new Date(lastSync).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}` : ''}</div>`;
+    ${inboxPeek(d)}
+    <div class="foot">${d.sync?.[0] ? `מסונכרן עם מאנדי · ${timeAgo(d.sync[0].created_at)}` : ''}</div>`;
+
+  const pick = i => { $$('#wk .wd').forEach(b => b.setAttribute('aria-pressed', b.dataset.i == i)); const x = week[i];
+    $('#wkday').innerHTML = x.items.length ? x.items.map(evRow).join('') : `<div class="ev none">אין עבודה מתוכננת ${i == 0 ? 'היום' : 'ביום הזה'}</div>`; };
+  $$('#wk .wd').forEach(b => b.onclick = () => pick(+b.dataset.i));
+  pick(week[0].items.length ? 0 : Math.max(0, week.findIndex(x => x.items.length)));
+}
+const dayRow = (w, byId) => `<a class="row" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
+  <span class="grow"><b>${esc(byId.get(w.project_id)?.name || '')}</b><small>${w.report_time ? 'התייצבות ' + w.report_time.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון' : ''}</small></span><span class="pill ${w.status === 'done' ? 'ok' : w.status === 'planned' ? '' : 'lime'}">${DAY_ST[w.status]}</span></a>`;
+function inboxPeek(d) {
+  const un = (d.inbox || []).filter(c => c.unread > 0).slice(0, 3);
+  if (!un.length) return '';
+  return `<section><div class="sh-row"><h3 class="sh">הודעות חדשות</h3><a class="more" href="#/inbox">הכל</a></div><div class="list">${un.map(c => `<a class="row" href="#/c/${c.id}"><span class="avatar sm ${c.kind === 'group' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 18) : esc(initials(c.title))}</span><span class="grow"><b>${esc(c.title || '')}</b><small>${esc(c.last_message || '')}</small></span><span class="badge">${c.unread}</span></a>`).join('')}</div></section>`;
 }
 
-export async function renderProject(el, id) {
-  el.innerHTML = `<div class="skel"></div>`;
-  const [{ data: p }, { data: reps }, fin] = await Promise.all([
-    sb.from('projects').select('*').eq('id', id).single(),
-    sb.from('field_reports').select('*').eq('project_id', id).order('report_date', { ascending: false }),
-    can('finance') ? sb.from('project_finance').select('*').eq('project_id', id).maybeSingle() : Promise.resolve({ data: null }),
-  ]);
-  if (!p) { el.innerHTML = `<div class="empty">הפרויקט לא נמצא.</div>`; return; }
-  const f = fin.data;
-  el.innerHTML = `<div class="top"><button class="back" onclick="history.back()">→ חזרה</button><span class="grow"></span><span class="pill ${STATUS_TONE[p.status_label] ?? ''}">${esc(p.status_label || '')}</span></div>
-    <div><div class="eyebrow">${esc(p.client_name || '')}</div><h2>${esc(p.name)}</h2>${p.scope ? `<div class="muted">${esc(p.scope)}</div>` : ''}</div>
-    <div class="kpis">
-      <div class="kpi"><b>${p.planned_from ? dm(p.planned_from) + (p.planned_to && p.planned_to !== p.planned_from ? '–' + dm(p.planned_to) : '') : '—'}</b><span>לו"ז מתוכנן</span></div>
-      <div class="kpi"><b>${p.field_days_actual != null ? nf(p.field_days_actual) : '—'}${p.field_days_planned ? ' / ' + nf(p.field_days_planned) : ''}</b><span>ימי שטח בפועל / תכנון</span></div>
-      <div class="kpi"><b>${(reps || []).length}</b><span>דוחות שטח</span></div>
-    </div>
-    ${p.summary ? `<div class="card"><div class="eyebrow">תמונת ביצוע</div>${esc(p.summary)}</div>` : ''}
-    ${f ? `<div class="card"><div class="eyebrow">כספים</div><table class="t"><tr><th>מחיר נטו</th><td>${f.price_net ? '₪' + nf(f.price_net) : '—'}</td></tr><tr><th>כולל מע"מ</th><td>${f.price_gross ? '₪' + nf(f.price_gross) : '—'}</td></tr>
-      <tr><th>רווח גולמי</th><td>${f.gross_profit ? '₪' + nf(f.gross_profit) + (f.gross_pct ? ` (${nf(f.gross_pct)}%)` : '') : '—'}</td></tr><tr><th>תשלום</th><td>${esc(f.payment_status || '—')}${f.expected_payment ? ' · צפוי ' + dm(f.expected_payment) : ''}</td></tr></table></div>` : ''}
-    <h3>דוחות שטח</h3>
-    ${(reps || []).map(r => `<div class="feed"><span class="pill ${r.had_issues ? 'warn' : 'ok'}">${r.had_issues ? 'תקלה' : 'תקין'}</span><span class="grow"><b>${dm(r.report_date)}${r.hours ? ` · ${nf(r.hours)} שעות` : ''}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}</b>
-      <small>${esc([r.crew, r.work].filter(Boolean).join(' · '))}</small>${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}${r.notes ? `<small>${esc(r.notes)}</small>` : ''}</span></div>`).join('') || '<div class="empty">אין דוחות שטח לפרויקט.</div>'}
-    <a class="btn ghost block" href="https://edroneil-force.monday.com/boards/5099780041/pulses/${esc(p.monday_item_id)}" target="_blank" rel="noopener">פתיחה במאנדי</a>`;
+// ---------- כל מה שלטיפול ----------
+export async function renderAlerts(el) {
+  el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1>לטיפול</h1></header><div id="al" class="alist"><div class="skel"></div></div>`;
+  const d = await load(); const A = alerts(d);
+  $('#al').innerHTML = A.map(alertRow).join('') || empty('shield', 'הכל תחת שליטה', '', 'ok');
 }
 
+// ---------- לו"ז ----------
+export async function renderSchedule(el) {
+  el.innerHTML = `<header class="phead"><h1>לו"ז</h1></header><div id="sc" class="stack lg"><div class="skel"></div></div>`;
+  const d = await load(); const box = $('#sc'); if (!box) return;
+  const t = today(), M = isManager();
+  const by = new Map((d.projects || []).map(p => [p.id, p]));
+  const mine = (d.wdays || []).filter(w => w.day >= t && mineDay(w));
+  const days = schedule(d, t, 14).filter((x, i) => i === 0 || x.items.length);
+  const hasDay = new Set((d.wdays || []).filter(w => w.day >= t).map(w => w.project_id));
+  const noDate = (d.projects || []).filter(isOpen).filter(p => ['קביעת מועד', 'תואם - ממתין לביצוע', 'אושר מול לקוח', 'בביצוע'].includes(p.status_label) && !hasDay.has(p.id) && !((p.planned_to || p.planned_from || '') >= t));
+  box.innerHTML = `${can('today') ? `<section><h3 class="sh">הימים שלי</h3>${mine.length ? `<div class="list">${mine.map(w => dayRow(w, by)).join('')}</div>` : empty('calendar', 'אין לך ימי שטח משובצים', 'השיבוץ נעשה בתוך הפרויקט')}</section>` : ''}
+    ${M ? `<section><div class="sh-row"><h3 class="sh">כל החברה · שבועיים</h3><a class="more" href="#/reports">דוחות שטח</a></div>
+      <div class="agenda">${days.map(x => `<div class="day ${x.date === t ? 'is-today' : ''}"><div class="dlabel"><b>${x.date === t ? 'היום' : HE_DOW[new Date(x.date + 'T12:00').getDay()]}</b><span>${dm(x.date)}</span></div>
+        <div class="ditems">${x.items.length ? x.items.map(evRow).join('') : '<div class="ev none">אין עבודה מתוכננת</div>'}</div></div>`).join('')}</div></section>` : ''}
+    ${M && noDate.length ? `<section><div class="sh-row"><h3 class="sh">ממתינים לתאריך</h3><span class="count">${noDate.length}</span></div><div class="small muted">פרויקטים פתוחים בלי תאריך ביצוע עתידי במאנדי</div>
+      <div class="alist">${noDate.map(p => `<a class="arow" href="#/p/${p.id}"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.status_label, p.client_name].filter(Boolean).join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}`;
+}
+
+// ---------- דוחות שטח ----------
 export async function renderReports(el) {
-  el.innerHTML = `<div class="top"><button class="back" onclick="location.hash='#/'">→ בית</button></div><div><div class="eyebrow">מהשטח</div><h1>דוחות שטח</h1></div><div id="rl"><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead"><a class="back" href="#/schedule" aria-label="חזרה">${icon('back', 20)}</a><h1>דוחות שטח</h1></header><div id="rl" class="list"><div class="skel"></div></div>`;
   const { data } = await sb.from('field_reports').select('*').order('report_date', { ascending: false }).limit(100);
-  $('#rl').innerHTML = (data || []).map(r => `<div class="feed"><span class="pill ${r.had_issues ? 'warn' : 'ok'}">${r.had_issues ? 'תקלה' : 'תקין'}</span><span class="grow">
-    <b>${esc(r.project_label || 'בלי פרויקט')}</b><small>${dm(r.report_date)}${r.crew ? ' · ' + esc(r.crew) : ''}${r.work ? ' · ' + esc(r.work) : ''}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}</small>
-    ${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}${r.notes ? `<small>${esc(r.notes)}</small>` : ''}</span></div>`).join('') || '<div class="empty">אין דוחות.</div>';
+  const th = (data || []).map(r => (r.photos || []).find(Boolean)).filter(Boolean);
+  const u = th.length ? await signedUrls('media', th) : {};
+  $('#rl').innerHTML = (data || []).map(r => { const ph = (r.photos || []).find(Boolean);
+    return `<a class="rep" ${r.project_id ? `href="#/p/${r.project_id}"` : ''}>${ph ? `<img src="${esc(u[ph])}" alt="" loading="lazy">` : `<span class="rep-ph">${icon('report', 22)}</span>`}<span class="grow"><b>${esc(r.project_label || 'בלי פרויקט')}</b>
+      <small>${dm(r.report_date)}${r.crew ? ' · ' + esc(r.crew) : ''}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}</small>
+      ${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : r.work ? `<small>${esc(r.work)}</small>` : ''}</span>${r.had_issues ? '<span class="pill warn">תקלה</span>' : ''}</a>`; }).join('') || '<div class="empty">אין דוחות.</div>';
 }

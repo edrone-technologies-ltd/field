@@ -1,7 +1,7 @@
 // Service worker: האפליקציה נפתחת גם בלי קליטה, ותמונות שכבר נצפו זמינות מהטלפון.
-const VERSION = 'edrone-field-v3';
+const VERSION = 'edrone-field-v4';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'lib/core.js', 'lib/store.js',
-  'modules/specs.js', 'modules/chat.js', 'modules/admin.js', 'modules/home.js', 'modules/today.js', 'modules/projects.js', 'modules/equipment.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png'];
+  'modules/specs.js', 'modules/chat.js', 'modules/admin.js', 'modules/home.js', 'modules/today.js', 'modules/projects.js', 'modules/equipment.js', 'modules/inbox.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
@@ -22,7 +22,9 @@ self.addEventListener('fetch', e => {
   }
   // קבצי האפליקציה: רשת קודם (לעדכונים), מטמון כשאין קליטה
   if (u.origin === location.origin || u.hostname.endsWith('jsdelivr.net') || u.hostname.includes('fonts.')) {
-    e.respondWith(fetch(e.request).then(r => { if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); } return r; })
+    // תמיד בודקים מול השרת (no-cache) — כדי שקבצי גרסה ישנה וחדשה לא יתערבבו אחרי עדכון
+    const fresh = e.request.mode === 'navigate' ? fetch(e.request.url, { cache: 'no-cache' }) : fetch(new Request(e.request, { cache: 'no-cache' }));
+    e.respondWith(fresh.then(r => { if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); } return r; })
       .catch(() => caches.match(e.request).then(h => h || caches.match('index.html'))));
   }
 });

@@ -5,8 +5,7 @@ const KIND = { drone: 'רחפנים', vehicle: 'רכבים', trailer: 'נגרר�
 const HEALTH = { ok: ['תקין', 'ok'], warning: ['במעקב', 'warn'], grounded: ['מקורקע', 'bad'], maintenance: ['בטיפול', 'warn'] };
 
 export async function renderEquipment(el) {
-  el.innerHTML = `<div class="top"><button class="back" onclick="location.hash='#/'">→ בית</button></div>
-    <div><div class="eyebrow">צי וציוד</div><h1>ציוד</h1></div><div id="el" class="stack"><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><h1>ציוד</h1></header><div id="el" class="stack"><div class="skel"></div></div>`;
   let rows, iss;
   try {
     const [{ data, error }, { data: i }] = await Promise.all([

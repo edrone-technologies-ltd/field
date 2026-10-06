@@ -3,8 +3,7 @@ import { sb, state, $, $$, esc, toast, ROLE_HE, initials } from '../lib/core.js'
 
 const ROLES = ['admin', 'ops_manager', 'surveyor', 'crew_lead', 'crew', 'partner'];
 export async function renderAdmin(el) {
-  el.innerHTML = `<div class="top"><button class="back" onclick="location.hash='#/'">→ בית</button></div>
-    <div><div class="eyebrow">ניהול מערכת</div><h1>צוות והרשאות</h1></div><div id="ad"><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><h1>צוות והרשאות</h1></header><div id="ad"><div class="skel"></div></div>`;
   const [{ data: people }, { data: mods }, { data: rm }, { data: sites }, { data: sm }, { data: logs }] = await Promise.all([
     sb.from('profiles').select('*').order('full_name'),
     sb.from('modules').select('*').order('sort'),
