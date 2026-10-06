@@ -179,7 +179,7 @@ export async function renderBuilding(el, slug, bid) {
   if (editable) {
     $('#sv').onclick = () => save(false);
     $('#dn').onclick = async () => {
-      if (form.days_expected == null || form.days_expected === '') { toast('חסר: ימי עבודה צפויים'); days.focus(); return; }
+      if (!(Number(form.days_expected) > 0)) { toast('חסר: ימי עבודה צפויים (יותר מ-0)'); days.focus(); return; }
       await save(true); location.hash = '#/site/' + slug;
     };
   }

@@ -3,7 +3,10 @@ import { sb, state, loadMe, signIn, signOut, can, flush, updateNet, $, $$, esc, 
 
 const app = $('#app');
 const MODS = {
+  today: { title: 'יום שטח', sub: 'הימים שלי: העמסה, באתר, ביצוע וסגירה', href: '#/today', icon: 'M12 2v4 M12 18v4 M4.9 4.9l2.8 2.8 M16.3 16.3l2.8 2.8 M2 12h4 M18 12h4 M12 8a4 4 0 100 8 4 4 0 000-8z' },
+  projects: { title: 'פרויקטים', sub: 'תכנית עבודה, ימים, צוות ותקלות', href: '#/projects', icon: 'M3 7h18v13H3z M8 7V4h8v3' },
   specs: { title: 'אפיונים', sub: 'סיורי אפיון לפי אתר ומבנה', href: '#/specs', icon: 'M4 4h10l6 6v10H4z M14 4v6h6' },
+  equipment: { title: 'ציוד', sub: 'צי, ציוד ותקלות', href: '#/equipment', icon: 'M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z' },
   admin: { title: 'ניהול מערכת', sub: 'צוות, תפקידים והרשאות', href: '#/admin', icon: 'M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z' },
 };
 const icon = d => `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="${d}"/></svg>`;
@@ -95,14 +98,18 @@ async function route() {
 async function routeInner() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
   window.scrollTo(0, 0);
-  document.querySelectorAll('.bar,.composer').forEach(x => x.remove());
+  document.querySelectorAll('.bar,.composer,.fabs').forEach(x => x.remove());
   const guard = m => { if (!can(m)) { app.innerHTML = `<div class="empty">אין לך גישה למסך הזה.</div><button class="btn ghost block" onclick="location.hash='#/'">חזרה לבית</button>`; return false; } return true; };
   if (!h[0]) return renderHome();
   if (h[0] === 'specs' && guard('specs')) return (await import('./modules/specs.js')).renderSites(app);
   if (h[0] === 'site' && guard('specs')) return (await import('./modules/specs.js')).renderSite(app, h[1], h[2] === 'chat' ? 'c' : 'b');
   if (h[0] === 'b' && guard('specs')) return (await import('./modules/specs.js')).renderBuilding(app, h[1], h[2]);
   if (h[0] === 'me') return renderMe();
-  if (h[0] === 'p' && guard('home')) return (await import('./modules/home.js')).renderProject(app, h[1]);
+  if (h[0] === 'today' && guard('today')) return (await import('./modules/today.js')).renderToday(app);
+  if (h[0] === 'day') return (await import('./modules/today.js')).renderDay(app, h[1]);
+  if (h[0] === 'projects' && guard('projects')) return (await import('./modules/projects.js')).renderProjects(app);
+  if (h[0] === 'p' && guard('projects')) return (await import('./modules/projects.js')).renderProject(app, h[1], h[2] || 'o');
+  if (h[0] === 'equipment' && guard('equipment')) return (await import('./modules/equipment.js')).renderEquipment(app);
   if (h[0] === 'reports' && guard('home')) return (await import('./modules/home.js')).renderReports(app);
   if (h[0] === 'admin' && guard('admin')) return (await import('./modules/admin.js')).renderAdmin(app);
 }

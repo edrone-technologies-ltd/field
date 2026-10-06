@@ -14,7 +14,7 @@ const ARCHIVE = 'group_mm5052gw';
 async function load() {
   const q = async (p) => { try { const { data, error } = await p; if (error) throw error; return data || []; } catch { return null; } };
   const since = addDays(today(), -14);
-  const [projects, reports, visits, drones, team, specs, fin, sync] = await Promise.all([
+  const [projects, reports, visits, drones, team, specs, fin, sync, pushErr, wdays] = await Promise.all([
     q(sb.from('projects').select('*').neq('monday_group', ARCHIVE)),
     q(sb.from('field_reports').select('*').gte('report_date', since).order('report_date', { ascending: false })),
     q(sb.from('spec_visits').select('*')),
@@ -23,8 +23,10 @@ async function load() {
     q(sb.from('sites').select('name,slug,buildings(specs(status))').eq('is_active', true)),
     can('finance') ? q(sb.from('project_finance').select('*')) : Promise.resolve([]),
     q(sb.from('sync_log').select('created_at,status').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)),
+    q(sb.from('sync_log').select('entity,error,created_at').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)),
+    q(sb.from('work_days').select('id,day,status,report_time,project_id,crew_lead_id,is_last_day,projects(name),work_day_crew(user_id,profiles(full_name))').gte('day', today()).lte('day', addDays(today(), 13)).order('report_time')),
   ]);
-  const data = { projects, reports, visits, drones, team, specs, fin, sync };
+  const data = { projects, reports, visits, drones, team, specs, fin, sync, pushErr, wdays };
   if (projects) await cache.set('home', data);
   else Object.assign(data, (await cache.get('home')) || {});
   return data;
@@ -51,6 +53,7 @@ function alerts(d) {
     const left = daysBetween(t, p.pilot_license_expiry);
     if (left <= 45) out.push({ tone: left <= 14 ? 'bad' : 'warn', title: `רישיון המטיס של ${p.full_name} ${left < 0 ? 'פג' : `פג בעוד ${left} ימים`}`, sub: `תוקף ${dm(p.pilot_license_expiry)}` });
   });
+  if ((d.pushErr || []).length) out.push({ tone: 'warn', title: `${d.pushErr.length} שליחות למאנדי נכשלו ב-24 השעות האחרונות`, sub: String(d.pushErr[0].error || '').slice(0, 120) });
   const noDate = (d.visits || []).filter(v => !v.visit_date);
   if (noDate.length) out.push({ tone: '', title: `${noDate.length} סיורי אפיון בלי תאריך`, sub: noDate.map(v => v.lead_name).join(' · ') });
   return out;
@@ -65,6 +68,7 @@ function agenda(d) {
     if (f && to >= t && f <= end && !String(p.status_label).startsWith('הסתיים')) put(f, to, { kind: 'p', p, tone: STATUS_TONE[p.status_label] ?? '' });
   });
   (d.visits || []).filter(v => v.visit_date).forEach(v => put(v.visit_date, v.visit_date, { kind: 'v', v }));
+  (d.wdays || []).forEach(w => { const x = days.find(y => y.date === w.day); if (!x) return; x.items = x.items.filter(it => !(it.kind === 'p' && it.p.id === w.project_id)); x.items.unshift({ kind: 'w', w }); });
   return days;
 }
 
@@ -88,9 +92,11 @@ export async function renderHome(el) {
   const openSpecs = (d.specs || []).reduce((s, x) => s + x.buildings.filter(b => (b.specs?.[0] || b.specs)?.status !== 'done').length, 0);
   const lastSync = d.sync?.[0]?.created_at;
 
+  const mine = (d.wdays || []).filter(w => w.day === today() && w.status !== 'done' && (w.crew_lead_id === state.user.id || (w.work_day_crew || []).some(c => c.user_id === state.user.id)));
   box.innerHTML = `
+    ${mine.map(w => `<a class="hero" href="#/day/${w.id}"><span class="eyebrow">יום השטח שלך היום</span><b>${esc(w.projects?.name || '')}</b><small>${w.report_time ? 'התייצבות ' + w.report_time.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון — החתמת לקוח' : ''}</small><span class="btn primary">פתיחת היום</span></a>`).join('')}
     <div class="kpis">
-      <div class="kpi"><b>${now.length}</b><span>בשטח היום</span></div>
+      <div class="kpi"><b>${new Set([...now.map(x => x.id), ...(d.wdays || []).filter(w => w.day === today()).map(w => w.project_id)]).size}</b><span>בשטח היום</span></div>
       <div class="kpi"><b>${active.length}</b><span>פרויקטים פתוחים</span></div>
       ${can('finance') ? `<div class="kpi"><b>${owed ? '₪' + nf(Math.round(owed / 1000)) + 'K' : waitPay.length}</b><span>${owed ? 'ממתין לגבייה' : 'ממתינים לתשלום'}</span></div>` : `<div class="kpi"><b>${openSpecs}</b><span>מבנים לאפיון</span></div>`}
     </div>
@@ -101,7 +107,9 @@ export async function renderHome(el) {
     <section class="stack" style="gap:8px"><div class="row"><h3 class="grow">לו"ז שבועיים</h3><span class="small muted">מתוך הלו"ז במאנדי</span></div>
       <div class="agenda">${days.filter((x, i) => i < 2 || x.items.length).map(x => `<div class="day ${x.date === today() ? 'is-today' : ''}">
         <div class="dlabel"><b>${dayName(x.date)}</b><span>${dm(x.date)}</span></div>
-        <div class="ditems">${x.items.length ? x.items.map(it => it.kind === 'p'
+        <div class="ditems">${x.items.length ? x.items.map(it => it.kind === 'w'
+          ? `<a class="ev ${it.w.status === 'done' ? 'ok' : 'lime'}" href="#/day/${it.w.id}"><b>${esc(it.w.projects?.name || '')}${it.w.status === 'done' ? ' · נסגר' : ''}</b><small>יום שטח${it.w.report_time ? ' · ' + it.w.report_time.slice(0, 5) : ''} · ${esc((it.w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', '))}</small></a>`
+          : it.kind === 'p'
           ? `<a class="ev ${it.tone}" href="#/p/${it.p.id}"><b>${esc(it.p.name)}</b><small>${esc(it.p.status_label || '')}${it.p.client_name ? ' · ' + esc(it.p.client_name) : ''}</small></a>`
           : `<div class="ev blue"><b>סיור אפיון · ${esc(it.v.lead_name)}</b><small>${esc(it.v.owner || '')}</small></div>`).join('')
           : '<div class="ev none">אין עבודה מתוכננת</div>'}</div></div>`).join('')}</div>
