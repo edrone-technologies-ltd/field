@@ -7,6 +7,7 @@ export const TYPES = [
   { k: 'spec', ic: 'clipboard', t: 'אפיון', s: 'סיור אפיון לליד או לאתר', ok: () => can('specs'), noProject: true },
   { k: 'daily', ic: 'report', t: 'דוח ביצוע יומי', s: 'מה בוצע, שעות, צוות, חומר ותמונות', ok: () => true },
   { k: 'issue', ic: 'alert', t: 'תקלה / אירוע בטיחות', s: 'רחפן, ציוד, אתר, כמעט תאונה', ok: () => true },
+  { k: 'expense', ic: 'report', t: 'הוצאה', s: 'דלק, חניה, אגרה, אוכל, לינה — עם צילום קבלה', ok: () => true },
   { k: 'signoff', ic: 'clipboard', t: 'החתמת לקוח — אישור ביצוע', s: 'הלקוח מאשר וחותם באצבע', ok: ROLE_CAN_SIGN },
   { k: 'summary', ic: 'shield', t: 'סיכום פרויקט פנימי', s: 'איכות, תקלות, פתרונות ולקחים', ok: isManager },
 ];
@@ -40,6 +41,7 @@ export function open(k, pid, back) {
   if (k === 'spec') { location.hash = '#/specs'; return; }
   if (k === 'daily') return dailyDate(pid, back);
   if (k === 'issue') return issueSheet(pid, null, back);
+  if (k === 'expense') return import('./expenses.js').then(m => m.newExpense(pid, null, back));
   if (k === 'signoff') location.hash = '#/signoff/' + pid;
   if (k === 'summary') location.hash = '#/summary/' + pid;
 }

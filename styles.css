@@ -398,3 +398,4 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .qty{display:flex;align-items:center;gap:6px;flex:none} .qty button{width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card2);font-size:1.2rem;font-weight:800;cursor:pointer;color:var(--ink)} .qty b{min-width:22px;text-align:center;font-family:var(--f-display)}
 #newreq{margin-bottom:6px}
 .wx{font-size:.88rem;padding:8px 10px;border-radius:10px;background:var(--card2)} .wx.bad{background:var(--badbg);color:var(--bad);font-weight:700}
+.xrow img,.xrow .rep-ph{width:52px;height:52px;border-radius:10px;object-fit:cover;flex:none;cursor:zoom-in}

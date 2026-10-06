@@ -11,7 +11,7 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['', 'schedule', 'projects', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase']);
+const WITH_NAV = new Set(['', 'schedule', 'projects', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -59,6 +59,7 @@ function renderMenu() {
   const rows = [
     ['#/hours', 'clock', 'השעות שלי', 'כניסות, יציאות, היעדרויות ובקשות תיקון'],
     ['#/myfile', 'clipboard', 'התיק שלי', 'תלושי שכר ומסמכים אישיים'],
+    ['#/expenses', 'report', 'הוצאות', 'דלק, חניה, אגרות, אוכל ולינה עם קבלה'],
     isManager() && ['#/staff', 'users', 'עובדים', 'פרטים, שכר, שעות, מסמכים ותלושים'],
     isManager() && ['#/attendance', 'clock', 'נוכחות צוות', 'מי במשמרת, בקשות לאישור, סיכום וייצוא לשכר'],
     can('purchase') && ['#/purchase', 'report', 'רכש ומלאי', 'בקשת רכש ומצב מלאי'],
@@ -80,7 +81,7 @@ function renderMenu() {
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 20</div>
+      <div class="foot">E-Drone שטח · גרסה 21</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
@@ -125,7 +126,7 @@ async function routeInner() {
   window.scrollTo(0, 0);
   document.querySelectorAll('.bar,.composer,.fabs').forEach(x => x.remove());
   $('#sheet').hidden = true;
-  nav(WITH_NAV.has(h[0]), h[0] === 'alerts' || h[0] === 'reports' ? (isManager() ? '' : 'menu') : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase'].includes(h[0]) ? 'menu' : h[0]);
+  nav(WITH_NAV.has(h[0]), h[0] === 'alerts' || h[0] === 'reports' ? (isManager() ? '' : 'menu') : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses'].includes(h[0]) ? 'menu' : h[0]);
   const guard = m => { if (!can(m)) { app.innerHTML = `<div class="empty-card"><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; } return true; };
   const home = () => import('./modules/home.js');
   switch (h[0]) {
@@ -139,6 +140,7 @@ async function routeInner() {
     case 'hours': return (await import('./modules/attendance.js')).renderHours(app, null, h[1]);
     case 'attendance': { const m = await import('./modules/attendance.js'); if (h[1] === 'm' || !h[1]) return m.renderAttendance(app, h[2]); return m.renderHours(app, h[1], h[2]); }
     case 'purchase': if (guard('purchase')) return (await import('./modules/purchase.js')).renderPurchase(app); return;
+    case 'expenses': return (await import('./modules/expenses.js')).renderExpenses(app);
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
     case 'staff': case 'files': { const m = await import('./modules/staff.js'); return h[1] ? m.renderEmployee(app, h[1], h[2]) : m.renderStaff(app); }
     case 'signoff': return (await import('./modules/reports.js')).renderSignoff(app, h[1]);
