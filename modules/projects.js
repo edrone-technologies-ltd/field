@@ -49,7 +49,7 @@ export async function renderProject(el, id, tab = 'o') {
     const [{ data: p, error }, { data: tasks }, { data: days }, { data: issues }, { data: reps }, fin, { data: sites }, { data: team }, { data: drones }] = await Promise.all([
       sb.from('projects').select('*, sites(id,slug,name,address,contact_name,contact_phone)').eq('id', id).single(),
       sb.from('tasks').select('*, buildings(name,code)').eq('project_id', id).order('day_no', { nullsFirst: false }).order('seq'),
-      sb.from('work_days').select('*, work_day_crew(user_id,role,hours,profiles(full_name))').eq('project_id', id).order('day'),
+      sb.from('work_days').select('*, work_day_crew(user_id,role,hours,confirmed_at,profiles(full_name))').eq('project_id', id).order('day'),
       sb.from('issues').select('*').eq('project_id', id).order('created_at', { ascending: false }),
       sb.from('field_reports').select('*').eq('project_id', id).order('report_date', { ascending: false }),
       can('finance') ? sb.from('project_finance').select('*').eq('project_id', id).maybeSingle() : Promise.resolve({ data: null }),
@@ -171,7 +171,7 @@ export async function renderProject(el, id, tab = 'o') {
   // ----- ימים -----
   function daysTab(box) {
     box.innerHTML = `${M ? `<button class="btn ${D.days.length ? 'ghost' : 'primary'} block" id="sch">${D.days.length ? 'שיבוץ מחדש' : 'שיבוץ ימי עבודה'}</button>` : ''}
-      ${D.days.map(d => { const st = DAY_ST[d.status] || ['', '']; const crew = (d.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean);
+      ${D.days.map(d => { const st = DAY_ST[d.status] || ['', '']; const crew = (d.work_day_crew || []).map(c => (c.profiles?.full_name?.split(' ')[0] || '') + (d.status === 'planned' && c.role !== 'lead' ? (c.confirmed_at ? ' ✓' : ' ?') : '')).filter(Boolean);
         return `<a class="item" href="#/day/${d.id}"><span class="t"><b>${dayLabel(d.day)}${d.is_last_day ? ' · יום אחרון' : ''}</b><small>${d.report_time ? d.report_time.slice(0, 5) + ' · ' : ''}${esc(crew.join(', ') || 'בלי צוות')}${d.gallons != null ? ` · ${nf(d.gallons)} גל׳` : ''}</small>${d.day_goal ? `<small>${esc(d.day_goal)}</small>` : ''}</span><span class="pill ${st[1]}">${st[0]}</span></a>`; }).join('')
         || '<div class="empty">אין ימי שטח משובצים.</div>'}`;
     const b = $('#sch'); if (b) b.onclick = scheduleSheet;

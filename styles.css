@@ -373,3 +373,4 @@ a.btn{text-decoration:none}
 .must .mh{display:flex;align-items:center;gap:8px} .must .mh small{color:var(--muted);font-size:.8rem}
 .must .mb{font-size:1rem;line-height:1.45;white-space:pre-line}
 .net{cursor:pointer}
+.dayrow{display:flex;flex-direction:column;gap:6px}

@@ -21,7 +21,7 @@ export async function load() {
     M ? q(sb.from('spec_visits').select('*')) : [],
     q(sb.from('equipment').select('id,name,health,health_detail,health_date').eq('kind', 'drone').order('name')),
     M ? q(sb.from('profiles').select('full_name,role,is_pilot,pilot_license_expiry,is_active')) : [],
-    q(sb.from('work_days').select('id,day,status,report_time,project_id,crew_lead_id,is_last_day,day_goal,work_day_crew(user_id,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
+    q(sb.from('work_days').select('id,day,status,report_time,project_id,crew_lead_id,is_last_day,day_goal,work_day_crew(user_id,confirmed_at,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
     M ? q(sb.from('sync_log').select('created_at').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)) : [],
     M ? q(sb.from('sync_log').select('entity,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],
     q(sb.rpc('my_inbox')),
@@ -103,7 +103,7 @@ export async function renderHome(el) {
     box.innerHTML = `${myDay || empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
       ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId)).join('')}</div></section>` : ''}
       ${inboxPeek(d)}`;
-    extras(); return;
+    bindConfirm(box); extras(); return;
   }
 
   const A = alerts(d);
@@ -147,8 +147,15 @@ export async function renderHome(el) {
   extras();
   pick(week[0].items.length ? 0 : Math.max(0, week.findIndex(x => x.items.length)));
 }
-const dayRow = (w, byId) => `<a class="lrow" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
-  <span class="grow"><b>${esc(byId.get(w.project_id)?.name || '')}</b><small>${w.report_time ? 'התייצבות ' + w.report_time.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון' : ''}</small></span><span class="pill ${w.status === 'done' ? 'ok' : w.status === 'planned' ? '' : 'lime'}">${DAY_ST[w.status]}</span></a>`;
+const dayRow = (w, byId) => { const me = (w.work_day_crew || []).find(c => c.user_id === state.user.id);
+  const needConfirm = me && !me.confirmed_at && w.status === 'planned' && w.day > today();
+  return `<div class="dayrow"><a class="lrow" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
+  <span class="grow"><b>${esc(byId.get(w.project_id)?.name || '')}</b><small>${w.report_time ? 'התייצבות ' + w.report_time.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון' : ''}${me?.confirmed_at && w.status === 'planned' ? ' · אישרת הגעה ✓' : ''}</small></span><span class="pill ${w.status === 'done' ? 'ok' : w.status === 'planned' ? '' : 'lime'}">${DAY_ST[w.status]}</span></a>
+  ${needConfirm ? `<button class="btn primary sm block" data-confirm="${w.id}">מאשר הגעה</button>` : ''}</div>`; };
+function bindConfirm(root) {
+  $$('[data-confirm]', root).forEach(b => b.onclick = async () => { b.disabled = true; const { error } = await sb.rpc('confirm_day', { d: b.dataset.confirm });
+    if (error) { b.disabled = false; return; } b.outerHTML = '<div class="acked" style="text-align:center">אישרת הגעה ✓</div>'; });
+}
 function inboxPeek(d) {
   const un = (d.inbox || []).filter(c => c.unread > 0).slice(0, 3);
   if (!un.length) return '';
@@ -178,6 +185,7 @@ export async function renderSchedule(el) {
         <div class="ditems">${x.items.length ? x.items.map(evRow).join('') : '<div class="ev none">אין עבודה מתוכננת</div>'}</div></div>`).join('')}</div></section>` : ''}
     ${M && noDate.length ? `<section><div class="sh-row"><h3 class="sh">ממתינים לתאריך</h3><span class="count">${noDate.length}</span></div><div class="small muted">פרויקטים פתוחים בלי תאריך ביצוע עתידי במאנדי</div>
       <div class="alist">${noDate.map(p => `<a class="arow" href="#/p/${p.id}"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.status_label, p.client_name].filter(Boolean).join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}`;
+  bindConfirm(box);
 }
 
 // ---------- דוחות שטח ----------
