@@ -503,3 +503,15 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
   font-size:9.6pt;font-weight:800;display:flex;align-items:center;justify-content:center}
 .creport .step .b .h{font-size:10.4pt;font-weight:700;color:#16181C;margin-bottom:1.2mm}
 .creport .step .b .p{font-size:9.4pt;color:#5A616B;line-height:1.6}
+/* לוח שיבוץ */
+.dwrap{overflow-x:auto;margin:0 -16px;padding:0 16px}
+.dgrid{border-collapse:separate;border-spacing:4px;min-width:640px;width:100%}
+.dgrid th{font-size:.8rem;color:var(--muted);font-weight:700;text-align:center;padding:4px}
+.dgrid th small{display:block;font-weight:400;font-size:.72rem}
+.dgrid th.who{text-align:right;color:var(--ink);white-space:nowrap;position:sticky;right:0;background:var(--bg);z-index:1}
+.dgrid th.who small{display:inline;color:var(--lime)}
+.dgrid td{vertical-align:top;min-width:92px;height:54px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:4px;cursor:pointer}
+.dgrid td.today,.dgrid th.today{box-shadow:inset 0 0 0 2px var(--lime)}
+.dgrid td.conf{background:var(--badbg);border-color:var(--bad)}
+.dchip{display:block;font-size:.74rem;font-weight:700;border-radius:7px;padding:3px 6px;margin-bottom:3px;background:var(--limebg);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dchip.done{background:var(--okbg);color:var(--ok)} .dchip.wx{background:var(--warnbg)} .dchip.abs{background:var(--card2);color:var(--muted)} .dchip.pend{border:1px dashed var(--warn)}

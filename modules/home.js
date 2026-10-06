@@ -182,6 +182,7 @@ export async function renderSchedule(el) {
   const hasDay = new Set((d.wdays || []).filter(w => w.day >= t).map(w => w.project_id));
   const noDate = (d.projects || []).filter(isOpen).filter(p => ['קביעת מועד', 'תואם - ממתין לביצוע', 'אושר מול לקוח', 'בביצוע'].includes(p.status_label) && !hasDay.has(p.id) && !((p.planned_to || p.planned_from || '') >= t));
   box.innerHTML = `${can('today') ? `<section><h3 class="sh">הימים שלי</h3>${mine.length ? `<div class="list">${mine.map(w => dayRow(w, by)).join('')}</div>` : empty('calendar', 'אין לך ימי שטח משובצים', 'השיבוץ נעשה בתוך הפרויקט')}</section>` : ''}
+    ${M ? `<a class="btn primary block" href="#/dispatch">${icon('users', 18)} לוח שיבוץ שבועי</a>` : ''}
     ${M ? `<section><div class="sh-row"><h3 class="sh">כל החברה · שבועיים</h3><a class="more" href="#/reports">דוחות שטח</a></div>
       <div class="agenda">${days.map(x => `<div class="day ${x.date === t ? 'is-today' : ''}"><div class="dlabel"><b>${x.date === t ? 'היום' : HE_DOW[new Date(x.date + 'T12:00').getDay()]}</b><span>${dm(x.date)}</span></div>
         <div class="ditems">${x.items.length ? x.items.map(evRow).join('') : '<div class="ev none">אין עבודה מתוכננת</div>'}</div></div>`).join('')}</div></section>` : ''}
