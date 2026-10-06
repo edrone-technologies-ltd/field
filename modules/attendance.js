@@ -145,6 +145,40 @@ function bindDecide(root, reload) {
 }
 const decideBtns = r => `<div class="row-btns"><button class="btn ghost sm" data-dec="${r.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-dec="${r.id}" data-ok="1">אישור</button></div>`;
 
+
+// ---------- היעדרויות ----------
+export const ABS = { vacation: 'חופשה', sick: 'מחלה', reserve: 'מילואים', unpaid: 'חופש ללא תשלום', other: 'אחר' };
+function absenceSheet(month, done) {
+  let kind = 'vacation';
+  const d = ymd(new Date()).slice(0, 7) === month ? ymd(new Date()) : `${month}-01`;
+  sheet(`<h3>דיווח היעדרות</h3><div class="small muted">נשלח למנהל לאישור.</div>
+    <div class="chips">${Object.entries(ABS).map(([k, t]) => `<button class="chip" data-k="${k}" aria-pressed="${k === kind}">${t}</button>`).join('')}</div>
+    <div class="row"><label class="field grow">מתאריך<input type="date" id="af" value="${d}"></label><label class="field grow">עד תאריך<input type="date" id="at" value="${d}"></label></div>
+    <label class="field">הערה<input type="text" id="an" placeholder="למשל: אישור מחלה יישלח מחר"></label>
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="ao">שליחה לאישור</button></div>`, (s, close) => {
+    $$('[data-k]', s).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    $('#ao', s).onclick = async () => {
+      const f = $('#af', s).value, t = $('#at', s).value; if (!f || !t || t < f) return toast('בדקו את התאריכים');
+      const { error } = await sb.from('absences').insert({ user_id: state.user.id, kind, date_from: f, date_to: t, note: $('#an', s).value.trim() || null });
+      if (error) return toast(error.message, 4000); close(); toast('נשלח לאישור המנהל'); done && done();
+    };
+  });
+}
+function absLine(a) {
+  const [t, c] = REQ_ST[a.status];
+  return `<div class="req ${c}"><div class="row"><span class="pill ${c}">${t}</span><small class="grow"><b>${ABS[a.kind]}</b> · ${dm(a.date_from)}${a.date_to !== a.date_from ? '–' + dm(a.date_to) : ''}</small></div>${a.note ? `<div class="small">${esc(a.note)}</div>` : ''}${a.manager_reply ? `<div class="small mreply">תגובת המנהל: ${esc(a.manager_reply)}</div>` : ''}</div>`;
+}
+const absBtns = a => `<div class="row-btns"><button class="btn ghost sm" data-adec="${a.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-adec="${a.id}" data-ok="1">אישור</button></div>`;
+function bindAbsDecide(root, reload) {
+  $$('[data-adec]', root).forEach(b => b.onclick = async () => {
+    const ok = b.dataset.ok === '1';
+    const reply = await ask(ok ? 'אישור ההיעדרות' : 'דחיית ההיעדרות', { multiline: true, placeholder: ok ? 'תגובה (לא חובה)' : 'למה נדחה? (חובה)', ok: ok ? 'אישור' : 'דחייה', optional: ok });
+    if (reply == null) return;
+    const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, manager_reply: reply || null, decided_at: new Date().toISOString() }).eq('id', b.dataset.adec);
+    if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); reload();
+  });
+}
+
 // ---------- השעות שלי / של עובד ----------
 export async function renderHours(el, userId, month) {
   const me = !userId || userId === state.user.id; userId ||= state.user.id;
@@ -164,6 +198,7 @@ export async function renderHours(el, userId, month) {
     sb.from('shift_edits').select('*').eq('user_id', userId).order('at', { ascending: false }).limit(30),
     sb.from('shift_requests').select('*').eq('user_id', userId).gte('req_start', from).lt('req_start', to).order('created_at', { ascending: false }),
   ]);
+  const { data: abs } = await sb.from('absences').select('*').eq('user_id', userId).lte('date_from', `${month}-31`).gte('date_to', `${month}-01`).order('date_from');
   const R0 = reqs || [], pendingNew = R0.filter(r => !r.shift_id), byShift = id => R0.filter(r => r.shift_id === id);
   if (!me) $('#ht').textContent = who?.full_name || '';
   const R = computeMonth(shifts || [], month, S);
@@ -183,6 +218,8 @@ export async function renderHours(el, userId, month) {
       ${pendingNew.map(r => reqLine(r) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : '')).join('')}</div>
       ${me && !locked ? `<button class="btn ghost block" id="reqadd">${icon('plus', 18)} הוספת משמרת ששכחתי להחתים</button>` : ''}
       ${!me && isManager() && !locked ? `<button class="btn ghost block" id="addsh">${icon('plus', 18)} הוספת משמרת (מנהל)</button>` : ''}</section>
+    <section><div class="sh-row"><h3 class="sh">היעדרויות</h3>${me && !locked ? '<button class="more" id="absadd" style="border:0;background:none;cursor:pointer">+ דיווח היעדרות</button>' : ''}</div>
+      ${(abs || []).map(a => absLine(a) + (!me && isManager() && a.status === 'pending' ? absBtns(a) : '')).join('') || '<div class="muted small">אין היעדרויות בחודש הזה</div>'}</section>
     <section><h3 class="sh">אישור החודש</h3><div class="menu">
       <div class="lrow kv"><span class="grow"><small>העובד</small><b>${am?.worker_ok_at ? 'אישר ' + new Date(am.worker_ok_at).toLocaleDateString('he-IL') : 'עוד לא אישר'}</b></span>${me && !am?.worker_ok_at && !locked ? '<button class="btn primary sm" id="wok">אישור השעות</button>' : ''}</div>
       <div class="lrow kv"><span class="grow"><small>המנהל</small><b>${locked ? 'אושר ונעל ' + new Date(am.manager_ok_at).toLocaleDateString('he-IL') : 'עוד לא אושר'}</b></span>${isManager() && !me && !locked ? '<button class="btn primary sm" id="mok">אישור ונעילה</button>' : ''}</div></div>
@@ -197,7 +234,8 @@ export async function renderHours(el, userId, month) {
   });
   $$('[data-req]').forEach(b => b.onclick = () => requestSheet((shifts || []).find(x => x.id === b.dataset.req), month, reload));
   $('#reqadd')?.addEventListener('click', () => requestSheet(null, month, reload));
-  bindDecide(box, reload);
+  bindDecide(box, reload); bindAbsDecide(box, reload);
+  $('#absadd')?.addEventListener('click', () => absenceSheet(month, reload));
   const edit = (sh) => {
     const d0 = sh ? new Date(sh.start_at) : new Date(), day = sh ? ymd(d0) : `${month}-01`;
     sheet(`<h3>${sh ? 'תיקון משמרת' : 'הוספת משמרת'}</h3>
@@ -235,29 +273,74 @@ export async function renderAttendance(el, month) {
     sb.from('attendance_months').select('*').eq('month', monthStart(month)),
     sb.from('shift_requests').select('*').eq('status', 'pending').order('created_at'),
   ]);
+  const [{ data: pabs }, { data: mabs }, { data: rates }] = await Promise.all([
+    sb.from('absences').select('*').eq('status', 'pending').order('date_from'),
+    sb.from('absences').select('*').eq('status', 'approved').lte('date_from', `${month}-31`).gte('date_to', `${month}-01`),
+    sb.from('employee_rates').select('*'),
+  ]);
   const rows = (people || []).map(p => ({ p, R: computeMonth((shifts || []).filter(s => s.user_id === p.id), month, S), am: (ams || []).find(a => a.user_id === p.id) }));
   const nowOn = (shifts || []).filter(s => s.status === 'open');
   const box = $('#ab'); if (!box) return;
   const { data: pShifts } = (pend || []).some(r => r.shift_id) ? await sb.from('shifts').select('*').in('id', pend.filter(r => r.shift_id).map(r => r.shift_id)) : { data: [] };
   box.innerHTML = `
-    ${(pend || []).length ? `<section><div class="sh-row"><h3 class="sh">בקשות לאישור</h3><span class="count">${pend.length}</span></div>
-      <div class="list">${pend.map(r => `<div class="card stack" style="gap:6px"><b>${esc(people.find(x => x.id === r.user_id)?.full_name || '')} · ${new Date(r.req_start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}</b>${reqLine(r, (pShifts || []).find(x => x.id === r.shift_id))}${decideBtns(r)}</div>`).join('')}</div></section>` : ''}
+    ${(pend || []).length + (pabs || []).length ? `<section><div class="sh-row"><h3 class="sh">בקשות לאישור</h3><span class="count">${(pend || []).length + (pabs || []).length}</span></div>
+      <div class="list">${(pabs || []).map(a => `<div class="card stack" style="gap:6px"><b>${esc(people.find(x => x.id === a.user_id)?.full_name || '')}</b>${absLine(a)}${absBtns(a)}</div>`).join('')}${(pend || []).map(r => `<div class="card stack" style="gap:6px"><b>${esc(people.find(x => x.id === r.user_id)?.full_name || '')} · ${new Date(r.req_start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}</b>${reqLine(r, (pShifts || []).find(x => x.id === r.shift_id))}${decideBtns(r)}</div>`).join('')}</div></section>` : ''}
     <section><div class="sh-row"><h3 class="sh">במשמרת עכשיו</h3><span class="count">${nowOn.length}</span></div>
       ${nowOn.length ? `<div class="list">${nowOn.map(s => { const p = people.find(x => x.id === s.user_id); return `<a class="lrow" href="#/attendance/${s.user_id}"><span class="cl-dot"></span><span class="grow"><b>${esc(p?.full_name || '')}</b><small>מ-${tm(s.start_at)} · ${hhmm((Date.now() - new Date(s.start_at)) / 36e5)} שעות${s.start_lat != null ? ` · <span class="maplink" data-ll="${s.start_lat},${s.start_lng}">מיקום כניסה</span>` : ' · בלי מיקום'}</small></span></a>`; }).join('')}</div>` : '<div class="muted small">אף אחד לא במשמרת כרגע</div>'}</section>
     <section><div class="sh-row"><h3 class="sh">סיכום חודשי</h3><button class="more" id="exp" style="border:0;background:none;cursor:pointer">ייצוא לחשבת השכר</button></div>
       <div class="list">${rows.map(({ p, R, am }) => `<a class="lrow" href="#/attendance/${p.id}/${month}"><span class="avatar sm">${esc(p.full_name.split(' ').map(w => w[0]).slice(0, 2).join(''))}</span><span class="grow"><b>${esc(p.full_name)}</b>
         <small>${R.totals.days} ימים · ${hhmm(R.totals.net)} שעות${R.totals.ot125 + R.totals.ot150 ? ` · נוספות ${hhmm(R.totals.ot125 + R.totals.ot150)}` : ''}${R.flags.length ? ` · ${R.flags.length} הערות` : ''}</small></span>
         <span class="pill ${am?.locked ? 'ok' : am?.worker_ok_at ? 'lime' : ''}">${am?.locked ? 'נעול' : am?.worker_ok_at ? 'העובד אישר' : R.totals.days ? 'פתוח' : '—'}</span></a>`).join('')}</div></section>
-    <div class="small muted">החישוב מסווג שעות לפי החוק (יומי ואז שבועי, 42 שעות). את הסכומים בכסף והתלוש מכינה חשבת השכר.</div>`;
-  bindDecide(box, () => renderAttendance(el, month));
+    <div class="small muted">החישוב מסווג שעות לפי החוק (יומי ואז שבועי, 42 שעות). הקובץ לשכר במבנה של קונקטים, עם פירוק 100/125/150. את התלוש מכינה הנהלת החשבונות.</div>`;
+  bindDecide(box, () => renderAttendance(el, month)); bindAbsDecide(box, () => renderAttendance(el, month));
   $$('.maplink', box).forEach(m => m.onclick = e => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.google.com/maps?q=${m.dataset.ll}`, '_blank'); });
-  $('#exp').onclick = () => {
-    const head = ['עובד', 'תאריך', 'יום', 'כניסה', 'יציאה', 'הפסקה (דק׳)', 'נטו', ...CATS.map(c => c[1]), 'לילה', 'חג', 'הערות'];
-    const lines = [head];
-    for (const { p, R } of rows) for (const d of R.days) lines.push([p.full_name, d.date, HE_DOW[new Date(d.date + 'T12:00').getDay()], d.shifts.map(s => tm(s.start_at)).join(' / '), d.shifts.map(s => tm(s.end_at)).join(' / '), Math.round(d.breakMin), d.netH, ...CATS.map(c => d[c[0]] || 0), d.isNight ? 'כן' : '', d.holiday || '', d.flags.join('; ')]);
-    lines.push([]); lines.push(['סיכום לעובד', '', '', '', '', '', 'נטו', ...CATS.map(c => c[1])]);
-    for (const { p, R } of rows) if (R.totals.days) lines.push([p.full_name, '', '', '', '', '', R.totals.net, ...CATS.map(c => R.totals[c[0]])]);
-    const csv = '﻿' + lines.map(r => r.map(x => `"${String(x ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `נוכחות-${month}.csv`; a.click();
-  };
+  $('#exp').onclick = () => exportXlsx(month, rows, mabs || [], rates || [], S);
+}
+
+// ---------- ייצוא לשכר (Excel, במבנה של קונקטים + פירוק לפי החוק) ----------
+async function loadXLSX() {
+  if (window.XLSX) return window.XLSX;
+  await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+  return window.XLSX;
+}
+async function exportXlsx(month, rows, abs, rates, S) {
+  toast('מכין קובץ…');
+  let X; try { X = await loadXLSX(); } catch { return toast('אין חיבור — נסו שוב'); }
+  const rateOf = id => rates.find(r => r.user_id === id)?.hourly_rate || null;
+  const [y, m] = month.split('-').map(Number), nDays = new Date(y, m, 0).getDate();
+  const H = v => v ? hhmm(v) : '';
+  const wb = X.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
+  const summary = [['שם העובד', 'ימי עבודה', 'סה״כ שעות עבודה', 'רגיל (100%)', 'נוספות 125%', 'נוספות 150%', 'שבת/חג', 'ימי חופשה', 'ימי מחלה', 'מילואים', 'חופש ללא תשלום', 'שכר שעתי', 'הערכת שכר (לפני ניכויים)', 'אישור עובד', 'אישור מנהל', 'הערות']];
+  for (const { p, R, am } of rows) {
+    const myAbs = abs.filter(a => a.user_id === p.id);
+    if (!R.totals.days && !myAbs.length) continue;
+    const rate = rateOf(p.id), byDate = Object.fromEntries(R.days.map(d => [d.date, d]));
+    const sheetRows = [['סוג', 'תאריך', 'יום', 'כניסה', 'יציאה', 'הפסקה (דק׳)', 'הערות עובד', 'הערות מנהל', 'סה״כ שעות', '100%', '125%', '150%', 'שבת/חג', 'שכר שעתי', 'שכר יומי (הערכה)', 'הערות מערכת']];
+    const absCount = { vacation: 0, sick: 0, reserve: 0, unpaid: 0, other: 0 };
+    for (let i = nDays; i >= 1; i--) {
+      const ds = `${month}-${String(i).padStart(2, '0')}`, dow = HE_DOW[new Date(ds + 'T12:00').getDay()], d = byDate[ds];
+      const a = myAbs.find(x => x.date_from <= ds && x.date_to >= ds);
+      if (d && d.netH) {
+        const special = (d.rest150 || 0) + (d.rest175 || 0) + (d.rest200 || 0) + (d.hol150 || 0) + (d.hol175 || 0) + (d.hol200 || 0);
+        const pay = rate ? (d.reg + d.ot125 * 1.25 + d.ot150 * 1.5 + (d.rest150 + d.hol150) * 1.5 + (d.rest175 + d.hol175) * 1.75 + (d.rest200 + d.hol200) * 2) * rate : '';
+        sheetRows.push(['עבודה רגילה', ds, dow, d.shifts.map(s => tm(s.start_at)).join(' / '), d.shifts.map(s => tm(s.end_at)).join(' / '), Math.round(d.breakMin) || '',
+          d.shifts.map(s => s.source === 'app' ? s.note : '').filter(Boolean).join('; '), d.shifts.map(s => s.source === 'manager' ? s.note : '').filter(Boolean).join('; '),
+          H(d.netH), H(d.reg), H(d.ot125), H(d.ot150), H(special), rate || '', pay ? Math.round(pay * 100) / 100 : '', d.flags.join('; ')]);
+      } else if (a) {
+        absCount[a.kind]++; sheetRows.push([ABS[a.kind], ds, dow, '', '', '', a.note || '', a.manager_reply || '', '', '', '', '', '', rate || '', '', '']);
+      } else sheetRows.push(['אין רישומים עבור יום זה', ds, dow, '', '', '', '', '', '', '', '', '', '', '', '', '']);
+    }
+    const T = R.totals, special = T.rest150 + T.rest175 + T.rest200 + T.hol150 + T.hol175 + T.hol200;
+    const est = rate ? Math.round((T.reg + T.ot125 * 1.25 + T.ot150 * 1.5 + (T.rest150 + T.hol150) * 1.5 + (T.rest175 + T.hol175) * 1.75 + (T.rest200 + T.hol200) * 2) * rate * 100) / 100 : '';
+    sheetRows.push([], ['סיכום החודש'], ['סה״כ שעות עבודה', H(T.net)], ['רגיל (100%)', H(T.reg)], ['שעות נוספות 125%', H(T.ot125)], ['שעות נוספות 150%', H(T.ot150)], ['שבת/חג', H(special)],
+      ['ימי חופשה', absCount.vacation || ''], ['ימי מחלה', absCount.sick || ''], ['מילואים', absCount.reserve || ''], ['חופש ללא תשלום', absCount.unpaid || ''],
+      ['שכר שעתי', rate || ''], ['הערכת שכר (לפני ניכויים)', est], [], ['החישוב: שעות נוספות יומיות ואז שבועיות (42), 2 ראשונות 125%, משם 150%. תקן יומי ' + S.day_norm + ' שעות, לילה ' + S.night_norm + '.']);
+    const ws = X.utils.aoa_to_sheet(sheetRows); ws['!cols'] = [18, 11, 8, 10, 10, 9, 24, 24, 10, 9, 9, 9, 9, 9, 13, 40].map(w => ({ wch: w })); ws['!views'] = [{ RTL: true }];
+    X.utils.book_append_sheet(wb, ws, p.full_name.slice(0, 30));
+    summary.push([p.full_name, T.days, H(T.net), H(T.reg), H(T.ot125), H(T.ot150), H(special), absCount.vacation || '', absCount.sick || '', absCount.reserve || '', absCount.unpaid || '', rate || '', est,
+      am?.worker_ok_at ? 'אישר' : 'לא אישר', am?.locked ? 'אושר ונעול' : 'לא אושר', R.flags.length ? `${R.flags.length} הערות` : '']);
+  }
+  const ws0 = X.utils.aoa_to_sheet(summary); ws0['!cols'] = [20, 9, 13, 11, 11, 11, 9, 9, 9, 9, 12, 9, 18, 10, 12, 12].map(w => ({ wch: w })); ws0['!views'] = [{ RTL: true }];
+  X.utils.book_append_sheet(wb, ws0, 'כלל העובדים'); wb.SheetNames.unshift(wb.SheetNames.pop());
+  X.writeFile(wb, `דוח-שעות-${month}.xlsx`);
 }
