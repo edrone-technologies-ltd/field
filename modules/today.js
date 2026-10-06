@@ -119,6 +119,7 @@ export async function renderDay(el, id) {
     return `<div class="card stack" style="gap:10px">
         <div class="kpis"><div class="kpi"><b>${hhmm(D.day.report_time) || '—'}</b><span>התייצבות</span></div><div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div><div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים מתוכנן</span></div></div>
         ${countdown()}
+        ${D.day.gust_max != null ? `<div class="wx ${D.day.weather_alerted ? 'bad' : ''}">${D.day.weather_alerted ? '⚠ ' : ''}תחזית לשעות העבודה: רוח עד ${D.day.wind_max} קמ"ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ"מ` : ''}</div>` : ''}
         <div class="small muted">צוות: ${esc(crew.join(' · ') || '—')}${D.day.drone ? ` · כלי: ${esc(D.day.drone.name)}` : ''}</div>
         <div class="row"><a class="btn ghost grow" href="https://waze.com/ul?q=${dest}&navigate=yes" target="_blank" rel="noopener">Waze</a><a class="btn ghost grow" href="https://www.google.com/maps/dir/?api=1&destination=${dest}" target="_blank" rel="noopener">Google Maps</a></div>
       </div>
@@ -152,7 +153,7 @@ export async function renderDay(el, id) {
       <div class="eqgrid">${req.map(x => `<button class="eqb" aria-pressed="${D.local.loaded.includes(x)}" data-eq="${esc(x)}">${esc(x)}</button>`).join('')}</div>`;
   }
   function sSite() {
-    const items = D.S.safety_checks || [];
+    const items = (D.S.safety_checks || []).concat(D.day.drone_id || D.day.method === 'רחפן' ? (D.S.preflight_checks || []) : []);
     const before = D.photos.filter(p => p.kind === 'before').length;
     return `${!D.day.arrived_at ? `<button class="btn primary block" id="arrive">הגענו לאתר</button>` : `<div class="small muted">הגעתם ב-${new Date(D.day.arrived_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div>`}
       <div class="sec"><h3>בדיקות בטיחות</h3>${items.map((t, i) => `<label class="tog"><span>${esc(t)}</span><span class="sw"><input type="checkbox" data-chk="${i}" ${D.local.checks[i] || D.checks.some(c => c.item === t && c.ok) ? 'checked' : ''}><i></i></span></label>`).join('')}</div>
@@ -197,6 +198,7 @@ export async function renderDay(el, id) {
       <div class="sec">${photoStrip('after', 'תמונות "אחרי"', 1)}</div>
       <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => `<div class="row"><span class="grow">${esc(c.profiles?.full_name || '')}</span><input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${C.hours[c.user_id] ?? ''}" style="width:96px;text-align:center"></div>`).join('')}</div>
       <div class="sec">
+        ${D.day.drone_id || D.day.method === 'רחפן' ? `<div class="row"><label class="field grow">מספר טיסות<input type="number" inputmode="numeric" min="0" id="fl" value="${C.flights ?? ''}"></label><label class="field grow">דקות אוויר<input type="number" inputmode="numeric" min="0" id="am" value="${C.air ?? ''}"></label></div>` : ''}
         <label class="tog"><span>הציוד חזר תקין</span><span class="sw"><input type="checkbox" id="eqok" ${C.equipment_ok ? 'checked' : ''}><i></i></span></label>
         <label class="tog"><span>עצירה בגלל מזג אוויר</span><span class="sw"><input type="checkbox" id="wth" ${C.weather ? 'checked' : ''}><i></i></span></label>
         <b>איכות העבודה היום</b><div class="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-q="${n}" aria-pressed="${C.quality >= n}">★</button>`).join('')}</div>
@@ -262,7 +264,7 @@ export async function renderDay(el, id) {
   function bindSite(bar) {
     const a = $('#arrive'); if (a) a.onclick = async () => { await save('work_days', { arrived_at: new Date().toISOString(), status: 'on_site' }); draw(); };
     $$('[data-chk]').forEach(c => c.onchange = () => { D.local.checks[c.dataset.chk] = c.checked; keep(); draw(); });
-    const items = D.S.safety_checks || [];
+    const items = (D.S.safety_checks || []).concat(D.day.drone_id || D.day.method === 'רחפן' ? (D.S.preflight_checks || []) : []);
     const allOk = items.every((t, i) => D.local.checks[i] || D.checks.some(c => c.item === t && c.ok));
     const before = D.photos.some(p => p.kind === 'before');
     bar.innerHTML = `<button class="btn primary" id="start" ${D.day.arrived_at && allOk && before ? '' : 'disabled'}>מתחילים לעבוד</button>`;
@@ -301,6 +303,7 @@ export async function renderDay(el, id) {
     $$('[data-g]').forEach(b => b.onclick = () => { gal.value = Math.max(0, (Number(gal.value) || 0) + Number(b.dataset.g)); gal.oninput(); });
     $$('.hrs').forEach(i => i.oninput = () => { C.hours[i.dataset.u] = i.value === '' ? null : Number(i.value); keep(); });
     $('#eqok').onchange = e => { C.equipment_ok = e.target.checked; keep(); };
+    const fl = $('#fl'), am = $('#am'); if (fl) { fl.oninput = () => { C.flights = fl.value === '' ? null : +fl.value; keep(); }; am.oninput = () => { C.air = am.value === '' ? null : +am.value; keep(); }; }
     $('#wth').onchange = e => { C.weather = e.target.checked; keep(); };
     $$('[data-q]').forEach(b => b.onclick = () => { C.quality = Number(b.dataset.q); keep(); draw(); });
     $('#tmr').oninput = e => { C.tomorrow = e.target.value; keep(); };
@@ -346,7 +349,7 @@ export async function renderDay(el, id) {
       D.day.work_day_crew.forEach(c => c.hours = C.hours[c.user_id]);
       await enqueue({ kind: 'rpc', fn: 'set_day_hours', args: { d: D.day.id, rows: D.day.work_day_crew.map(c => ({ user_id: c.user_id, role: c.role, hours: c.hours })) } });
       await save('work_days', { status: 'done', finished_at: now, ...extra, closed_at: now, material_used: C.material, gallons: C.gallons, work_types: C.work, equipment_ok: C.equipment_ok,
-        weather_stop: !!C.weather, quality: C.quality || null, notes: C.notes || null, tomorrow: C.tomorrow || null, signoff });
+        weather_stop: !!C.weather, quality: C.quality || null, flights: C.flights ?? null, air_minutes: C.air ?? null, notes: C.notes || null, tomorrow: C.tomorrow || null, signoff });
       D.local = { stage: null, checks: {}, loaded: null }; await keep();
       celebrate(); draw();
     };

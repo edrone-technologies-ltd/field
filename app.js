@@ -61,7 +61,7 @@ function renderMenu() {
     ['#/myfile', 'clipboard', 'התיק שלי', 'תלושי שכר ומסמכים אישיים'],
     isManager() && ['#/staff', 'users', 'עובדים', 'פרטים, שכר, שעות, מסמכים ותלושים'],
     isManager() && ['#/attendance', 'clock', 'נוכחות צוות', 'מי במשמרת, בקשות לאישור, סיכום וייצוא לשכר'],
-    can('purchase') && ['#/purchase', 'report', 'רכש ומלאי', 'בקשת רכש לאישור ומצב מלאי'],
+    can('purchase') && ['#/purchase', 'report', 'רכש ומלאי', 'בקשת רכש ומצב מלאי'],
     can('specs') && ['#/specs', 'clipboard', 'אפיונים', 'סיורי אפיון לפי אתר ומבנה'],
     can('equipment') && ['#/equipment', 'wrench', 'ציוד', 'צי, ציוד ותקלות'],
     isManager() && ['#/reports', 'report', 'דוחות שטח', 'כל דוחות הביצוע עם תמונות'],
@@ -80,7 +80,7 @@ function renderMenu() {
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 19</div>
+      <div class="foot">E-Drone שטח · גרסה 20</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
