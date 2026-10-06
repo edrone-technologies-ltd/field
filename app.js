@@ -81,7 +81,7 @@ function renderMenu() {
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 21</div>
+      <div class="foot">E-Drone שטח · גרסה 22</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
@@ -140,6 +140,7 @@ async function routeInner() {
     case 'hours': return (await import('./modules/attendance.js')).renderHours(app, null, h[1]);
     case 'attendance': { const m = await import('./modules/attendance.js'); if (h[1] === 'm' || !h[1]) return m.renderAttendance(app, h[2]); return m.renderHours(app, h[1], h[2]); }
     case 'purchase': if (guard('purchase')) return (await import('./modules/purchase.js')).renderPurchase(app); return;
+    case 'client-report': return (await import('./modules/clientreport.js')).renderClientReport(app, h[1]);
     case 'expenses': return (await import('./modules/expenses.js')).renderExpenses(app);
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
     case 'staff': case 'files': { const m = await import('./modules/staff.js'); return h[1] ? m.renderEmployee(app, h[1], h[2]) : m.renderStaff(app); }

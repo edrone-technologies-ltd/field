@@ -232,6 +232,7 @@ export async function renderProject(el, id, tab = 'o') {
       <div id="labor"></div>
       ${sign ? `<div class="card"><div class="eyebrow">חתימת לקוח</div><b>${esc(sign.name || '')}</b>${sign.role ? ' · ' + esc(sign.role) : ''}<div class="small muted">${sign.satisfied ? 'מרוצה' : 'לא מרוצה'}${sign.notes ? ' · ' + esc(sign.notes) : ''}</div><div id="sgimg"></div></div>` : ''}
       <h3>לפני / אחרי</h3><div class="photos" id="gal"><div class="skel" style="width:100%"></div></div>
+      ${M ? `<a class="btn ghost block" href="#/client-report/${id}">${icon('report', 18)} דוח ללקוח (PDF)</a>` : ''}
       ${M && !cs ? `<button class="btn primary block" id="cls">סגירת פרויקט</button><div class="small muted">הסגירה מקבעת את הסיכום. הסטטוס נקבע במשרד.</div>` : ''}`;
     if (M) laborBlock();
     const { data: ph } = await sb.from('photos').select('kind,storage_path,work_day_id').eq('project_id', id).in('kind', ['before', 'after']).order('created_at');
