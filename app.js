@@ -69,7 +69,7 @@ function renderMenu() {
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 9</div>
+      <div class="foot">E-Drone שטח · גרסה 10</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
@@ -125,6 +125,8 @@ async function routeInner() {
     case 'inbox': return (await import('./modules/inbox.js')).renderInbox(app);
     case 'c': return (await import('./modules/inbox.js')).renderConversation(app, h[1]);
     case 'menu': case 'me': return renderMenu();
+    case 'signoff': return (await import('./modules/reports.js')).renderSignoff(app, h[1]);
+    case 'summary': return (await import('./modules/reports.js')).renderSummary(app, h[1]);
     case 'day': return (await import('./modules/today.js')).renderDay(app, h[1]);
     case 'projects': if (guard('projects')) return (await import('./modules/projects.js')).renderProjects(app); return;
     case 'p': if (guard('projects')) return (await import('./modules/projects.js')).renderProject(app, h[1], h[2] || 'o'); return;

@@ -19,7 +19,7 @@ export async function renderEquipment(el) {
     const by = {}; rows.forEach(r => (by[r.kind] ||= []).push(r));
     $('#el').innerHTML = Object.entries(KIND).filter(([k]) => by[k]).map(([k, t]) => `<div class="group-h">${t}</div><div class="list">${by[k].map(r => {
       const h = HEALTH[r.health] || ['', '']; const open = iss.filter(i => i.equipment_id === r.id && i.status === 'open').length;
-      return `<button class="item" data-e="${r.id}"><span class="dot ${h[1]}"></span><span class="t"><b>${esc(r.name)}</b><small>${h[0]}${r.health_date ? ' · נבדק ' + dm(r.health_date) : ''}${open ? ` · ${open} תקלות פתוחות` : ''}${r.monday_label ? ' · ממאנדי' : ''}</small></span></button>`;
+      return `<button class="item" data-e="${r.id}"><span class="dot ${h[1]}"></span><span class="t"><b>${esc(r.name)}</b><small>${h[0]}${r.health_date ? ' · נבדק ' + dm(r.health_date) : ''}${open ? ` · ${open} תקלות פתוחות` : ''}</small></span></button>`;
     }).join('')}</div>`).join('') + (M ? `<button class="btn ghost block" id="add">+ פריט ציוד</button>` : '') + (rows.length ? '' : '<div class="empty">אין ציוד רשום.</div>');
     $$('[data-e]').forEach(b => b.onclick = () => detail(rows.find(r => r.id === b.dataset.e)));
     const a = $('#add'); if (a) a.onclick = addItem;
@@ -30,7 +30,7 @@ export async function renderEquipment(el) {
     sheet(`<div class="row"><h3 class="grow">${esc(r.name)}</h3><span class="pill ${h[1]}">${h[0]}</span></div>
       ${r.serial ? `<div class="small muted">מספר סידורי ${esc(r.serial)}</div>` : ''}
       ${r.health_detail || r.health_note ? `<div class="note" style="white-space:pre-line">${esc(r.health_detail || r.health_note)}</div>` : ''}
-      ${fromMonday ? '<div class="small muted">המצב מתעדכן מלוח בריאות הצי במאנדי (בדיקת לוגים). שינוי ידני נעשה שם.</div>'
+      ${fromMonday ? '<div class="small muted">המצב מתעדכן אוטומטית מבדיקת הלוגים של הכלי.</div>'
         : M ? `<div class="chips">${Object.entries(HEALTH).map(([k, v]) => `<button class="chip" data-h="${k}" aria-pressed="${r.health === k}">${v[0]}</button>`).join('')}</div>` : ''}
       <b>תקלות</b>${mine.map(i => `<div class="feed"><span class="pill ${i.status === 'open' ? 'warn' : 'ok'}">${i.status === 'open' ? 'פתוחה' : 'טופלה'}</span><span class="grow"><b>${esc(i.body)}</b><small>${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span></div>`).join('') || '<div class="small muted">אין תקלות רשומות.</div>'}
       <textarea id="eb" placeholder="דיווח תקלה בציוד הזה"></textarea>
@@ -46,7 +46,7 @@ export async function renderEquipment(el) {
   function addItem() {
     sheet(`<h3>פריט ציוד חדש</h3><select id="ak">${Object.entries(KIND).filter(([k]) => k !== 'drone').map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select>
       <input type="text" id="an" placeholder="שם (למשל: משאבה 2, טויוטה 12-345-67)"><input type="text" id="as" placeholder="מספר סידורי (לא חובה)">
-      <div class="small muted">רחפנים נוספים דרך לוח בריאות הצי במאנדי.</div>
+      <div class="small muted">רחפנים חדשים נוספים במשרד.</div>
       <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="ago">הוספה</button></div>`, (s, close) => {
       $('#ago', s).onclick = async () => {
         const name = $('#an', s).value.trim(); if (!name) return toast('חסר שם');

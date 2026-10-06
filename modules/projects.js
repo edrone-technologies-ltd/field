@@ -63,7 +63,7 @@ export async function renderProject(el, id, tab = 'o') {
   } catch { D = await cache.get(ck); }
   if (!D) { el.innerHTML = `<div class="empty">הפרויקט לא נמצא.</div>`; return; }
   const p = D.p, M = isManager();
-  const TABS = [['o', 'סקירה'], ['t', 'תכנית'], ['d', 'ימים'], ['c', "צ'אט"], ['s', 'סיכום']];
+  const TABS = [['o', 'סקירה'], ['t', 'תכנית'], ['d', 'דוחות'], ['c', "צ'אט"], ['s', 'סיכום']];
   const openIss = D.issues.filter(i => i.status === 'open').length;
 
   const coverUrl = p.cover_path ? (await signedUrls('media', [p.cover_path]).catch(() => ({})))[p.cover_path] : null;
@@ -78,7 +78,8 @@ export async function renderProject(el, id, tab = 'o') {
   function renderTab(t) {
     document.querySelectorAll('.bar,.composer').forEach(x => x.remove());
     const box = $('#pb');
-    ({ o: overview, t: plan, d: daysTab, c: chat, s: summary }[t] || overview)(box);
+    if (t === 'd') { import('./reports.js').then(m => m.reportsTab(box, D, { reload, schedule: scheduleSheet })); return; }
+    ({ o: overview, t: plan, c: chat, s: summary }[t] || overview)(box);
     bindCopy(box);
   }
 
@@ -103,13 +104,13 @@ export async function renderProject(el, id, tab = 'o') {
         ${kv('pin', 'אתר', s ? esc(s.name) + (s.address ? ` <span class="muted small">· ${esc(s.address)}</span>` : '') : '<span class="muted">לא משויך — משייכים כדי לבנות תכנית מהאפיון</span>', M ? 'site' : '')}
         ${s?.contact_phone ? `<div class="lrow kv"><span class="mic">${icon('users', 19)}</span><span class="grow"><small>איש קשר באתר</small><b>${esc(s.contact_name || '')} <span class="muted small" dir="ltr">${esc(s.contact_phone)}</span></b></span><a class="btn primary sm" href="tel:+972${tel}">חיוג</a></div>` : ''}
         ${kv('clipboard', 'דגשים לצוות', p.work_notes ? esc(p.work_notes) : '<span class="muted">אין דגשים</span>', M ? 'notes' : '')}
-        ${p.summary ? kv('chat', 'תמונת ביצוע (מאנדי)', esc(p.summary)) : ''}
+        ${p.summary ? kv('chat', 'תמונת ביצוע', esc(p.summary)) : ''}
         ${f ? kv('shield', 'כספים', `${f.price_net ? '₪' + nf(f.price_net) + ' נטו' : '—'}${f.gross_pct ? ` · רווח ${nf(f.gross_pct)}%` : ''}${f.payment_status ? ' · ' + esc(f.payment_status) : ''}`) : ''}
         ${s && can('specs') ? `<a class="lrow kv" href="#/site/${esc(s.slug)}"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>אפיון האתר</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
       </div>
       <div id="gal"></div>
       ${D.reps.length ? `<section><h3 class="sh">דוחות שטח</h3><div class="list">${D.reps.slice(0, 4).map(r => `<div class="rep compact"><span class="grow"><b>${dm(r.report_date)}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}${r.hours ? ` · ${nf(r.hours)} שעות` : ''}</b><small>${esc([r.crew, r.work].filter(Boolean).join(' · '))}</small>${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}</span>${r.had_issues ? '<span class="pill warn">תקלה</span>' : ''}</div>`).join('')}</div></section>` : ''}
-      ${p.monday_item_id ? `<a class="more center" href="https://edroneil-force.monday.com/boards/5099780041/pulses/${esc(p.monday_item_id)}" target="_blank" rel="noopener">פתיחת הפרויקט במאנדי</a>` : ''}`;
+      ${M && p.monday_item_id ? `<a class="more center" href="https://edroneil-force.monday.com/boards/5099780041/pulses/${esc(p.monday_item_id)}" target="_blank" rel="noopener">פתיחת הפרויקט במאנדי</a>` : ''}`;
     const phs = D.reps.flatMap(r => (r.photos || []).filter(Boolean).map(x => ({ x, d: r.report_date })));
     if (phs.length) signedUrls('media', phs.map(o => o.x)).then(u => { const g = $('#gal'); if (g) { g.innerHTML = `<section><h3 class="sh">מהשטח</h3><div class="gallery">${phs.slice(0, 9).map(o => `<button data-z="${esc(u[o.x])}"><img src="${esc(u[o.x])}" alt="" loading="lazy"><span>${dm(o.d)}</span></button>`).join('')}</div></section>`; $$('[data-z]', g).forEach(b => b.onclick = () => zoom(b.dataset.z, '')); } });
     $$('[data-x]', box).forEach(b => b.onclick = () => closeIssue(b.dataset.x, () => overview(box)));
@@ -182,7 +183,7 @@ export async function renderProject(el, id, tab = 'o') {
     const leads = D.team.filter(x => ['crew_lead', 'ops_manager', 'admin'].includes(x.role));
     sheet(`<h3>שיבוץ ימי עבודה</h3>
       <label class="field">מתחילים ב-<input type="date" id="sd" value="${start}"></label>
-      <label class="field">מספר ימים<small>${D.tasks.length ? 'לפי התכנית' : 'אין תכנית — לפי מאנדי'}. שישי ושבת מדולגים</small><input type="number" id="sn" min="1" value="${maxDay}"></label>
+      <label class="field">מספר ימים<small>${D.tasks.length ? 'לפי התכנית' : 'אין תכנית — לפי ימי השטח המתוכננים'}. שישי ושבת מדולגים</small><input type="number" id="sn" min="1" value="${maxDay}"></label>
       <label class="field">ראש צוות<select id="sl">${leads.map(x => `<option value="${x.id}">${esc(x.full_name)}</option>`).join('')}</select></label>
       <div class="field">צוות<div class="chips">${D.team.map(x => `<button class="chip" data-u="${x.id}" aria-pressed="false">${esc(x.full_name)}</button>`).join('')}</div></div>
       <label class="field">רחפן<select id="sdr"><option value="">בלי רחפן</option>${D.drones.map(x => `<option value="${x.id}">${esc(x.name)}${x.health === 'grounded' ? ' — מקורקע' : x.health === 'warning' ? ' — במעקב' : ''}</option>`).join('')}</select></label>
@@ -202,7 +203,7 @@ export async function renderProject(el, id, tab = 'o') {
 
   // ----- צ'אט צוות -----
   async function chat(box) {
-    box.innerHTML = `<div class="small muted">צ'אט הצוות של הפרויקט. רק מי ששובץ לפרויקט רואה אותו. הודעה שסומנה "!" עוברת גם לעדכונים בפריט במאנדי.</div><div id="cx"></div>`;
+    box.innerHTML = `<div class="small muted">צ'אט הצוות של הפרויקט. רק מי ששובץ לפרויקט רואה אותו. הודעה שסומנה "!" דורשת אישור קריאה ועוברת גם למשרד.</div><div id="cx"></div>`;
     (await import('./chat.js')).renderChat($('#cx'), { project: p });
   }
 
@@ -230,7 +231,7 @@ export async function renderProject(el, id, tab = 'o') {
       <div class="kpis"><div class="kpi"><b>${D.tasks.filter(t => t.status === 'done').length}/${D.tasks.filter(t => t.status !== 'dropped').length}</b><span>משימות</span></div><div class="kpi"><b>${D.issues.length}</b><span>תקלות</span></div><div class="kpi"><b>${D.tasks.filter(t => t.is_extra).length}</b><span>תוספות מהלקוח</span></div></div>
       ${sign ? `<div class="card"><div class="eyebrow">חתימת לקוח</div><b>${esc(sign.name || '')}</b>${sign.role ? ' · ' + esc(sign.role) : ''}<div class="small muted">${sign.satisfied ? 'מרוצה' : 'לא מרוצה'}${sign.notes ? ' · ' + esc(sign.notes) : ''}</div><div id="sgimg"></div></div>` : ''}
       <h3>לפני / אחרי</h3><div class="photos" id="gal"><div class="skel" style="width:100%"></div></div>
-      ${M && !cs ? `<button class="btn primary block" id="cls">סגירת פרויקט</button><div class="small muted">הסגירה מקבעת את הסיכום. הסטטוס במאנדי מתעדכן במאנדי.</div>` : ''}`;
+      ${M && !cs ? `<button class="btn primary block" id="cls">סגירת פרויקט</button><div class="small muted">הסגירה מקבעת את הסיכום. הסטטוס נקבע במשרד.</div>` : ''}`;
     const { data: ph } = await sb.from('photos').select('kind,storage_path,work_day_id').eq('project_id', id).in('kind', ['before', 'after']).order('created_at');
     const urls = await signedUrls('field', [...(ph || []).map(x => x.storage_path), ...(sign?.signature_path ? [sign.signature_path] : [])]);
     $('#gal').innerHTML = (ph || []).map(x => `<button class="ph" data-z="${esc(urls[x.storage_path])}"><img src="${esc(urls[x.storage_path])}" alt="" loading="lazy"><span class="q">${x.kind === 'before' ? 'לפני' : 'אחרי'}</span></button>`).join('') || '<div class="muted small">אין עדיין תמונות לפני/אחרי.</div>';

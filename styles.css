@@ -374,3 +374,7 @@ a.btn{text-decoration:none}
 .must .mb{font-size:1rem;line-height:1.45;white-space:pre-line}
 .net{cursor:pointer}
 .dayrow{display:flex;flex-direction:column;gap:6px}
+.qa{display:grid;grid-template-columns:2fr 1fr;gap:10px}.qa .btn{min-height:56px}
+.btn.big{min-height:58px;font-size:1.05rem}
+.rep-ph.warnbg{background:var(--warnbg);color:var(--warn)} .rep-ph.okbg{background:var(--okbg);color:var(--ok)}
+button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit}

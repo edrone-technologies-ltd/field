@@ -47,7 +47,7 @@ export async function renderChat(el, { site, project, conversation }) {
       const showWho = !me && (m.author_id !== lastAuthor || d !== lastDay);
       lastDay = d; lastAuthor = m.author_id;
       return `${sep}<div class="msg ${me ? 'me' : ''} ${m.important ? 'imp' : ''} ${showWho ? '' : 'cont'}">
-        ${showWho ? `<div class="who">${esc(m.author_label || names.get(m.author_id) || '')}${m.source === 'monday' ? ' · ממאנדי' : ''}</div>` : ''}
+        ${showWho ? `<div class="who">${esc(m.author_label || names.get(m.author_id) || '')}${m.source === 'monday' ? ' · מהמשרד' : ''}</div>` : ''}
         ${m.important ? '<div class="impl">חשוב</div>' : ''}
         ${m.photo_path ? `<img src="${esc(urls[m.photo_path] || '')}" alt="" data-z="${esc(urls[m.photo_path] || '')}">` : ''}
         ${m.body ? `<div class="tx">${esc(m.body).replace(/\n/g, '<br>')}</div>` : ''}

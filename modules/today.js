@@ -51,7 +51,12 @@ export async function renderDay(el, id) {
       sb.from('profiles').select('id,full_name,phone,role').eq('is_active', true),
     ]);
     if (error) throw error;
-    D = { day, tasks: tasks || [], checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
+    let allTasks = tasks || [];
+    if (day.kind === 'report') {   // דוח יומי: אפשר לסמן כל משימה פתוחה של הפרויקט
+      const { data: open } = await sb.from('tasks').select('*').eq('project_id', day.project_id).in('status', ['todo', 'in_progress', 'blocked']).order('day_no', { nullsFirst: false }).order('seq');
+      allTasks = allTasks.concat((open || []).filter(t => !allTasks.some(x => x.id === t.id)));
+    }
+    D = { day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
     await cache.set(ck, D);
   } catch { D = await cache.get(ck); }
   if (!D) { el.innerHTML = `<div class="empty">היום לא נמצא, או שאין קליטה ועוד לא נפתח בטלפון הזה.</div>`; return; }
@@ -63,9 +68,11 @@ export async function renderDay(el, id) {
   const insert = async (table, row) => { await enqueue({ kind: 'insert', table, row }); await keep(); };
   const go = () => draw();
 
+  const REPORT = D.day.kind === 'report';
   function stage() {
     const d = D.day;
     if (d.status === 'done') return 5;
+    if (REPORT) return 4;
     if (D.local.stage === 4 || d.finished_at) return 4;
     if (['working', 'issue'].includes(d.status)) return 3;
     if (d.arrived_at || d.status === 'on_site' || d.departed_at) return 2;
@@ -85,9 +92,9 @@ export async function renderDay(el, id) {
     const s = stage();
     return `<div class="phero sm"><span class="img" style="background-image:url('${coverUrl || coverArt(P.name || '')}')"></span>
         <a class="back glass" href="#/" onclick="if(history.length>1){history.back();return false}" aria-label="חזרה">${icon('back', 20)}</a>
-        <span class="ph-bottom"><span class="row" style="gap:6px"><span class="chip-dark">${dayLabel(D.day.day)}${D.day.is_last_day ? ' · יום אחרון' : ''}</span>${statusPill(D.day)}</span>
+        <span class="ph-bottom"><span class="row" style="gap:6px"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${dayLabel(D.day.day)}${D.day.is_last_day ? ' · יום אחרון' : ''}</span>${statusPill(D.day)}</span>
         <b>${esc(P.name || '')}</b>${D.day.day_goal ? `<small>${esc(D.day.day_goal)}</small>` : ''}</span></div>
-      <ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? '✓' : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`;
+      ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? '✓' : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`}`;
   }
   function photoStrip(kind, label, min = 0) {
     const mine = D.photos.filter(p => p.kind === kind);
@@ -172,16 +179,23 @@ export async function renderDay(el, id) {
       notes: D.day.notes || '', weather: D.day.weather_stop, hours: Object.fromEntries(D.day.work_day_crew.map(c => [c.user_id, c.hours ?? defHours()])),
       tomorrow: D.day.tomorrow ?? D.tasks.filter(t => !['done', 'dropped'].includes(t.status)).map(t => t.title).join(' · '),
       sign: { name: site.contact_name || '', role: '', satisfied: true, notes: '' },
+      start: D.day.arrived_at ? hm(D.day.arrived_at) : '07:00', end: D.day.finished_at ? hm(D.day.finished_at) : (D.day.day === isoDay() ? hm(new Date().toISOString()) : '15:00'),
+      crew: D.day.work_day_crew.map(c => c.user_id),
     };
     const C = D.local.close, done = D.tasks.filter(t => t.status === 'done').length, tot = D.tasks.filter(t => t.status !== 'dropped').length;
     const chips = (key, list, multi) => `<div class="chips">${list.map(x => `<button class="chip" data-c="${key}" data-v="${esc(x)}" data-m="${multi ? 1 : ''}" aria-pressed="${multi ? C[key].includes(x) : C[key] === x}">${esc(x)}</button>`).join('')}</div>`;
-    return `<div class="card row"><div class="ring" style="--p:${tot ? Math.round(done / tot * 100) : 0}"><b>${done}/${tot}</b></div><div class="grow"><b>משימות שבוצעו היום</b><div class="small muted">${tot - done ? `${tot - done} עוברות למחר` : 'הכל בוצע'}</div></div></div>
+    const reportTop = !REPORT ? '' : `<div class="sec"><h3>מתי ומי</h3>
+        <div class="row"><label class="field grow">התחלה<input type="time" id="rs" value="${C.start}"></label><label class="field grow">סיום<input type="time" id="re" value="${C.end}"></label></div>
+        <b>מי עבד</b><div class="chips">${D.team.filter(u => ['crew_lead', 'crew', 'ops_manager', 'admin'].includes(u.role)).map(u => `<button class="chip" data-crew="${u.id}" aria-pressed="${C.crew.includes(u.id)}" ${u.id === D.day.crew_lead_id ? 'disabled' : ''}>${esc(u.full_name)}</button>`).join('')}</div></div>
+      ${D.tasks.length ? `<div class="sec"><h3>מה בוצע מהתכנית</h3><div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-rt="${t.id}"><span class="tick">${t.status === 'done' ? '✓' : ''}</span><span class="t"><b>${esc(t.title)}</b><small>${esc(t.phase || '')}</small></span></button>`).join('')}</div></div>` : ''}
+      <div class="sec">${photoStrip('before', 'תמונות "לפני"')}</div>`;
+    return reportTop + (REPORT ? '' : `<div class="card row"><div class="ring" style="--p:${tot ? Math.round(done / tot * 100) : 0}"><b>${done}/${tot}</b></div><div class="grow"><b>משימות שבוצעו היום</b><div class="small muted">${tot - done ? `${tot - done} עוברות למחר` : 'הכל בוצע'}</div></div></div>`) + `
       <div class="sec"><b>חומר</b>${chips('material', D.S.materials || ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'])}
         <b>גלונים</b><div class="stepper"><button type="button" data-g="-0.5">−</button><input class="days grow" id="gal" type="number" inputmode="decimal" step="0.5" min="0" value="${C.gallons}"><button type="button" data-g="0.5">+</button></div>
         ${D.day.gallons_planned ? `<div class="small muted">מתוכנן: ${nf(D.day.gallons_planned)}</div>` : ''}
         <b>סוג העבודה</b>${chips('work', D.S.work_types || [], true)}</div>
       <div class="sec">${photoStrip('after', 'תמונות "אחרי"', 1)}</div>
-      <div class="sec"><h3>שעות צוות</h3>${D.day.work_day_crew.map(c => `<div class="row"><span class="grow">${esc(c.profiles?.full_name || '')}</span><input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${C.hours[c.user_id] ?? ''}" style="width:96px;text-align:center"></div>`).join('')}</div>
+      <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => `<div class="row"><span class="grow">${esc(c.profiles?.full_name || '')}</span><input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${C.hours[c.user_id] ?? ''}" style="width:96px;text-align:center"></div>`).join('')}</div>
       <div class="sec">
         <label class="tog"><span>הציוד חזר תקין</span><span class="sw"><input type="checkbox" id="eqok" ${C.equipment_ok ? 'checked' : ''}><i></i></span></label>
         <label class="tog"><span>עצירה בגלל מזג אוויר</span><span class="sw"><input type="checkbox" id="wth" ${C.weather ? 'checked' : ''}><i></i></span></label>
@@ -196,10 +210,15 @@ export async function renderDay(el, id) {
         <div class="row"><b class="grow">חתימה</b><button class="chip" id="sclr" type="button">ניקוי</button></div>
         <canvas id="sig" class="sig"></canvas></div>` : ''}`;
   }
+  function crewRows() {
+    if (!REPORT) return D.day.work_day_crew;
+    const C = D.local.close;
+    return C.crew.map(u => D.day.work_day_crew.find(c => c.user_id === u) || { user_id: u, role: 'crew', profiles: { full_name: D.team.find(x => x.id === u)?.full_name || '' } });
+  }
   function sDone() {
     const d = D.day, hrs = d.work_day_crew.reduce((s, c) => s + Number(c.hours || 0), 0);
-    return `<div class="card stack" style="text-align:center;gap:6px"><div class="big-ok">✓</div><h2>היום נסגר</h2>
-        <div class="muted">${d.monday_item_id ? 'הדוח נקלט במאנדי' : 'הדוח יעבור למאנדי בדקות הקרובות'}</div></div>
+    return `<div class="card stack" style="text-align:center;gap:6px"><div class="big-ok">✓</div><h2>${REPORT ? 'הדוח נשלח' : 'היום נסגר'}</h2>
+        <div class="muted">${d.monday_item_id ? 'הדוח התקבל במשרד' : 'הדוח נשלח למשרד'}</div></div>
       <div class="kpis"><div class="kpi"><b>${D.tasks.filter(t => t.status === 'done').length}/${D.tasks.length}</b><span>משימות</span></div><div class="kpi"><b>${d.gallons != null ? nf(d.gallons) : '—'}</b><span>גלונים</span></div><div class="kpi"><b>${hrs ? nf(hrs) : '—'}</b><span>שעות צוות</span></div></div>
       ${d.tomorrow ? `<div class="note"><b>למחר:</b> ${esc(d.tomorrow)}</div>` : ''}
       ${d.signoff ? `<div class="card"><div class="eyebrow">חתימת לקוח</div><b>${esc(d.signoff.name || '')}</b> ${d.signoff.role ? '· ' + esc(d.signoff.role) : ''}<div class="small muted">${d.signoff.satisfied ? 'מרוצה' : 'לא מרוצה'}${d.signoff.notes ? ' · ' + esc(d.signoff.notes) : ''}</div></div>` : ''}
@@ -286,18 +305,28 @@ export async function renderDay(el, id) {
     $$('[data-q]').forEach(b => b.onclick = () => { C.quality = Number(b.dataset.q); keep(); draw(); });
     $('#tmr').oninput = e => { C.tomorrow = e.target.value; keep(); };
     $('#nts').oninput = e => { C.notes = e.target.value; keep(); };
+    if (REPORT) {
+      const span = () => { const [a, b] = [C.start, C.end].map(x => x.split(':').map(Number)); const h = Math.max(0, (b[0] * 60 + b[1] - a[0] * 60 - a[1]) / 60); return Math.round(h * 2) / 2; };
+      const setAll = () => { C.crew.forEach(u => C.hours[u] = span()); keep(); draw(); };
+      $('#rs').onchange = e => { C.start = e.target.value; setAll(); };
+      $('#re').onchange = e => { C.end = e.target.value; setAll(); };
+      $$('[data-crew]').forEach(b => b.onclick = () => { const u = b.dataset.crew; if (C.crew.includes(u)) C.crew.splice(C.crew.indexOf(u), 1); else { C.crew.push(u); C.hours[u] = span(); } keep(); draw(); });
+      $$('[data-rt]').forEach(b => b.onclick = async () => { const t = D.tasks.find(x => x.id === b.dataset.rt); const on = t.status !== 'done';
+        t.status = on ? 'done' : 'todo'; await save('tasks', on ? { status: 'done', work_day_id: D.day.id, done_by: state.user.id, done_at: new Date().toISOString() } : { status: 'todo' }, t.id); draw(); });
+    }
     let sig;
     if (D.day.is_last_day) {
       ['sn', 'sr', 'snt'].forEach(k => $('#' + k).oninput = e => { C.sign[{ sn: 'name', sr: 'role', snt: 'notes' }[k]] = e.target.value; keep(); });
       $('#ss').onchange = e => { C.sign.satisfied = e.target.checked; keep(); };
       sig = pad($('#sig'), C.sign.img, url => { C.sign.img = url; keep(); }); $('#sclr').onclick = () => { sig.clear(); C.sign.img = null; keep(); };
     }
-    bar.innerHTML = `<button class="btn ghost" id="bk">חזרה לעבודה</button><button class="btn primary" id="close">סגירת יום ושליחה</button>`;
-    bar.querySelector('#bk').onclick = () => { D.local.stage = null; keep(); draw(); };
+    bar.innerHTML = REPORT ? `<button class="btn primary" id="close">שליחת הדוח</button>` : `<button class="btn ghost" id="bk">חזרה לעבודה</button><button class="btn primary" id="close">סגירת יום ושליחה</button>`;
+    if (!REPORT) bar.querySelector('#bk').onclick = () => { D.local.stage = null; keep(); draw(); };
     bar.querySelector('#close').onclick = async () => {
       if (!D.photos.some(p => p.kind === 'after')) return toast('חסרה לפחות תמונת "אחרי" אחת');
       if (C.gallons == null) return toast('חסר: כמות גלונים');
-      if (D.day.work_day_crew.some(c => C.hours[c.user_id] == null)) return toast('חסרות שעות לחלק מהצוות');
+      if (REPORT && C.start >= C.end) return toast('שעת הסיום לפני שעת ההתחלה');
+      if (crewRows().some(c => C.hours[c.user_id] == null)) return toast('חסרות שעות לחלק מהצוות');
       let signoff = null;
       if (D.day.is_last_day) {
         if (!C.sign.name.trim()) return toast('חסר: שם החותם');
@@ -308,8 +337,15 @@ export async function renderDay(el, id) {
       }
       const b = bar.querySelector('#close'); b.disabled = true; b.textContent = 'שולח…';
       const now = new Date().toISOString();
-      for (const c of D.day.work_day_crew) { c.hours = C.hours[c.user_id]; await enqueue({ kind: 'insert', table: 'work_day_crew', row: { work_day_id: D.day.id, user_id: c.user_id, role: c.role, hours: c.hours, clock_out: now } }); }
-      await save('work_days', { status: 'done', finished_at: now, closed_at: now, material_used: C.material, gallons: C.gallons, work_types: C.work, equipment_ok: C.equipment_ok,
+      const extra = {};
+      if (REPORT) {
+        await enqueue({ kind: 'rpc', fn: 'set_day_crew', args: { d: D.day.id, users: C.crew.filter(u => u !== D.day.crew_lead_id) } });
+        D.day.work_day_crew = crewRows();
+        extra.arrived_at = new Date(`${D.day.day}T${C.start}`).toISOString(); extra.finished_at = new Date(`${D.day.day}T${C.end}`).toISOString();
+      }
+      D.day.work_day_crew.forEach(c => c.hours = C.hours[c.user_id]);
+      await enqueue({ kind: 'rpc', fn: 'set_day_hours', args: { d: D.day.id, rows: D.day.work_day_crew.map(c => ({ user_id: c.user_id, role: c.role, hours: c.hours })) } });
+      await save('work_days', { status: 'done', finished_at: now, ...extra, closed_at: now, material_used: C.material, gallons: C.gallons, work_types: C.work, equipment_ok: C.equipment_ok,
         weather_stop: !!C.weather, quality: C.quality || null, notes: C.notes || null, tomorrow: C.tomorrow || null, signoff });
       D.local = { stage: null, checks: {}, loaded: null }; await keep();
       celebrate(); draw();
@@ -359,10 +395,11 @@ export async function renderDay(el, id) {
   draw();
 }
 
+const hm = iso => new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
 const kindHe = k => ({ equipment: 'ציוד', site: 'אתר', safety: 'בטיחות', near_miss: 'כמעט תאונה', other: 'אחר' }[k] || k);
 
 // חתימת אצבע
-function pad(cv, initial, onSave) {
+export function pad(cv, initial, onSave) {
   const r = cv.getBoundingClientRect(), dpr = devicePixelRatio || 1;
   cv.width = r.width * dpr; cv.height = r.height * dpr;
   const x = cv.getContext('2d'); x.scale(dpr, dpr); x.lineWidth = 2.4; x.lineCap = 'round'; x.strokeStyle = '#111';
