@@ -87,7 +87,6 @@ export async function renderHome(el) {
       <a class="avatar" href="#/menu" aria-label="החשבון שלי">${esc(initials(p.full_name))}</a></header>
     <div id="hm" class="stack lg"><div class="skel tall"></div><div class="skel"></div><div class="skel"></div></div>`;
   const d = await load(); const box = $('#hm'); if (!box) return;
-  setTimeout(() => window.__pushCard?.($('#hm')), 300);
   const t = today(), P = d.projects || [];
   const cov = await covers(P);
   const byId = new Map(P.map(x => [x.id, x]));
@@ -104,7 +103,7 @@ export async function renderHome(el) {
     box.innerHTML = `${myDay || empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
       ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId)).join('')}</div></section>` : ''}
       ${inboxPeek(d)}`;
-    return;
+    extras(); return;
   }
 
   const A = alerts(d);
@@ -145,6 +144,7 @@ export async function renderHome(el) {
   const pick = i => { $$('#wk .wd').forEach(b => b.setAttribute('aria-pressed', b.dataset.i == i)); const x = week[i];
     $('#wkday').innerHTML = x.items.length ? x.items.map(evRow).join('') : `<div class="ev none">אין עבודה מתוכננת ${i == 0 ? 'היום' : 'ביום הזה'}</div>`; };
   $$('#wk .wd').forEach(b => b.onclick = () => pick(+b.dataset.i));
+  extras();
   pick(week[0].items.length ? 0 : Math.max(0, week.findIndex(x => x.items.length)));
 }
 const dayRow = (w, byId) => `<a class="lrow" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
@@ -190,4 +190,21 @@ export async function renderReports(el) {
     return `<a class="rep" ${r.project_id ? `href="#/p/${r.project_id}"` : ''}>${ph ? `<img src="${esc(u[ph])}" alt="" loading="lazy">` : `<span class="rep-ph">${icon('report', 22)}</span>`}<span class="grow"><b>${esc(r.project_label || 'בלי פרויקט')}</b>
       <small>${dm(r.report_date)}${r.crew ? ' · ' + esc(r.crew) : ''}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}</small>
       ${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : r.work ? `<small>${esc(r.work)}</small>` : ''}</span>${r.had_issues ? '<span class="pill warn">תקלה</span>' : ''}</a>`; }).join('') || '<div class="empty">אין דוחות.</div>';
+}
+
+// תוספות בראש המסך אחרי שהוא צויר: הודעות לאישור, הפעלת התראות
+function extras() { pendingAcks(); window.__pushCard?.($('#hm')); }
+// הודעות חשובות שמחכות לאישור שלי — בראש המסך, עד שמאשרים
+async function pendingAcks() {
+  let rows = []; try { const { data } = await sb.rpc('my_pending_acks'); rows = data || []; } catch { return; }
+  const box = $('#hm'); if (!box || !rows.length) return;
+  const wrap = document.createElement('div'); wrap.className = 'stack'; wrap.style.gap = '10px';
+  wrap.innerHTML = rows.slice(0, 3).map(m => `<div class="must" data-m="${m.id}"><div class="mh"><span class="pill warn">חשוב · לאישור</span><small>${esc(m.author || '')} · ${esc(m.title || '')}</small></div>
+    <div class="mb">${esc(m.body || 'תמונה')}</div><div class="row-btns"><a class="btn ghost sm" href="${m.conversation_id ? '#/c/' + m.conversation_id : '#/p/' + m.project_id + '/c'}">לשיחה</a><button class="btn primary sm" data-ok="${m.id}">קראתי ואישרתי</button></div></div>`).join('');
+  box.prepend(wrap);
+  $$('[data-ok]', wrap).forEach(b => b.onclick = async () => {
+    b.disabled = true; const { enqueue } = await import('../lib/core.js');
+    await enqueue({ kind: 'insert', table: 'message_acks', row: { message_id: b.dataset.ok, user_id: state.user.id } });
+    b.closest('.must').remove();
+  });
 }
