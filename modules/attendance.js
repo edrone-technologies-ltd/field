@@ -1,6 +1,7 @@
 // נוכחות: כניסה/יציאה בלחיצה (מיקום רק ברגע ההחתמה), השעות שלי, ונוכחות צוות למנהלים (תיקון עם יומן, אישור ונעילה, ייצוא לחשבת השכר).
 import { sb, state, isManager, cache, enqueue, sheet, uid, icon, $, $$, esc, toast, confirmBox, ask, HE_DOW, HE_D1, dm } from '../lib/core.js';
 import { computeMonth, inShabbat, CATS, hhmm, ymd, DEFAULTS } from '../lib/labor.js';
+import { estimatePay, PAY_TYPES } from '../lib/pay.js';
 
 let SETTINGS = null;
 async function settings() {
@@ -299,11 +300,12 @@ async function loadXLSX() {
 async function exportXlsx(month, rows, abs, rates, S) {
   toast('מכין קובץ…');
   let X; try { X = await loadXLSX(); } catch { return toast('אין חיבור — נסו שוב'); }
-  const rateOf = id => rates.find(r => r.user_id === id)?.hourly_rate || null;
+  const payOf = id => rates.find(r => r.user_id === id) || null;
+  const rateOf = id => { const r = payOf(id); return r?.pay_type === 'hourly' || (!r?.pay_type && r?.hourly_rate) ? Number(r.hourly_rate) : null; };
   const [y, m] = month.split('-').map(Number), nDays = new Date(y, m, 0).getDate();
   const H = v => v ? hhmm(v) : '';
   const wb = X.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] };
-  const summary = [['שם העובד', 'ימי עבודה', 'סה״כ שעות עבודה', 'רגיל (100%)', 'נוספות 125%', 'נוספות 150%', 'שבת/חג', 'ימי חופשה', 'ימי מחלה', 'מילואים', 'חופש ללא תשלום', 'שכר שעתי', 'הערכת שכר (לפני ניכויים)', 'אישור עובד', 'אישור מנהל', 'הערות']];
+  const summary = [['שם העובד', 'סוג העסקה', 'ימי עבודה', 'סה״כ שעות עבודה', 'רגיל (100%)', 'נוספות 125%', 'נוספות 150%', 'שבת/חג', 'ימי חופשה', 'ימי מחלה', 'מילואים', 'חופש ללא תשלום', 'שכר שעתי', 'הערכת שכר (לפני ניכויים)', 'אישור עובד', 'אישור מנהל', 'הערות']];
   for (const { p, R, am } of rows) {
     const myAbs = abs.filter(a => a.user_id === p.id);
     if (!R.totals.days && !myAbs.length) continue;
@@ -324,16 +326,16 @@ async function exportXlsx(month, rows, abs, rates, S) {
       } else sheetRows.push(['אין רישומים עבור יום זה', ds, dow, '', '', '', '', '', '', '', '', '', '', '', '']);
     }
     const T = R.totals, special = T.rest150 + T.rest175 + T.rest200 + T.hol150 + T.hol175 + T.hol200;
-    const est = rate ? Math.round((T.reg + T.ot125 * 1.25 + T.ot150 * 1.5 + (T.rest150 + T.hol150) * 1.5 + (T.rest175 + T.hol175) * 1.75 + (T.rest200 + T.hol200) * 2) * rate * 100) / 100 : '';
+    const E = estimatePay(T, payOf(p.id)), est = E ? Math.round(E.total * 100) / 100 : '';
     sheetRows.push([], ['סיכום החודש'], ['סה״כ שעות עבודה', H(T.net)], ['רגיל (100%)', H(T.reg)], ['שעות נוספות 125%', H(T.ot125)], ['שעות נוספות 150%', H(T.ot150)], ['שבת/חג', H(special)],
       ['ימי חופשה', absCount.vacation || ''], ['ימי מחלה', absCount.sick || ''], ['מילואים', absCount.reserve || ''], ['חופש ללא תשלום', absCount.unpaid || ''],
-      ['שכר שעתי', rate || ''], ['הערכת שכר (לפני ניכויים)', est], [], ['החישוב: שעות נוספות יומיות ואז שבועיות (42), 2 ראשונות 125%, משם 150%. תקן יומי ' + S.day_norm + ' שעות, לילה ' + S.night_norm + '.']);
+      ['סוג העסקה', PAY_TYPES[payOf(p.id)?.pay_type] || ''], ['שכר שעתי', rate || (E ? Math.round(E.hourly * 100) / 100 + ' (משכורת/182)' : '')], ...(E?.type !== 'hourly' && E ? [['משכורת בסיס', E.base], ['גלובלי / נוספות', Math.round(E.ot)]] : []), ['הערכת שכר (לפני ניכויים)', est], ...(E?.notes || []).map(n => ['שים לב', n]), [], ['החישוב: שעות נוספות יומיות ואז שבועיות (42), 2 ראשונות 125%, משם 150%. תקן יומי ' + S.day_norm + ' שעות, לילה ' + S.night_norm + '.']);
     const ws = X.utils.aoa_to_sheet(sheetRows); ws['!cols'] = [18, 11, 8, 10, 10, 24, 24, 10, 9, 9, 9, 9, 9, 13, 40].map(w => ({ wch: w })); ws['!views'] = [{ RTL: true }];
     X.utils.book_append_sheet(wb, ws, p.full_name.slice(0, 30));
-    summary.push([p.full_name, T.days, H(T.net), H(T.reg), H(T.ot125), H(T.ot150), H(special), absCount.vacation || '', absCount.sick || '', absCount.reserve || '', absCount.unpaid || '', rate || '', est,
-      am?.worker_ok_at ? 'אישר' : 'לא אישר', am?.locked ? 'אושר ונעול' : 'לא אושר', R.flags.length ? `${R.flags.length} הערות` : '']);
+    summary.push([p.full_name, PAY_TYPES[payOf(p.id)?.pay_type] || '', T.days, H(T.net), H(T.reg), H(T.ot125), H(T.ot150), H(special), absCount.vacation || '', absCount.sick || '', absCount.reserve || '', absCount.unpaid || '', rate || '', est,
+      am?.worker_ok_at ? 'אישר' : 'לא אישר', am?.locked ? 'אושר ונעול' : 'לא אושר', [R.flags.length ? `${R.flags.length} הערות` : '', ...(E?.notes || [])].filter(Boolean).join(' · ')]);
   }
-  const ws0 = X.utils.aoa_to_sheet(summary); ws0['!cols'] = [20, 9, 13, 11, 11, 11, 9, 9, 9, 9, 12, 9, 18, 10, 12, 12].map(w => ({ wch: w })); ws0['!views'] = [{ RTL: true }];
+  const ws0 = X.utils.aoa_to_sheet(summary); ws0['!cols'] = [20, 10, 9, 13, 11, 11, 11, 9, 9, 9, 9, 12, 9, 18, 10, 12, 12].map(w => ({ wch: w })); ws0['!views'] = [{ RTL: true }];
   X.utils.book_append_sheet(wb, ws0, 'כלל העובדים'); wb.SheetNames.unshift(wb.SheetNames.pop());
   X.writeFile(wb, `דוח-שעות-${month}.xlsx`);
 }
