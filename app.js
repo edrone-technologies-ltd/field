@@ -31,6 +31,16 @@ function renderLogin(msg = '') {
 // ---------- בית ----------
 function greeting() { const h = new Date().getHours(); return h < 5 ? 'לילה טוב' : h < 12 ? 'בוקר טוב' : h < 17 ? 'צהריים טובים' : h < 21 ? 'ערב טוב' : 'לילה טוב'; }
 async function renderHome() {
+  if (can('home')) {
+    const m = await import('./modules/home.js'); await m.renderHome(app);
+    const tiles = $('#tiles'); const mine = state.modules.filter(k => MODS[k]);
+    if (tiles && mine.length) tiles.innerHTML = `<h3 style="margin-bottom:8px">מודולים</h3><div class="modules">${mine.map(k => `<button class="mod" data-h="${MODS[k].href}"><span class="ic">${icon(MODS[k].icon)}</span><b>${MODS[k].title}</b><small>${MODS[k].sub}</small></button>`).join('')}</div><div id="install"></div>`;
+    $$('.mod').forEach(x => x.onclick = () => location.hash = x.dataset.h);
+    installHint(); return;
+  }
+  return renderHomeBasic();
+}
+async function renderHomeBasic() {
   const p = state.profile, first = (p.full_name || '').split(' ')[0];
   const mine = state.modules.filter(m => MODS[m]);
   app.innerHTML = `<div class="top"><img class="mark" src="mark.png" alt="E-Drone"><span class="grow"></span>
@@ -59,7 +69,7 @@ async function focusSpecs() {
 }
 function renderMe() {
   const p = state.profile;
-  app.innerHTML = `<div class="top"><button class="back" onclick="location.hash='#/';renderHomeAgain()">→ בית</button></div>
+  app.innerHTML = `<div class="top"><button class="back" onclick="location.hash='#/'">→ בית</button></div>
     <div class="stack"><div class="row"><span class="avatar" style="width:56px;height:56px;font-size:1.3rem">${esc(initials(p.full_name))}</span><div><h2>${esc(p.full_name)}</h2><div class="muted">${esc(ROLE_HE[p.role])} · ${esc(p.phone || '')}</div></div></div>
     ${p.is_pilot ? `<div class="card"><div class="eyebrow">רישיון מטיס</div><b>${esc(p.pilot_license_no || '')}</b>${p.pilot_license_expiry ? `<div class="${new Date(p.pilot_license_expiry) - Date.now() < 45 * 864e5 ? 'err' : 'muted'}">בתוקף עד ${new Date(p.pilot_license_expiry).toLocaleDateString('he-IL')}</div>` : ''}</div>` : ''}
     <div class="card"><div class="eyebrow">תצוגה</div><div class="chips" style="margin-top:8px">${[['', 'לפי הטלפון'], ['dark', 'כהה'], ['light', 'בהיר']].map(([v, l]) => `<button class="chip" data-th="${v}" aria-pressed="${(document.documentElement.dataset.theme || '') === v}">${l}</button>`).join('')}</div></div>
@@ -91,6 +101,9 @@ async function routeInner() {
   if (h[0] === 'specs' && guard('specs')) return (await import('./modules/specs.js')).renderSites(app);
   if (h[0] === 'site' && guard('specs')) return (await import('./modules/specs.js')).renderSite(app, h[1], h[2] === 'chat' ? 'c' : 'b');
   if (h[0] === 'b' && guard('specs')) return (await import('./modules/specs.js')).renderBuilding(app, h[1], h[2]);
+  if (h[0] === 'me') return renderMe();
+  if (h[0] === 'p' && guard('home')) return (await import('./modules/home.js')).renderProject(app, h[1]);
+  if (h[0] === 'reports' && guard('home')) return (await import('./modules/home.js')).renderReports(app);
   if (h[0] === 'admin' && guard('admin')) return (await import('./modules/admin.js')).renderAdmin(app);
 }
 
