@@ -372,3 +372,4 @@ a.btn{text-decoration:none}
 .must{padding:14px;border-radius:18px;background:var(--warnbg);border:1px solid color-mix(in srgb,var(--warn) 50%,transparent);display:flex;flex-direction:column;gap:8px}
 .must .mh{display:flex;align-items:center;gap:8px} .must .mh small{color:var(--muted);font-size:.8rem}
 .must .mb{font-size:1rem;line-height:1.45;white-space:pre-line}
+.net{cursor:pointer}
