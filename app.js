@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast } from './lib/core.js';
 
 const app = $('#app');
 // לשוניות תחתונות — מוצגות לפי ההרשאות
@@ -65,14 +65,34 @@ function renderMenu() {
       ${rows.length ? `<div class="menu">${rows.map(([h, ic, t, s]) => `<a class="row" href="${h}"><span class="mic">${icon(ic, 20)}</span><span class="grow"><b>${t}</b><small>${s}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
       <div class="menu"><div class="row"><span class="mic">${icon('sun', 20)}</span><span class="grow"><b>תצוגה</b></span>
         <span class="seg">${[['', 'אוטומטי'], ['light', 'בהיר'], ['dark', 'כהה']].map(([v, l]) => `<button data-th="${v}" aria-pressed="${th === v}">${l}</button>`).join('')}</span></div>
+        <div class="row" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="row" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 4</div>
+      <div class="foot">E-Drone שטח · גרסה 5</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
-  installHint();
+  installHint(); pushRow();
 }
+const PUSH_TXT = { on: 'פועלות — הודעות, שיבוצים ותקלות קריטיות', off: 'כבויות', denied: 'נחסמו בהגדרות הטלפון. מפעילים שם: הגדרות ← התראות ← E-Drone', install: 'קודם מתקינים במסך הבית, ואז אפשר להפעיל', unsupported: 'הטלפון לא תומך. צריך iOS 16.4 ומעלה' };
+async function pushRow() {
+  const st = await pushState().catch(() => 'unsupported'); const t = $('#pushtxt'), b = $('#pushbtn'); if (!t) return;
+  t.textContent = PUSH_TXT[st];
+  b.innerHTML = st === 'off' ? '<button class="btn primary sm">הפעלה</button>' : st === 'on' ? '<span class="pill ok">פועל</span>' : '';
+  const btn = b.querySelector('button'); if (btn) btn.onclick = async () => { btn.disabled = true; try { await enablePush(); toast('ההתראות הופעלו'); } catch (e) { toast(e.message); } pushRow(); };
+}
+export async function pushCard(box) {
+  try { if (localStorage.getItem('edrone-push-dismiss')) return; } catch {}
+  const st = await pushState().catch(() => 'unsupported');
+  if (!['off', 'install'].includes(st) || !box) return;
+  const c = document.createElement('div'); c.className = 'promo';
+  c.innerHTML = `<span class="mic">${icon('chat', 20)}</span><span class="grow"><b>${st === 'off' ? 'להפעיל התראות?' : 'מתקינים את האפליקציה'}</b><small>${st === 'off' ? 'כדי לדעת מיד על הודעה, שיבוץ או תקלה' : (/iphone|ipad/i.test(navigator.userAgent) ? 'בספארי: שיתוף ← "הוסף למסך הבית". אחר כך אפשר להפעיל התראות' : 'מוסיפים למסך הבית, ואז אפשר להפעיל התראות')}</small></span>
+    ${st === 'off' ? '<button class="btn primary sm" id="pc-on">הפעלה</button>' : ''}<button class="x" id="pc-x" aria-label="סגירה">×</button>`;
+  box.prepend(c);
+  $('#pc-x').onclick = () => { c.remove(); try { localStorage.setItem('edrone-push-dismiss', '1'); } catch {} };
+  const on = $('#pc-on'); if (on) on.onclick = async () => { try { await enablePush(); c.remove(); toast('ההתראות הופעלו'); } catch (e) { toast(e.message); } };
+}
+window.__pushCard = pushCard;
 function setTheme(v) { if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; try { localStorage.setItem('edrone-theme', v); } catch {} }
 let deferredInstall;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; installHint(); });

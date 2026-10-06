@@ -1,5 +1,5 @@
 // Service worker: האפליקציה נפתחת גם בלי קליטה, ותמונות שכבר נצפו זמינות מהטלפון.
-const VERSION = 'edrone-field-v4';
+const VERSION = 'edrone-field-v5';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'lib/core.js', 'lib/store.js',
   'modules/specs.js', 'modules/chat.js', 'modules/admin.js', 'modules/home.js', 'modules/today.js', 'modules/projects.js', 'modules/equipment.js', 'modules/inbox.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png'];
 
@@ -27,4 +27,19 @@ self.addEventListener('fetch', e => {
     e.respondWith(fresh.then(r => { if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); } return r; })
       .catch(() => caches.match(e.request).then(h => h || caches.match('index.html'))));
   }
+});
+
+// ---------- התראות ----------
+self.addEventListener('push', e => {
+  let d = {}; try { d = e.data.json(); } catch { d = { title: 'E-Drone שטח', body: e.data?.text() || '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'E-Drone שטח', {
+    body: d.body || '', icon: 'icon-192.png', badge: 'icon-192.png', dir: 'rtl', lang: 'he', tag: d.tag, renotify: !!d.tag, data: { url: d.url || './' } }));
+});
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const url = e.notification.data?.url || './';
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ws => {
+    for (const w of ws) { if ('focus' in w) { w.navigate(url).catch(() => {}); return w.focus(); } }
+    return clients.openWindow(url);
+  }));
 });

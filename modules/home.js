@@ -87,6 +87,7 @@ export async function renderHome(el) {
       <a class="avatar" href="#/menu" aria-label="החשבון שלי">${esc(initials(p.full_name))}</a></header>
     <div id="hm" class="stack lg"><div class="skel tall"></div><div class="skel"></div><div class="skel"></div></div>`;
   const d = await load(); const box = $('#hm'); if (!box) return;
+  setTimeout(() => window.__pushCard?.($('#hm')), 300);
   const t = today(), P = d.projects || [];
   const cov = await covers(P);
   const byId = new Map(P.map(x => [x.id, x]));
