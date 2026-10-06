@@ -1,7 +1,7 @@
 // Service worker: האפליקציה נפתחת גם בלי קליטה, ותמונות שכבר נצפו זמינות מהטלפון.
-const VERSION = 'edrone-field-v18';
+const VERSION = 'edrone-field-v19';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'lib/core.js', 'lib/store.js',
-  'modules/specs.js', 'modules/chat.js', 'modules/admin.js', 'modules/home.js', 'modules/today.js', 'modules/projects.js', 'modules/equipment.js', 'modules/inbox.js', 'modules/reports.js', 'modules/attendance.js', 'lib/labor.js', 'lib/pay.js', 'modules/files.js', 'modules/staff.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png'];
+  'modules/specs.js', 'modules/chat.js', 'modules/admin.js', 'modules/home.js', 'modules/today.js', 'modules/projects.js', 'modules/equipment.js', 'modules/inbox.js', 'modules/reports.js', 'modules/attendance.js', 'lib/labor.js', 'lib/pay.js', 'modules/files.js', 'modules/staff.js', 'modules/purchase.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
