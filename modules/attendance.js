@@ -68,18 +68,13 @@ export async function clockIn(after) {
 }
 export async function clockOut(open, after) {
   const mins = Math.round((Date.now() - new Date(open.start_at)) / 6e4);
-  let brk = 0, free = false;
   sheet(`<h3>יציאה מהמשמרת</h3><div class="kpis"><div class="kpi"><b>${tm(open.start_at)}</b><span>כניסה</span></div><div class="kpi"><b>${tm(new Date().toISOString())}</b><span>יציאה</span></div><div class="kpi"><b>${hhmm(mins / 60)}</b><span>משך</span></div></div>
-    <b>הפסקה</b><div class="chips">${[0, 15, 30, 45, 60].map(m => `<button class="chip" data-b="${m}" aria-pressed="${m === 0}">${m ? m + ' דק׳' : 'בלי'}</button>`).join('')}</div>
-    <label class="tog"><span>בזמן ההפסקה יכולתי לעזוב את האתר<small class="muted" style="display:block">רק הפסקה כזו מנוכה מהשעות</small></span><span class="sw"><input type="checkbox" id="bf"><i></i></span></label>
     <input type="text" id="bn" placeholder="הערה (לא חובה)">
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="bo">יציאה</button></div>`, (s, close) => {
-    $$('[data-b]', s).forEach(b => b.onclick = () => { brk = +b.dataset.b; $$('[data-b]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); });
-    $('#bf', s).onchange = e => free = e.target.checked;
     $('#bo', s).onclick = async () => {
       $('#bo', s).disabled = true; $('#bo', s).textContent = 'מאתר מיקום…';
       const loc = await locateOnce();
-      const patch = { end_at: new Date().toISOString(), end_lat: loc?.lat ?? null, end_lng: loc?.lng ?? null, end_acc: loc?.acc ?? null, break_min: free ? brk : 0, status: 'closed', note: [$('#bn', s).value.trim(), brk && !free ? `הפסקה ${brk} דק׳ באתר (בתשלום)` : ''].filter(Boolean).join(' · ') || null };
+      const patch = { end_at: new Date().toISOString(), end_lat: loc?.lat ?? null, end_lng: loc?.lng ?? null, end_acc: loc?.acc ?? null, status: 'closed', note: $('#bn', s).value.trim() || null };
       await enqueue({ kind: 'update', table: 'shifts', rowId: open.id, patch }); await cache.set('open-shift', null);
       close(); toast('יצאת מהמשמרת'); after && after();
     };
@@ -113,7 +108,6 @@ function requestSheet(sh, month, done) {
     <div class="small muted">השינוי יישלח למנהל, ויתעדכן בשעות רק אחרי שיאשר.</div>
     <label class="field">תאריך<input type="date" id="rd" value="${day}" ${sh ? 'disabled' : ''}></label>
     <div class="row"><label class="field grow">כניסה<input type="time" id="rs" value="${sh ? tm(sh.start_at) : '07:00'}"></label><label class="field grow">יציאה<input type="time" id="re" value="${sh?.end_at ? tm(sh.end_at) : ''}"></label></div>
-    <label class="field">הפסקה שבה יכולתי לעזוב (דקות)<input type="number" id="rb" min="0" value="${sh?.break_min || 0}"></label>
     <label class="field">סיבה (חובה)<textarea id="rr" rows="2" placeholder="למשל: שכחתי להחתים יציאה, יצאתי ב-16:30"></textarea></label>
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="ro">שליחה לאישור</button></div>`, (s, close) => {
     $('#ro', s).onclick = async () => {
@@ -122,7 +116,7 @@ function requestSheet(sh, month, done) {
       if (!reason) return toast('חובה לכתוב סיבה');
       const a = new Date(`${d}T${st}:00`); let b = new Date(`${d}T${en}:00`); if (b <= a) b = new Date(+b + 864e5);
       if (b > new Date(Date.now() + 5 * 6e4)) return toast('אי אפשר לדווח שעה עתידית');
-      const { error } = await sb.from('shift_requests').insert({ user_id: state.user.id, shift_id: sh?.id || null, req_start: a.toISOString(), req_end: b.toISOString(), req_break: +$('#rb', s).value || 0, reason });
+      const { error } = await sb.from('shift_requests').insert({ user_id: state.user.id, shift_id: sh?.id || null, req_start: a.toISOString(), req_end: b.toISOString(), req_break: 0, reason });
       if (error) return toast(error.message, 4000);
       close(); toast('נשלח לאישור המנהל'); done && done();
     };
@@ -131,7 +125,7 @@ function requestSheet(sh, month, done) {
 const REQ_ST = { pending: ['ממתין לאישור', 'warn'], approved: ['אושר', 'ok'], rejected: ['נדחה', 'bad'] };
 function reqLine(r, sh) {
   const [t, c] = REQ_ST[r.status];
-  return `<div class="req ${c}"><div class="row"><span class="pill ${c}">${t}</span><small class="grow">${r.shift_id ? 'עריכה' : 'משמרת שלא הוחתמה'}: ${tm(r.req_start)}–${tm(r.req_end)}${r.req_break ? ` · הפסקה ${r.req_break}` : ''}${sh ? ` (במקום ${tm(sh.start_at)}–${sh.end_at ? tm(sh.end_at) : 'פתוחה'})` : ''}</small></div>
+  return `<div class="req ${c}"><div class="row"><span class="pill ${c}">${t}</span><small class="grow">${r.shift_id ? 'עריכה' : 'משמרת שלא הוחתמה'}: ${tm(r.req_start)}–${tm(r.req_end)}${sh ? ` (במקום ${tm(sh.start_at)}–${sh.end_at ? tm(sh.end_at) : 'פתוחה'})` : ''}</small></div>
     <div class="small">סיבה: ${esc(r.reason)}</div>${r.manager_reply ? `<div class="small mreply">תגובת המנהל: ${esc(r.manager_reply)}</div>` : ''}</div>`;
 }
 function bindDecide(root, reload) {
@@ -212,7 +206,7 @@ export async function renderHours(el, userId, month) {
     ${R.flags.length ? `<section><h3 class="sh">לתשומת לב</h3><div class="alist">${R.flags.map(f => `<div class="arow warn"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small style="white-space:normal;color:var(--ink)">${esc(f)}</small></span></div>`).join('')}</div></section>` : ''}
     <section><h3 class="sh">לפי ימים</h3><div class="list">${R.days.map(d => `<div class="lrow dayline"><span class="datebox"><b>${+d.date.slice(8)}</b><small>יום ${HE_D1[new Date(d.date + 'T12:00').getDay()]}</small></span>
       <span class="grow"><b>${d.shifts.map(s => `${tm(s.start_at)}–${s.end_at ? tm(s.end_at) : 'פתוחה'}${s.start_lat == null && s.source === 'app' ? ' ⌀' : ''}`).join(' · ')}</b>
-      <small>${hhmm(d.netH)} שעות${d.ot125 + d.ot150 ? ` · נוספות ${hhmm(d.ot125 + d.ot150)}` : ''}${d.isNight ? ' · לילה' : ''}${d.holiday ? ' · ' + d.holiday : ''}${d.breakMin ? ` · הפסקה ${Math.round(d.breakMin)} דק׳` : ''}</small></span>
+      <small>${hhmm(d.netH)} שעות${d.ot125 + d.ot150 ? ` · נוספות ${hhmm(d.ot125 + d.ot150)}` : ''}${d.isNight ? ' · לילה' : ''}${d.holiday ? ' · ' + d.holiday : ''}</small></span>
       ${me && !locked && !d.shifts.some(x => byShift(x.id).some(r => r.status === 'pending')) ? `<button class="chip" data-req="${d.shifts[0].id}">עריכה</button>` : !me && isManager() && !locked ? `<button class="chip" data-edit="${d.shifts[0].id}">תיקון</button>` : ''}</div>
       ${d.shifts.flatMap(x => byShift(x.id).filter(r => r.status === 'pending' || Date.now() - new Date(r.decided_at) < 30 * 864e5).map(r => reqLine(r, x) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : ''))).join('')}`).join('') || '<div class="muted small">אין משמרות בחודש הזה</div>'}
       ${pendingNew.map(r => reqLine(r) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : '')).join('')}</div>
@@ -241,13 +235,12 @@ export async function renderHours(el, userId, month) {
     sheet(`<h3>${sh ? 'תיקון משמרת' : 'הוספת משמרת'}</h3>
       <label class="field">תאריך<input type="date" id="ed" value="${day}"></label>
       <div class="row"><label class="field grow">כניסה<input type="time" id="es" value="${sh ? tm(sh.start_at) : '07:00'}"></label><label class="field grow">יציאה<input type="time" id="ee" value="${sh?.end_at ? tm(sh.end_at) : '16:00'}"></label></div>
-      <label class="field">הפסקה מנוכה (דקות)<input type="number" id="eb" value="${sh?.break_min || 0}" min="0"></label>
       <label class="field">סיבה (חובה — נשמר ביומן)<input type="text" id="er" placeholder="למשל: שכח להחתים יציאה, אושר מול ראש הצוות"></label>
       <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="eo">שמירה</button></div>`, (s, close) => {
       $('#eo', s).onclick = async () => {
         const d = $('#ed', s).value, st = new Date(`${d}T${$('#es', s).value}:00`), en0 = new Date(`${d}T${$('#ee', s).value}:00`);
         const en = en0 <= st ? new Date(+en0 + 864e5) : en0;   // יציאה אחרי חצות = למחרת
-        const { error } = await sb.rpc('manager_set_shift', { sid: sh?.id || null, uid: userId, s: st.toISOString(), e: en.toISOString(), brk: +$('#eb', s).value || 0, reason: $('#er', s).value });
+        const { error } = await sb.rpc('manager_set_shift', { sid: sh?.id || null, uid: userId, s: st.toISOString(), e: en.toISOString(), brk: 0, reason: $('#er', s).value });
         if (error) return toast(error.message, 4000); close(); toast('נשמר'); reload();
       };
     });
@@ -315,7 +308,7 @@ async function exportXlsx(month, rows, abs, rates, S) {
     const myAbs = abs.filter(a => a.user_id === p.id);
     if (!R.totals.days && !myAbs.length) continue;
     const rate = rateOf(p.id), byDate = Object.fromEntries(R.days.map(d => [d.date, d]));
-    const sheetRows = [['סוג', 'תאריך', 'יום', 'כניסה', 'יציאה', 'הפסקה (דק׳)', 'הערות עובד', 'הערות מנהל', 'סה״כ שעות', '100%', '125%', '150%', 'שבת/חג', 'שכר שעתי', 'שכר יומי (הערכה)', 'הערות מערכת']];
+    const sheetRows = [['סוג', 'תאריך', 'יום', 'כניסה', 'יציאה', 'הערות עובד', 'הערות מנהל', 'סה״כ שעות', '100%', '125%', '150%', 'שבת/חג', 'שכר שעתי', 'שכר יומי (הערכה)', 'הערות מערכת']];
     const absCount = { vacation: 0, sick: 0, reserve: 0, unpaid: 0, other: 0 };
     for (let i = nDays; i >= 1; i--) {
       const ds = `${month}-${String(i).padStart(2, '0')}`, dow = HE_DOW[new Date(ds + 'T12:00').getDay()], d = byDate[ds];
@@ -323,19 +316,19 @@ async function exportXlsx(month, rows, abs, rates, S) {
       if (d && d.netH) {
         const special = (d.rest150 || 0) + (d.rest175 || 0) + (d.rest200 || 0) + (d.hol150 || 0) + (d.hol175 || 0) + (d.hol200 || 0);
         const pay = rate ? (d.reg + d.ot125 * 1.25 + d.ot150 * 1.5 + (d.rest150 + d.hol150) * 1.5 + (d.rest175 + d.hol175) * 1.75 + (d.rest200 + d.hol200) * 2) * rate : '';
-        sheetRows.push(['עבודה רגילה', ds, dow, d.shifts.map(s => tm(s.start_at)).join(' / '), d.shifts.map(s => tm(s.end_at)).join(' / '), Math.round(d.breakMin) || '',
+        sheetRows.push(['עבודה רגילה', ds, dow, d.shifts.map(s => tm(s.start_at)).join(' / '), d.shifts.map(s => tm(s.end_at)).join(' / '),
           d.shifts.map(s => s.source === 'app' ? s.note : '').filter(Boolean).join('; '), d.shifts.map(s => s.source === 'manager' ? s.note : '').filter(Boolean).join('; '),
           H(d.netH), H(d.reg), H(d.ot125), H(d.ot150), H(special), rate || '', pay ? Math.round(pay * 100) / 100 : '', d.flags.join('; ')]);
       } else if (a) {
-        absCount[a.kind]++; sheetRows.push([ABS[a.kind], ds, dow, '', '', '', a.note || '', a.manager_reply || '', '', '', '', '', '', rate || '', '', '']);
-      } else sheetRows.push(['אין רישומים עבור יום זה', ds, dow, '', '', '', '', '', '', '', '', '', '', '', '', '']);
+        absCount[a.kind]++; sheetRows.push([ABS[a.kind], ds, dow, '', '', a.note || '', a.manager_reply || '', '', '', '', '', '', rate || '', '', '']);
+      } else sheetRows.push(['אין רישומים עבור יום זה', ds, dow, '', '', '', '', '', '', '', '', '', '', '', '']);
     }
     const T = R.totals, special = T.rest150 + T.rest175 + T.rest200 + T.hol150 + T.hol175 + T.hol200;
     const est = rate ? Math.round((T.reg + T.ot125 * 1.25 + T.ot150 * 1.5 + (T.rest150 + T.hol150) * 1.5 + (T.rest175 + T.hol175) * 1.75 + (T.rest200 + T.hol200) * 2) * rate * 100) / 100 : '';
     sheetRows.push([], ['סיכום החודש'], ['סה״כ שעות עבודה', H(T.net)], ['רגיל (100%)', H(T.reg)], ['שעות נוספות 125%', H(T.ot125)], ['שעות נוספות 150%', H(T.ot150)], ['שבת/חג', H(special)],
       ['ימי חופשה', absCount.vacation || ''], ['ימי מחלה', absCount.sick || ''], ['מילואים', absCount.reserve || ''], ['חופש ללא תשלום', absCount.unpaid || ''],
       ['שכר שעתי', rate || ''], ['הערכת שכר (לפני ניכויים)', est], [], ['החישוב: שעות נוספות יומיות ואז שבועיות (42), 2 ראשונות 125%, משם 150%. תקן יומי ' + S.day_norm + ' שעות, לילה ' + S.night_norm + '.']);
-    const ws = X.utils.aoa_to_sheet(sheetRows); ws['!cols'] = [18, 11, 8, 10, 10, 9, 24, 24, 10, 9, 9, 9, 9, 9, 13, 40].map(w => ({ wch: w })); ws['!views'] = [{ RTL: true }];
+    const ws = X.utils.aoa_to_sheet(sheetRows); ws['!cols'] = [18, 11, 8, 10, 10, 24, 24, 10, 9, 9, 9, 9, 9, 13, 40].map(w => ({ wch: w })); ws['!views'] = [{ RTL: true }];
     X.utils.book_append_sheet(wb, ws, p.full_name.slice(0, 30));
     summary.push([p.full_name, T.days, H(T.net), H(T.reg), H(T.ot125), H(T.ot150), H(special), absCount.vacation || '', absCount.sick || '', absCount.reserve || '', absCount.unpaid || '', rate || '', est,
       am?.worker_ok_at ? 'אישר' : 'לא אישר', am?.locked ? 'אושר ונעול' : 'לא אושר', R.flags.length ? `${R.flags.length} הערות` : '']);

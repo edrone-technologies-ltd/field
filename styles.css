@@ -394,3 +394,4 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .req{margin:2px 0 6px;padding:10px 12px;border-radius:12px;background:var(--card2);display:flex;flex-direction:column;gap:4px;border-inline-start:4px solid var(--muted)}
 .req.warn{border-color:var(--warn)} .req.ok{border-color:var(--ok)} .req.bad{border-color:var(--bad)}
 .req .mreply{color:var(--ink);font-weight:500}
+.split{display:flex;height:10px;border-radius:99px;overflow:hidden;background:var(--line)} .split i{background:var(--lime)} .split i.tr{background:var(--warn)}
