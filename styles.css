@@ -380,3 +380,14 @@ a.btn{text-decoration:none}
 button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit}
 .fold{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px}.fold summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none}.fold summary .sh{flex:1}.fold[open] summary{margin-bottom:10px}
 .sback{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;border:0;background:var(--card2);color:var(--ink);border-radius:99px;padding:7px 12px;font:inherit;font-size:.88rem;font-weight:700;cursor:pointer}
+/* נוכחות */
+.clock{display:flex;align-items:center;gap:12px;padding:12px 14px;border-radius:18px;background:var(--card);border:1px solid var(--line)}
+.clock b{display:block;font-family:var(--f-display)} .clock small{display:block;color:var(--muted);font-size:.82rem} .clock small a{color:var(--muted)}
+.clock.on{background:var(--okbg);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.cl-dot{width:12px;height:12px;border-radius:50%;background:var(--ok);flex:none;box-shadow:0 0 0 0 var(--ok);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--ok) 60%,transparent)}70%{box-shadow:0 0 0 10px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.monthbar{display:flex;align-items:center;justify-content:space-between;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px;margin-bottom:12px}
+.monthbar button{width:40px;height:40px;border-radius:10px;border:0;background:var(--card2);color:var(--ink);display:grid;place-items:center;cursor:pointer}
+.monthbar b{font-family:var(--f-display)}
+.dayline b{font-size:.92rem;direction:ltr;text-align:right}
+.maplink{text-decoration:underline;cursor:pointer}

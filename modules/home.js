@@ -203,6 +203,7 @@ export async function renderReports(el) {
 // תוספות בראש המסך אחרי שהוא צויר: הודעות לאישור, הפעלת התראות
 function extras() {
   pendingAcks(); window.__pushCard?.($('#hm'));
+  import('./attendance.js').then(m => m.clockCard($('#hm')));
   const n = $('#qnew'); if (n) n.onclick = async () => (await import('./reports.js')).newReport();
 }
 // הודעות חשובות שמחכות לאישור שלי — בראש המסך, עד שמאשרים

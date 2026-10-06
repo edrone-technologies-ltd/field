@@ -11,7 +11,7 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['', 'schedule', 'projects', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin']);
+const WITH_NAV = new Set(['', 'schedule', 'projects', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -57,6 +57,8 @@ async function unread() {
 function renderMenu() {
   const p = state.profile;
   const rows = [
+    ['#/hours', 'clock', 'השעות שלי', 'כניסות, יציאות ושעות נוספות לפי חודש'],
+    isManager() && ['#/attendance', 'users', 'נוכחות צוות', 'מי במשמרת, סיכום חודשי, תיקונים וייצוא לשכר'],
     can('specs') && ['#/specs', 'clipboard', 'אפיונים', 'סיורי אפיון לפי אתר ומבנה'],
     can('equipment') && ['#/equipment', 'wrench', 'ציוד', 'צי, ציוד ותקלות'],
     isManager() && ['#/reports', 'report', 'דוחות שטח', 'כל דוחות הביצוע עם תמונות'],
@@ -75,7 +77,7 @@ function renderMenu() {
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 13</div>
+      <div class="foot">E-Drone שטח · גרסה 14</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
@@ -120,7 +122,7 @@ async function routeInner() {
   window.scrollTo(0, 0);
   document.querySelectorAll('.bar,.composer,.fabs').forEach(x => x.remove());
   $('#sheet').hidden = true;
-  nav(WITH_NAV.has(h[0]), h[0] === 'alerts' || h[0] === 'reports' ? (isManager() ? '' : 'menu') : ['specs', 'equipment', 'admin'].includes(h[0]) ? 'menu' : h[0]);
+  nav(WITH_NAV.has(h[0]), h[0] === 'alerts' || h[0] === 'reports' ? (isManager() ? '' : 'menu') : ['specs', 'equipment', 'admin', 'hours', 'attendance'].includes(h[0]) ? 'menu' : h[0]);
   const guard = m => { if (!can(m)) { app.innerHTML = `<div class="empty-card"><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; } return true; };
   const home = () => import('./modules/home.js');
   switch (h[0]) {
@@ -131,6 +133,8 @@ async function routeInner() {
     case 'inbox': return (await import('./modules/inbox.js')).renderInbox(app);
     case 'c': return (await import('./modules/inbox.js')).renderConversation(app, h[1]);
     case 'menu': case 'me': return renderMenu();
+    case 'hours': return (await import('./modules/attendance.js')).renderHours(app, null, h[1]);
+    case 'attendance': { const m = await import('./modules/attendance.js'); if (h[1] === 'm' || !h[1]) return m.renderAttendance(app, h[2]); return m.renderHours(app, h[1], h[2]); }
     case 'signoff': return (await import('./modules/reports.js')).renderSignoff(app, h[1]);
     case 'summary': return (await import('./modules/reports.js')).renderSummary(app, h[1]);
     case 'day': return (await import('./modules/today.js')).renderDay(app, h[1]);
