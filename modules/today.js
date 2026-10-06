@@ -1,5 +1,6 @@
 // יום שטח: בוקר ← העמסה ← באתר ← בעבודה ← סיום. השלב נגזר ממה שכבר נשמר, כל פעולה נכנסת לתור ונשלחת כשיש קליטה.
 import { coverArt, icon } from '../lib/core.js';
+import { sunPlan, sunAdvice } from '../lib/sun.js';
 import { sb, state, cache, enqueue, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
 const STEPS = ['בוקר', 'העמסה', 'באתר', 'בעבודה', 'סיום'];
@@ -7,7 +8,7 @@ const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיח
 const T_STATUS = { todo: ['לביצוע', ''], in_progress: ['בעבודה', 'lime'], done: ['בוצע', 'ok'], blocked: ['נתקע', 'bad'], dropped: ['בוטל', ''] };
 const NEXT = { todo: 'in_progress', in_progress: 'done', done: 'todo', blocked: 'in_progress', dropped: 'todo' };
 const hhmm = t => (t || '').slice(0, 5);
-const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,sites(name,address,contact_name,contact_phone,access_notes)), work_day_crew(user_id,role,hours,clock_in,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
+const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,lat,lng)), work_day_crew(user_id,role,hours,clock_in,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
 
 // ---------- רשימת הימים שלי ----------
 export async function renderToday(el) {
@@ -124,10 +125,20 @@ export async function renderDay(el, id) {
         <div class="row"><a class="btn ghost grow" href="https://waze.com/ul?q=${dest}&navigate=yes" target="_blank" rel="noopener">Waze</a><a class="btn ghost grow" href="https://www.google.com/maps/dir/?api=1&destination=${dest}" target="_blank" rel="noopener">Google Maps</a></div>
       </div>
       ${contactCard(site.contact_name, site.contact_phone)}
+      ${sunCard()}
       ${P.work_notes ? `<div class="note"><b>דגשים מהמשרד:</b> ${esc(P.work_notes)}</div>` : ''}
       ${site.access_notes ? `<div class="note">${esc(site.access_notes)}</div>` : ''}
       ${D.tasks.length ? `<div class="stack" style="gap:6px"><h3>בתכנית היום</h3>${D.tasks.map(t => `<div class="feed"><span class="pill">${esc(t.phase || '')}</span><span class="grow"><b>${esc(t.title)}</b>${t.risk ? `<small class="issue">${esc(t.risk)}</small>` : ''}${t.instructions ? `<small>${esc(t.instructions)}</small>` : ''}</span></div>`).join('')}</div>` : ''}
       ${lead ? `<div class="small muted">ראש צוות: ${esc(lead.full_name)}</div>` : ''}`;
+  }
+  // תכנון שמש: באיזה שעות כל חזית בצל — כדי לא לשטוף בשמש ישירה (מתייבש מהר ומשאיר סימנים)
+  function sunCard() {
+    const lat = site.lat || P.lat, lng = site.lng || P.lng;
+    const pl = sunPlan(D.day.day, lat || 31.9, lng || 34.9), adv = sunAdvice(pl), hrs = pl.hours.filter(h => h.h >= 7 && h.h < 17);
+    const hh = h => String(h).padStart(2, '0') + ':00';
+    return `<div class="card sun"><div class="row"><b class="grow">סדר שטיפה לפי השמש</b><small class="muted">${lat ? '' : 'מיקום משוער'}</small></div>
+      <div class="sungrid"><span></span>${hrs.map(h => `<small>${h.h}</small>`).join('')}${pl.plan.map(f => `<b>${f.name}</b>${f.lit.filter((_, i) => pl.hours[i].h >= 7 && pl.hours[i].h < 17).map(l => `<i class="${l ? 'lit' : ''}"></i>`).join('')}`).join('')}</div>
+      <ol class="sunlist">${adv.timed.map(r => `<li><b>${r.name}</b> · <bdi dir="ltr">${hh(r.win[0])}–${hh(r.win[1])}</bdi></li>`).join('')}${adv.flex.length ? `<li><b>${adv.flex.map(r => r.name).join(', ')}</b> · בצל כל היום — לשבץ בין לבין</li>` : ''}${adv.sunny.map(r => `<li><b>${r.name}</b> · בשמש כמעט כל היום — עדיף מוקדם בבוקר או ביום מעונן</li>`).join('')}</ol></div>`;
   }
   function countdown() {
     if (!D.day.report_time || D.day.day !== isoDay()) return '';

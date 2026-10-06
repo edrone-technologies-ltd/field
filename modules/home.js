@@ -119,7 +119,7 @@ export async function renderHome(el) {
     .sort((a, b) => (inField.has(b.id) - inField.has(a.id)) || (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((a.planned_from || '9') < (b.planned_from || '9') ? -1 : 1)).slice(0, 8);
 
   box.innerHTML = `
-    ${myDay}<button class="btn primary block big" id="qnew">${icon('plus', 20)} דוח חדש</button>
+    ${myDay}<div id="yday"></div><button class="btn primary block big" id="qnew">${icon('plus', 20)} דוח חדש</button>
     <section><div class="sh-row"><h3 class="sh">היום בשטח</h3>${field.length ? `<span class="count">${field.length}</span>` : ''}</div>
       ${field.length ? `<div class="rail">${field.map(x => `<a class="pcard" href="${x.w ? '#/day/' + x.w.id : '#/p/' + x.p.id}"><span class="img" style="background-image:url('${cov[x.p.id]}')"></span>
         <span class="pc-b"><b>${esc(x.p.name)}</b><small>${x.w ? `${DAY_ST[x.w.status]}${x.w.report_time ? ' · ' + x.w.report_time.slice(0, 5) : ''} · ${esc((x.w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).join(', '))}` : esc(x.p.client_name || x.p.status_label || '')}</small></span></a>`).join('')}</div>`
@@ -205,6 +205,7 @@ export async function renderReports(el) {
 
 // תוספות בראש המסך אחרי שהוא צויר: הודעות לאישור, הפעלת התראות
 function extras() {
+  if (isManager()) yesterday();
   pendingAcks(); window.__pushCard?.($('#hm'));
   import('./attendance.js').then(m => m.clockCard($('#hm')));
   const n = $('#qnew'); if (n) n.onclick = async () => (await import('./reports.js')).newReport();
@@ -222,4 +223,26 @@ async function pendingAcks() {
     await enqueue({ kind: 'insert', table: 'message_acks', row: { message_id: b.dataset.ok, user_id: state.user.id } });
     b.closest('.must').remove();
   });
+}
+
+// אתמול בשטח (מנהלים): דוחות, שעות, תקלות, הוצאות — במבט אחד
+async function yesterday() {
+  const box = $('#yday'); if (!box) return;
+  const y = addDays(today(), -1), from = new Date(y + 'T00:00:00').toISOString(), to = new Date(today() + 'T00:00:00').toISOString();
+  const q = p => p.then(r => r.data || []).catch(() => []);
+  const [reps, days, iss, exps, shifts] = await Promise.all([
+    q(sb.from('field_reports').select('project_label,hours').eq('report_date', y)),
+    q(sb.from('work_days').select('id,projects(name)').eq('day', y).eq('status', 'done')),
+    q(sb.from('issues').select('id,severity').gte('created_at', from).lt('created_at', to)),
+    q(sb.from('expenses').select('amount').eq('day', y)),
+    q(sb.from('shifts').select('start_at,end_at').gte('start_at', from).lt('start_at', to)),
+  ]);
+  const hrs = shifts.reduce((t, s) => t + (s.end_at ? (new Date(s.end_at) - new Date(s.start_at)) / 36e5 : 0), 0);
+  const projs = new Set([...reps.map(r => r.project_label), ...days.map(d => d.projects?.name)].filter(Boolean));
+  if (!projs.size && !hrs && !iss.length && !exps.length) return;
+  const ex = exps.reduce((t, e) => t + Number(e.amount), 0);
+  box.innerHTML = `<a class="yday" href="#/schedule"><span class="eyebrow">אתמול בשטח</span><span class="ys">
+    <span><b>${projs.size}</b><small>פרויקטים</small></span><span><b>${hrs ? Math.round(hrs) : '—'}</b><small>שעות צוות</small></span>
+    <span><b>${iss.length}</b><small>תקלות</small></span><span><b>${ex ? '₪' + Math.round(ex) : '—'}</b><small>הוצאות</small></span></span>
+    <small class="muted">${esc([...projs].join(' · '))}</small></a>`;
 }

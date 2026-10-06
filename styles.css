@@ -515,3 +515,13 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .dgrid td.conf{background:var(--badbg);border-color:var(--bad)}
 .dchip{display:block;font-size:.74rem;font-weight:700;border-radius:7px;padding:3px 6px;margin-bottom:3px;background:var(--limebg);color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dchip.done{background:var(--okbg);color:var(--ok)} .dchip.wx{background:var(--warnbg)} .dchip.abs{background:var(--card2);color:var(--muted)} .dchip.pend{border:1px dashed var(--warn)}
+/* תכנון שמש */
+.sun .sungrid{display:grid;grid-template-columns:44px repeat(10,1fr);gap:3px;align-items:center;margin:10px 0 6px;direction:ltr}
+.sun .sungrid b{font-size:.78rem;text-align:right;direction:rtl}
+.sun .sungrid small{font-size:.66rem;color:var(--muted);text-align:center}
+.sun .sungrid i{height:16px;border-radius:4px;background:color-mix(in srgb,var(--blue) 30%,var(--card2))}
+.sun .sungrid i.lit{background:#F3C84B}
+.sunlist{margin:4px 0 0;padding-inline-start:20px;font-size:.88rem;line-height:1.7}
+.yday{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:18px;background:var(--card);border:1px solid var(--line);color:inherit;text-decoration:none}
+.yday .ys{display:grid;grid-template-columns:repeat(4,1fr);text-align:center}
+.yday .ys b{display:block;font-family:var(--f-display);font-size:1.25rem} .yday .ys small{font-size:.72rem;color:var(--muted)}

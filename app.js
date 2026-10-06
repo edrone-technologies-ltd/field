@@ -50,7 +50,14 @@ function nav(show, active = '') {
   unread();
 }
 async function unread() {
-  try { const { data } = await sb.rpc('my_inbox'); const n = (data || []).reduce((s, c) => s + (c.unread || 0), 0); const b = $('#nb'); if (b) { b.hidden = !n; b.textContent = n > 9 ? '9+' : n; } } catch {}
+  try {
+    const { data } = await sb.rpc('my_inbox'); const n = (data || []).reduce((s, c) => s + (c.unread || 0), 0);
+    const b = $('#nb'); if (b) { b.hidden = !n; b.textContent = n > 9 ? '9+' : n; }
+    // תג על אייקון האפליקציה: הודעות שלא נקראו + (למנהלים) בקשות שממתינות לאישור
+    let pend = 0;
+    if (isManager()) { const r = await Promise.all([sb.from('shift_requests').select('id', { count: 'exact', head: true }).eq('status', 'pending'), sb.from('absences').select('id', { count: 'exact', head: true }).eq('status', 'pending'), sb.from('expenses').select('id', { count: 'exact', head: true }).eq('status', 'pending')]); pend = r.reduce((t, x) => t + (x.count || 0), 0); }
+    if ('setAppBadge' in navigator) { const t = n + pend; t ? navigator.setAppBadge(t).catch(() => {}) : navigator.clearAppBadge?.().catch(() => {}); }
+  } catch {}
 }
 
 // ---------- עוד: פרופיל, מודולים נוספים, הגדרות ----------
@@ -81,7 +88,7 @@ function renderMenu() {
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 23</div>
+      <div class="foot">E-Drone שטח · גרסה 24</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;

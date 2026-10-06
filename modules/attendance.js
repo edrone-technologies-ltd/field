@@ -197,6 +197,7 @@ export async function renderHours(el, userId, month) {
   const R0 = reqs || [], pendingNew = R0.filter(r => !r.shift_id), byShift = id => R0.filter(r => r.shift_id === id);
   if (!me) $('#ht').textContent = who?.full_name || '';
   const R = computeMonth(shifts || [], month, S);
+  await geoFlags(R);
   const T = R.totals, M = isManager() && !me || (isManager() && me);
   const locked = am?.locked;
   const box = $('#hb'); if (!box) return;
@@ -338,4 +339,17 @@ async function exportXlsx(month, rows, abs, rates, S) {
   const ws0 = X.utils.aoa_to_sheet(summary); ws0['!cols'] = [20, 10, 9, 13, 11, 11, 11, 9, 9, 9, 9, 12, 9, 18, 10, 12, 12].map(w => ({ wch: w })); ws0['!views'] = [{ RTL: true }];
   X.utils.book_append_sheet(wb, ws0, 'כלל העובדים'); wb.SheetNames.unshift(wb.SheetNames.pop());
   X.writeFile(wb, `דוח-שעות-${month}.xlsx`);
+}
+
+// כניסה רחוקה מהאתר (מעל 1 ק"מ מהמיקום הידוע של הפרויקט/האתר) — דגל למנהל, לא חסימה
+async function geoFlags(R) {
+  const ids = [...new Set(R.days.flatMap(d => d.shifts.map(s => s.project_id)).filter(Boolean))]; if (!ids.length) return;
+  const { data } = await sb.from('projects').select('id,lat,lng,sites(lat,lng)').in('id', ids);
+  const at = Object.fromEntries((data || []).map(p => [p.id, p.sites?.lat ? p.sites : p.lat ? p : null]));
+  const km = (a, b, c, d) => { const r = Math.PI / 180, x = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
+  for (const d of R.days) for (const s of d.shifts) {
+    const t = at[s.project_id]; if (!t || s.start_lat == null) continue;
+    const dist = km(s.start_lat, s.start_lng, t.lat, t.lng);
+    if (dist > 1) { const f = `כניסה במרחק ${dist < 10 ? dist.toFixed(1) : Math.round(dist)} ק"מ מהאתר`; d.flags.push(f); R.flags.push(`${+d.date.slice(8)}.${+d.date.slice(5, 7)}: ${f}`); }
+  }
 }
