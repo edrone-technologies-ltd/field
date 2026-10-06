@@ -69,7 +69,7 @@ function renderMenu() {
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 10</div>
+      <div class="foot">E-Drone שטח · גרסה 11</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
@@ -149,5 +149,14 @@ async function boot() {
   try { navigator.storage?.persist?.(); } catch {}
 }
 sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') renderLogin(); });
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// גרסה חדשה: ה-service worker מתעדכן ברקע, והאפליקציה נטענת מחדש פעם אחת (רק אם לא באמצע טופס/שיחה)
+if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller; let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return; reloaded = true;
+    if (document.querySelector('.bar,.composer,.modal')) { toast('גרסה חדשה מוכנה — תיטען במעבר המסך הבא'); addEventListener('hashchange', () => location.reload(), { once: true }); }
+    else location.reload();
+  });
+  navigator.serviceWorker.register('sw.js').then(r => { r.update().catch(() => {}); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') r.update().catch(() => {}); }); }).catch(() => {});
+}
 boot();
