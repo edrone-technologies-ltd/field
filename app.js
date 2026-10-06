@@ -62,13 +62,13 @@ function renderMenu() {
     <div class="stack lg">
       <div class="card prof"><span class="avatar lg">${esc(initials(p.full_name))}</span><div class="grow"><b>${esc(p.full_name)}</b><small>${esc(ROLE_HE[p.role])} · ${esc(p.phone || '')}</small>
         ${p.is_pilot && p.pilot_license_expiry ? `<small class="${new Date(p.pilot_license_expiry) - Date.now() < 45 * 864e5 ? 'err' : ''}">רישיון מטיס ${esc(p.pilot_license_no || '')} · בתוקף עד ${new Date(p.pilot_license_expiry).toLocaleDateString('he-IL')}</small>` : ''}</div></div>
-      ${rows.length ? `<div class="menu">${rows.map(([h, ic, t, s]) => `<a class="row" href="${h}"><span class="mic">${icon(ic, 20)}</span><span class="grow"><b>${t}</b><small>${s}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
-      <div class="menu"><div class="row"><span class="mic">${icon('sun', 20)}</span><span class="grow"><b>תצוגה</b></span>
+      ${rows.length ? `<div class="menu">${rows.map(([h, ic, t, s]) => `<a class="lrow" href="${h}"><span class="mic">${icon(ic, 20)}</span><span class="grow"><b>${t}</b><small>${s}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
+      <div class="menu"><div class="lrow"><span class="mic">${icon('sun', 20)}</span><span class="grow"><b>תצוגה</b></span>
         <span class="seg">${[['', 'אוטומטי'], ['light', 'בהיר'], ['dark', 'כהה']].map(([v, l]) => `<button data-th="${v}" aria-pressed="${th === v}">${l}</button>`).join('')}</span></div>
-        <div class="row" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
+        <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
-        <button class="row" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 5</div>
+        <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
+      <div class="foot">E-Drone שטח · גרסה 6</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
@@ -99,7 +99,7 @@ addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInsta
 function installHint() {
   const box = $('#install'); if (!box || matchMedia('(display-mode: standalone)').matches || navigator.standalone) return;
   const ios = /iphone|ipad/i.test(navigator.userAgent);
-  box.innerHTML = `<div class="row"><img src="icon-192.png" alt="" class="mic img"><span class="grow"><b>התקנה במסך הבית</b><small>${ios ? 'בספארי: כפתור השיתוף ← "הוסף למסך הבית"' : 'נפתחת כמו אפליקציה, גם בלי קליטה'}</small></span>${deferredInstall ? '<button class="btn primary sm" id="inst">התקנה</button>' : ''}</div>`;
+  box.innerHTML = `<div class="lrow"><img src="icon-192.png" alt="" class="mic img"><span class="grow"><b>התקנה במסך הבית</b><small>${ios ? 'בספארי: כפתור השיתוף ← "הוסף למסך הבית"' : 'נפתחת כמו אפליקציה, גם בלי קליטה'}</small></span>${deferredInstall ? '<button class="btn primary sm" id="inst">התקנה</button>' : ''}</div>`;
   const b = $('#inst'); if (b) b.onclick = async () => { deferredInstall.prompt(); deferredInstall = null; box.innerHTML = ''; };
 }
 
@@ -141,6 +141,8 @@ async function boot() {
   if (!state.profile.is_active) { await sb.auth.signOut(); return renderLogin('הגישה שלך הושבתה. פנו למשרד.'); }
   addEventListener('hashchange', route);
   updateNet(); flush(); route();
+  // בקשת אחסון קבוע — כדי שהטלפון לא ימחק נתונים שעוד לא נשלחו
+  try { navigator.storage?.persist?.(); } catch {}
 }
 sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') renderLogin(); });
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});

@@ -10,7 +10,7 @@ export async function renderInbox(el) {
   try { const { data, error } = await sb.rpc('my_inbox'); if (error) throw error; rows = data || []; await cache.set('inbox', rows); }
   catch { rows = (await cache.get('inbox')) || []; }
   const groups = rows.filter(c => c.kind === 'group'), dms = rows.filter(c => c.kind === 'dm');
-  const row = c => `<a class="row msgrow ${c.unread ? 'unread' : ''}" href="#/c/${c.id}">${av(c)}<span class="grow"><span class="r1"><b>${esc(c.title || '')}</b><small>${c.last_message_at ? timeAgo(c.last_message_at) : ''}</small></span>
+  const row = c => `<a class="lrow msgrow ${c.unread ? 'unread' : ''}" href="#/c/${c.id}">${av(c)}<span class="grow"><span class="r1"><b>${esc(c.title || '')}</b><small>${c.last_message_at ? timeAgo(c.last_message_at) : ''}</small></span>
     <small class="r2">${esc(c.last_message || (c.kind === 'group' ? `${(c.members || []).length} חברים` : 'אין הודעות עדיין'))}</small></span>${c.unread ? `<span class="badge">${c.unread}</span>` : ''}</a>`;
   $('#ib').innerHTML = `${dms.length ? `<h3 class="sh">אישי</h3>${dms.map(row).join('')}` : ''}
     <h3 class="sh">קבוצות</h3>${groups.map(row).join('') || '<div class="muted small">אין קבוצות.</div>'}`;
@@ -19,8 +19,8 @@ export async function renderInbox(el) {
 
 async function newMessage() {
   const { data: people } = await sb.from('profiles').select('id,full_name,role').eq('is_active', true).neq('id', state.user.id).order('full_name');
-  sheet(`<div class="row"><h3 class="grow">הודעה חדשה</h3><button class="chip" data-close>סגירה</button></div>
-    <div class="list">${(people || []).map(p => `<button class="row" data-p="${p.id}"><span class="avatar">${esc(initials(p.full_name))}</span><span class="grow"><b>${esc(p.full_name)}</b><small>${esc(ROLE_HE[p.role] || '')}</small></span></button>`).join('')}</div>
+  sheet(`<div class="lrow"><h3 class="grow">הודעה חדשה</h3><button class="chip" data-close>סגירה</button></div>
+    <div class="list">${(people || []).map(p => `<button class="lrow" data-p="${p.id}"><span class="avatar">${esc(initials(p.full_name))}</span><span class="grow"><b>${esc(p.full_name)}</b><small>${esc(ROLE_HE[p.role] || '')}</small></span></button>`).join('')}</div>
     ${isManager() ? `<button class="btn ghost block" id="ng">${icon('users', 18)} קבוצת תפוצה חדשה</button>` : ''}`, (s, close) => {
     $$('[data-p]', s).forEach(b => b.onclick = async () => {
       const { data, error } = await sb.rpc('open_dm', { other: b.dataset.p }); if (error) return toast(error.message);
@@ -32,7 +32,7 @@ async function newMessage() {
 function newGroup(people) {
   sheet(`<h3>קבוצת תפוצה חדשה</h3><input type="text" id="gt" placeholder="שם הקבוצה (למשל: צוות אינטל חיפה)">
     <div class="chips">${people.map(p => `<button class="chip" data-u="${p.id}" aria-pressed="false">${esc(p.full_name)}</button>`).join('')}</div>
-    <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="gc">פתיחה</button></div>`, (s, close) => {
+    <div class="lrow"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="gc">פתיחה</button></div>`, (s, close) => {
     $$('[data-u]', s).forEach(c => c.onclick = () => c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') !== 'true'));
     $('#gc', s).onclick = async () => {
       const t = $('#gt', s).value.trim(), m = $$('[data-u][aria-pressed="true"]', s).map(c => c.dataset.u);

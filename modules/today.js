@@ -1,12 +1,13 @@
 // יום שטח: בוקר ← העמסה ← באתר ← בעבודה ← סיום. השלב נגזר ממה שכבר נשמר, כל פעולה נכנסת לתור ונשלחת כשיש קליטה.
-import { sb, state, cache, enqueue, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm } from '../lib/core.js';
+import { coverArt, icon } from '../lib/core.js';
+import { sb, state, cache, enqueue, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
 const STEPS = ['בוקר', 'העמסה', 'באתר', 'בעבודה', 'סיום'];
 const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיחות': 'safety', 'כמעט תאונה': 'near_miss', 'אתר': 'site', 'לקוח': 'site', 'אחר': 'other' };
 const T_STATUS = { todo: ['לביצוע', ''], in_progress: ['בעבודה', 'lime'], done: ['בוצע', 'ok'], blocked: ['נתקע', 'bad'], dropped: ['בוטל', ''] };
 const NEXT = { todo: 'in_progress', in_progress: 'done', done: 'todo', blocked: 'in_progress', dropped: 'todo' };
 const hhmm = t => (t || '').slice(0, 5);
-const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,sites(name,address,contact_name,contact_phone,access_notes)), work_day_crew(user_id,role,hours,clock_in,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
+const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,sites(name,address,contact_name,contact_phone,access_notes)), work_day_crew(user_id,role,hours,clock_in,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
 
 // ---------- רשימת הימים שלי ----------
 export async function renderToday(el) {
@@ -77,12 +78,15 @@ export async function renderDay(el, id) {
     if (paths.length) Object.assign(photoUrls, await signedUrls('field', paths));
   }
   await loadUrls().catch(() => {});
+  let coverUrl = null;
+  if (P.cover_path) try { coverUrl = (await signedUrls('media', [P.cover_path]))[P.cover_path]; } catch {}
 
   function header() {
     const s = stage();
-    return `<div class="top"><a class="back" href="#/" onclick="if(history.length>1){history.back();return false}" aria-label="חזרה"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><span class="grow"></span>${statusPill(D.day)}</div>
-      <div><div class="eyebrow">${dayLabel(D.day.day)}${D.day.is_last_day ? ' · יום אחרון בפרויקט' : ''}</div><h2>${esc(P.name || '')}</h2>
-        ${D.day.day_goal ? `<div class="muted small">${esc(D.day.day_goal)}</div>` : ''}</div>
+    return `<div class="phero sm"><span class="img" style="background-image:url('${coverUrl || coverArt(P.name || '')}')"></span>
+        <a class="back glass" href="#/" onclick="if(history.length>1){history.back();return false}" aria-label="חזרה">${icon('back', 20)}</a>
+        <span class="ph-bottom"><span class="row" style="gap:6px"><span class="chip-dark">${dayLabel(D.day.day)}${D.day.is_last_day ? ' · יום אחרון' : ''}</span>${statusPill(D.day)}</span>
+        <b>${esc(P.name || '')}</b>${D.day.day_goal ? `<small>${esc(D.day.day_goal)}</small>` : ''}</span></div>
       <ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? '✓' : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`;
   }
   function photoStrip(kind, label, min = 0) {
@@ -228,7 +232,7 @@ export async function renderDay(el, id) {
     bar.querySelector('#out').onclick = async () => {
       const req = D.day.equip_required?.length ? D.day.equip_required : (D.S.equip_default || []);
       const miss = req.filter(x => !D.local.loaded.includes(x));
-      if (miss.length && !confirm(`יוצאים בלי: ${miss.join(', ')}?\nזה יירשם כחוסר.`)) return;
+      if (miss.length && !(await confirmBox(`יוצאים בלי ${miss.length} פריטים?`, { body: miss.join(' · ') + ' — יירשם כחוסר ויעבור למשרד', ok: 'יוצאים' }))) return;
       for (const m of miss) { const row = { id: uid(), work_day_id: D.day.id, item: m, qty: 1, reported_by: state.user.id }; D.missing.push(row); await insert('missing_items', row); }
       const now = new Date().toISOString();
       await save('work_days', { departed_at: now, status: 'en_route', equip_loaded: D.local.loaded, drone_ack: !!D.day.drone_ack });
@@ -253,7 +257,7 @@ export async function renderDay(el, id) {
   function bindWork(bar) {
     $$('[data-t]').forEach(b => {
       let timer, long = false;
-      b.onpointerdown = () => { long = false; timer = setTimeout(async () => { long = true; const t = D.tasks.find(x => x.id === b.dataset.t); const note = prompt('מה תקוע?', t.status_note || ''); if (note == null) return; t.status = 'blocked'; t.status_note = note; await save('tasks', { status: 'blocked', status_note: note }, t.id); draw(); }, 600); };
+      b.onpointerdown = () => { long = false; timer = setTimeout(async () => { long = true; const t = D.tasks.find(x => x.id === b.dataset.t); const note = await ask('מה תקוע?', { value: t.status_note || '', placeholder: 'למשל: מחכים למפתח לגג', ok: 'סימון כנתקע' }); if (note == null) return; t.status = 'blocked'; t.status_note = note; await save('tasks', { status: 'blocked', status_note: note }, t.id); draw(); }, 600); };
       b.onpointerup = b.onpointerleave = () => clearTimeout(timer);
       b.onclick = async () => {
         if (long) return; const t = D.tasks.find(x => x.id === b.dataset.t), prev = t.status;
@@ -264,7 +268,7 @@ export async function renderDay(el, id) {
       };
     });
     $('#addtask').onclick = async () => {
-      const title = prompt('מה הלקוח ביקש?'); if (!title) return;
+      const title = await ask('מה הלקוח ביקש?', { placeholder: 'למשל: ניקוי שלט הכניסה', hint: 'נרשם כתוספת בפרויקט ועובר למשרד', ok: 'הוספה' }); if (!title) return;
       const row = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, title, phase: 'תוספת', is_extra: true, status: 'todo', seq: 999, planned_date: D.day.day };
       D.tasks.push(row); await insert('tasks', row); draw();
     };

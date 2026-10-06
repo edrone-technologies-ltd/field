@@ -147,12 +147,12 @@ export async function renderHome(el) {
   $$('#wk .wd').forEach(b => b.onclick = () => pick(+b.dataset.i));
   pick(week[0].items.length ? 0 : Math.max(0, week.findIndex(x => x.items.length)));
 }
-const dayRow = (w, byId) => `<a class="row" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
+const dayRow = (w, byId) => `<a class="lrow" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
   <span class="grow"><b>${esc(byId.get(w.project_id)?.name || '')}</b><small>${w.report_time ? 'התייצבות ' + w.report_time.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון' : ''}</small></span><span class="pill ${w.status === 'done' ? 'ok' : w.status === 'planned' ? '' : 'lime'}">${DAY_ST[w.status]}</span></a>`;
 function inboxPeek(d) {
   const un = (d.inbox || []).filter(c => c.unread > 0).slice(0, 3);
   if (!un.length) return '';
-  return `<section><div class="sh-row"><h3 class="sh">הודעות חדשות</h3><a class="more" href="#/inbox">הכל</a></div><div class="list">${un.map(c => `<a class="row" href="#/c/${c.id}"><span class="avatar sm ${c.kind === 'group' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 18) : esc(initials(c.title))}</span><span class="grow"><b>${esc(c.title || '')}</b><small>${esc(c.last_message || '')}</small></span><span class="badge">${c.unread}</span></a>`).join('')}</div></section>`;
+  return `<section><div class="sh-row"><h3 class="sh">הודעות חדשות</h3><a class="more" href="#/inbox">הכל</a></div><div class="list">${un.map(c => `<a class="lrow" href="#/c/${c.id}"><span class="avatar sm ${c.kind === 'group' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 18) : esc(initials(c.title))}</span><span class="grow"><b>${esc(c.title || '')}</b><small>${esc(c.last_message || '')}</small></span><span class="badge">${c.unread}</span></a>`).join('')}</div></section>`;
 }
 
 // ---------- כל מה שלטיפול ----------

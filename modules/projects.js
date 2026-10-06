@@ -1,5 +1,5 @@
 // פרויקטים: מרכז הביצוע. סקירה ממאנדי + אתר ואפיון, תכנית עבודה מהאפיון, שיבוץ ימים, צ'אט צוות, תקלות וסיכום.
-import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm } from '../lib/core.js';
+import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
 const ARCHIVE = 'group_mm5052gw';
 const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'קביעת מועד': 'warn', 'תואם - ממתין לביצוע': 'warn', 'אושר מול לקוח': 'warn', 'הסתיים — ממתין לתשלום': 'ok' };
@@ -90,7 +90,7 @@ export async function renderProject(el, id, tab = 'o') {
     const open = D.issues.filter(i => i.status === 'open');
     const range = p.planned_from ? (p.planned_to && p.planned_to !== p.planned_from ? `${dm(p.planned_from)}–${dm(p.planned_to)}` : dm(p.planned_from)) : null;
     const appPlan = tot || D.days.length;
-    const kv = (ic, label, val, act = '') => `<div class="row kv" ${act ? `data-act="${act}" role="button" tabindex="0"` : ''}><span class="mic">${icon(ic, 19)}</span><span class="grow"><small>${label}</small><b>${val}</b></span>${act ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</div>`;
+    const kv = (ic, label, val, act = '') => `<div class="lrow kv" ${act ? `data-act="${act}" role="button" tabindex="0"` : ''}><span class="mic">${icon(ic, 19)}</span><span class="grow"><small>${label}</small><b>${val}</b></span>${act ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</div>`;
     const tel = s?.contact_phone ? s.contact_phone.replace(/\D/g, '').replace(/^0/, '') : '';
     box.innerHTML = `
       <div class="kpis">${appPlan
@@ -101,11 +101,11 @@ export async function renderProject(el, id, tab = 'o') {
       <div class="menu">
         ${p.scope ? kv('report', 'היקף', esc(p.scope)) : ''}
         ${kv('pin', 'אתר', s ? esc(s.name) + (s.address ? ` <span class="muted small">· ${esc(s.address)}</span>` : '') : '<span class="muted">לא משויך — משייכים כדי לבנות תכנית מהאפיון</span>', M ? 'site' : '')}
-        ${s?.contact_phone ? `<div class="row kv"><span class="mic">${icon('users', 19)}</span><span class="grow"><small>איש קשר באתר</small><b>${esc(s.contact_name || '')} <span class="muted small" dir="ltr">${esc(s.contact_phone)}</span></b></span><a class="btn primary sm" href="tel:+972${tel}">חיוג</a></div>` : ''}
+        ${s?.contact_phone ? `<div class="lrow kv"><span class="mic">${icon('users', 19)}</span><span class="grow"><small>איש קשר באתר</small><b>${esc(s.contact_name || '')} <span class="muted small" dir="ltr">${esc(s.contact_phone)}</span></b></span><a class="btn primary sm" href="tel:+972${tel}">חיוג</a></div>` : ''}
         ${kv('clipboard', 'דגשים לצוות', p.work_notes ? esc(p.work_notes) : '<span class="muted">אין דגשים</span>', M ? 'notes' : '')}
         ${p.summary ? kv('chat', 'תמונת ביצוע (מאנדי)', esc(p.summary)) : ''}
         ${f ? kv('shield', 'כספים', `${f.price_net ? '₪' + nf(f.price_net) + ' נטו' : '—'}${f.gross_pct ? ` · רווח ${nf(f.gross_pct)}%` : ''}${f.payment_status ? ' · ' + esc(f.payment_status) : ''}`) : ''}
-        ${s && can('specs') ? `<a class="row kv" href="#/site/${esc(s.slug)}"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>אפיון האתר</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
+        ${s && can('specs') ? `<a class="lrow kv" href="#/site/${esc(s.slug)}"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>אפיון האתר</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
       </div>
       <div id="gal"></div>
       ${D.reps.length ? `<section><h3 class="sh">דוחות שטח</h3><div class="list">${D.reps.slice(0, 4).map(r => `<div class="rep compact"><span class="grow"><b>${dm(r.report_date)}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}${r.hours ? ` · ${nf(r.hours)} שעות` : ''}</b><small>${esc([r.crew, r.work].filter(Boolean).join(' · '))}</small>${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}</span>${r.had_issues ? '<span class="pill warn">תקלה</span>' : ''}</div>`).join('')}</div></section>` : ''}
@@ -117,7 +117,7 @@ export async function renderProject(el, id, tab = 'o') {
   }
   function siteSheet() {
     sheet(`<h3>שיוך לאתר</h3><div class="small muted">השיוך מחבר את הפרויקט לאפיון של האתר, וממנו נבנית תכנית העבודה.</div>
-      <div class="list">${D.sites.map(x => `<button class="row" data-s="${x.id}"><span class="grow"><b>${esc(x.name)}</b></span>${x.id === p.site_id ? '<span class="pill lime">משויך</span>' : ''}</button>`).join('')}</div>
+      <div class="list">${D.sites.map(x => `<button class="lrow" data-s="${x.id}"><span class="grow"><b>${esc(x.name)}</b></span>${x.id === p.site_id ? '<span class="pill lime">משויך</span>' : ''}</button>`).join('')}</div>
       <button class="btn ghost block" data-close>ביטול</button>`, (sh, close) => {
       $$('[data-s]', sh).forEach(b => b.onclick = async () => { const { error } = await sb.from('projects').update({ site_id: b.dataset.s }).eq('id', id); if (error) return toast(error.message); close(); toast('שויך לאתר'); reload('o'); });
     });
@@ -130,7 +130,7 @@ export async function renderProject(el, id, tab = 'o') {
     });
   }
   async function closeIssue(iid, redraw) {
-    const r = prompt('איך טופל?'); if (r == null) return;
+    const r = await ask('איך טופל?', { multiline: true, placeholder: 'מה נעשה כדי לפתור', ok: 'סגירת התקלה' }); if (r == null) return;
     const i = D.issues.find(x => x.id === iid); Object.assign(i, { status: 'closed', resolution: r, closed_by: state.user.id, closed_at: new Date().toISOString() });
     await enqueue({ kind: 'update', table: 'issues', rowId: i.id, patch: { status: 'closed', resolution: r, closed_by: state.user.id, closed_at: i.closed_at } }); redraw();
   }
@@ -149,7 +149,7 @@ export async function renderProject(el, id, tab = 'o') {
         return `<div class="stack" style="gap:6px"><div class="row"><h3 class="grow">${n ? 'יום ' + n : 'בלי יום'}${wd ? ` · ${dayLabel(wd.day)}` : ''}</h3><span class="pill ${dn === ts.length ? 'ok' : ''}">${dn}/${ts.length}</span></div>${ts.map(taskRow).join('')}</div>`; }).join('')}
       ${D.tasks.length ? '<div class="small muted">הקשה = הסטטוס הבא. לחיצה ארוכה = נתקע עם הערה.</div>' : ''}`;
     const g = $('#gen'); if (g) g.onclick = async () => {
-      if (D.tasks.length && !confirm('לבנות מחדש? משימות שכבר התחילו או בוצעו נשארות.')) return;
+      if (D.tasks.length && !(await confirmBox('לבנות את התכנית מחדש?', { body: 'משימות שכבר התחילו או בוצעו נשארות כמו שהן.', ok: 'בנייה מחדש' }))) return;
       g.disabled = true; const { data, error } = await sb.rpc('generate_work_plan', { p: id }); if (error) { g.disabled = false; return toast(error.message, 4000); }
       toast(`נבנתה תכנית ל-${data} ימי עבודה`); reload('t');
     };
@@ -162,7 +162,7 @@ export async function renderProject(el, id, tab = 'o') {
   function bindTasks(box, redraw) {
     $$('[data-t]', box).forEach(b => {
       let timer, long = false; const t = D.tasks.find(x => x.id === b.dataset.t);
-      b.onpointerdown = () => { long = false; timer = setTimeout(async () => { long = true; const note = prompt('מה תקוע?', t.status_note || ''); if (note == null) return; Object.assign(t, { status: 'blocked', status_note: note }); await enqueue({ kind: 'update', table: 'tasks', rowId: t.id, patch: { status: 'blocked', status_note: note } }); redraw(); }, 600); };
+      b.onpointerdown = () => { long = false; timer = setTimeout(async () => { long = true; const note = await ask('מה תקוע?', { value: t.status_note || '', placeholder: 'למשל: מחכים למפתח לגג', ok: 'סימון כנתקע' }); if (note == null) return; Object.assign(t, { status: 'blocked', status_note: note }); await enqueue({ kind: 'update', table: 'tasks', rowId: t.id, patch: { status: 'blocked', status_note: note } }); redraw(); }, 600); };
       b.onpointerup = b.onpointerleave = () => clearTimeout(timer);
       b.onclick = async () => { if (long) return; t.status = NEXT[t.status]; const patch = { status: t.status }; if (t.status === 'done') Object.assign(patch, { done_by: state.user.id, done_at: new Date().toISOString() }); await enqueue({ kind: 'update', table: 'tasks', rowId: t.id, patch }); redraw(); };
     });
@@ -212,7 +212,7 @@ export async function renderProject(el, id, tab = 'o') {
       <span class="grow"><b>${esc(i.body)}</b><small>${new Date(i.created_at).toLocaleDateString('he-IL')}${i.severity === 'critical' ? ' · קריטית' : ''}</small>${i.resolution ? `<small>טיפול: ${esc(i.resolution)}</small>` : ''}</span>
       ${M && i.status === 'open' ? `<button class="chip" data-x="${i.id}">סגירה</button>` : ''}</div>`).join('') || '<div class="empty">אין תקלות בפרויקט.</div>';
     $$('[data-x]', box).forEach(b => b.onclick = async () => {
-      const r = prompt('איך טופל?'); if (r == null) return;
+      const r = await ask('איך טופל?', { multiline: true, placeholder: 'מה נעשה כדי לפתור', ok: 'סגירת התקלה' }); if (r == null) return;
       const i = D.issues.find(x => x.id === b.dataset.x); Object.assign(i, { status: 'closed', resolution: r, closed_by: state.user.id, closed_at: new Date().toISOString() });
       await enqueue({ kind: 'update', table: 'issues', rowId: i.id, patch: { status: 'closed', resolution: r, closed_by: state.user.id, closed_at: i.closed_at } }); issuesTab(box);
     });
@@ -237,7 +237,7 @@ export async function renderProject(el, id, tab = 'o') {
     if (sign?.signature_path && urls[sign.signature_path]) $('#sgimg').innerHTML = `<img src="${esc(urls[sign.signature_path])}" alt="חתימה" style="max-width:240px;background:#fff;border-radius:8px;margin-top:8px">`;
     $$('[data-z]', box).forEach(b => b.onclick = () => zoom(b.dataset.z, ''));
     const c = $('#cls'); if (c) c.onclick = async () => {
-      if (D.days.some(d => d.status !== 'done') && !confirm('יש ימים שלא נסגרו. לסגור בכל זאת?')) return;
+      if (D.days.some(d => d.status !== 'done') && !(await confirmBox('יש ימים שלא נסגרו', { body: 'לסגור את הפרויקט בכל זאת?', ok: 'סגירת פרויקט' }))) return;
       const { error } = await sb.rpc('close_project', { p: id }); if (error) return toast(error.message);
       toast('הפרויקט נסגר'); reload('s');
     };
