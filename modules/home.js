@@ -171,7 +171,7 @@ export async function renderAlerts(el) {
 
 // ---------- לו"ז ----------
 export async function renderSchedule(el) {
-  el.innerHTML = `<header class="phead"><h1>לו"ז</h1></header><div id="sc" class="stack lg"><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1>לו"ז</h1></header><div id="sc" class="stack lg"><div class="skel"></div></div>`;
   const d = await load(); const box = $('#sc'); if (!box) return;
   const t = today(), M = isManager();
   const by = new Map((d.projects || []).map(p => [p.id, p]));

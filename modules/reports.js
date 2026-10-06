@@ -17,32 +17,33 @@ export async function newReport(projectId) {
   // מהבית: קודם סוג הדוח, ואז (אם צריך) הפרויקט
   sheet(`<h3>דוח חדש</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}</div>
     <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
-    $$('[data-t]', s).forEach(b => b.onclick = () => { close(); const t = TYPES.find(x => x.k === b.dataset.t); if (t.noProject) return open(t.k); pickProject(pid => open(t.k, pid)); });
+    $$('[data-t]', s).forEach(b => b.onclick = () => { close(); const t = TYPES.find(x => x.k === b.dataset.t); if (t.noProject) return open(t.k);
+      const again = () => pickProject(pid => open(t.k, pid, again), () => newReport()); again(); });
   });
 }
-async function pickProject(then) {
+async function pickProject(then, back) {
   const { data, error } = await sb.rpc('reportable_projects'); if (error) return toast(error.message);
   sheet(`<h3>על איזה פרויקט?</h3><input type="search" class="search" id="rq" placeholder="חיפוש פרויקט">
     <div class="list" id="rl">${(data || []).map(p => `<button class="lrow" data-p="${p.id}" data-n="${esc(p.name + ' ' + (p.client_name || ''))}"><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.client_name, p.status_label].filter(Boolean).join(' · '))}</small></span>${p.mine ? '<span class="pill lime">שלי</span>' : ''}</button>`).join('')}</div>
     <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
     $('#rq', s).oninput = e => $$('[data-p]', s).forEach(b => b.hidden = !b.dataset.n.includes(e.target.value.trim()));
     $$('[data-p]', s).forEach(b => b.onclick = async () => { try { await sb.rpc('join_project', { p: b.dataset.p }); } catch {} close(); then(b.dataset.p); });
-  });
+  }, { back });
 }
 function pickType(pid) {
   sheet(`<h3>איזה דוח?</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}</div>
     <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
-    $$('[data-t]', s).forEach(b => b.onclick = () => { close(); open(b.dataset.t, pid); });
+    $$('[data-t]', s).forEach(b => b.onclick = () => { close(); open(b.dataset.t, pid, () => pickType(pid)); });
   });
 }
-export function open(k, pid) {
+export function open(k, pid, back) {
   if (k === 'spec') { location.hash = '#/specs'; return; }
-  if (k === 'daily') return dailyDate(pid);
-  if (k === 'issue') return issueSheet(pid);
+  if (k === 'daily') return dailyDate(pid, back);
+  if (k === 'issue') return issueSheet(pid, null, back);
   if (k === 'signoff') location.hash = '#/signoff/' + pid;
   if (k === 'summary') location.hash = '#/summary/' + pid;
 }
-function dailyDate(pid) {
+function dailyDate(pid, back) {
   const t = isoDay(), y = isoDay(new Date(Date.now() - 864e5));
   sheet(`<h3>דוח ביצוע יומי · לאיזה יום?</h3><div class="chips"><button class="chip" data-d="${t}" aria-pressed="true">היום</button><button class="chip" data-d="${y}">אתמול</button></div>
     <label class="field">או תאריך אחר<input type="date" id="dd" max="${t}" value="${t}"></label>
@@ -53,10 +54,10 @@ function dailyDate(pid) {
       const { data, error } = await sb.rpc('start_report', { p: pid, d }); if (error) return toast(error.message, 4000);
       close(); location.hash = '#/day/' + data;
     };
-  });
+  }, { back });
 }
 const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיחות': 'safety', 'כמעט תאונה': 'near_miss', 'אתר': 'site', 'לקוח': 'site', 'אחר': 'other' };
-export function issueSheet(pid, after) {
+export function issueSheet(pid, after, back) {
   let kind = 'רחפן', crit = false, files = [];
   sheet(`<h3>תקלה / אירוע בטיחות</h3><div class="chips">${Object.keys(ISSUE_KIND).map(k => `<button class="chip" data-k="${k}" aria-pressed="${k === kind}">${k}</button>`).join('')}</div>
     <textarea id="ib" rows="4" placeholder="מה קרה, איפה, מה נעשה"></textarea>
@@ -73,7 +74,7 @@ export function issueSheet(pid, after) {
       for (const f of files) await addFieldPhoto(f, { kind: 'issue', project_id: pid, issue_id: row.id });
       close(); toast(crit ? 'דווח — המנהלים מקבלים התראה' : 'התקלה דווחה'); after && after(row);
     };
-  });
+  }, { back });
 }
 
 // ---------- החתמת לקוח ----------

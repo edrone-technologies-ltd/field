@@ -379,3 +379,4 @@ a.btn{text-decoration:none}
 .rep-ph.warnbg{background:var(--warnbg);color:var(--warn)} .rep-ph.okbg{background:var(--okbg);color:var(--ok)}
 button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit}
 .fold{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:12px 14px}.fold summary{display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none}.fold summary .sh{flex:1}.fold[open] summary{margin-bottom:10px}
+.sback{align-self:flex-start;display:inline-flex;align-items:center;gap:4px;border:0;background:var(--card2);color:var(--ink);border-radius:99px;padding:7px 12px;font:inherit;font-size:.88rem;font-weight:700;cursor:pointer}

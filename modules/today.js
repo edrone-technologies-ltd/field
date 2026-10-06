@@ -91,7 +91,7 @@ export async function renderDay(el, id) {
   function header() {
     const s = stage();
     return `<div class="phero sm"><span class="img" style="background-image:url('${coverUrl || coverArt(P.name || '')}')"></span>
-        <a class="back glass" href="#/" onclick="if(history.length>1){history.back();return false}" aria-label="חזרה">${icon('back', 20)}</a>
+        <a class="back glass" href="#/" aria-label="חזרה">${icon('back', 20)}</a>
         <span class="ph-bottom"><span class="row" style="gap:6px"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${dayLabel(D.day.day)}${D.day.is_last_day ? ' · יום אחרון' : ''}</span>${statusPill(D.day)}</span>
         <b>${esc(P.name || '')}</b>${D.day.day_goal ? `<small>${esc(D.day.day_goal)}</small>` : ''}</span></div>
       ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? '✓' : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`}`;

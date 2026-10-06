@@ -4,7 +4,7 @@ import { sb, state, isManager, cache, sheet, $, $$, esc, initials, icon, timeAgo
 const av = c => `<span class="avatar ${c.kind === 'group' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 20) : esc(initials(c.title))}</span>`;
 
 export async function renderInbox(el) {
-  el.innerHTML = `<header class="phead"><h1 class="grow">הודעות</h1><button class="btn primary sm" id="new">${icon('plus', 18)} הודעה חדשה</button></header>
+  el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">הודעות</h1><button class="btn primary sm" id="new">${icon('plus', 18)} הודעה חדשה</button></header>
     <div id="ib" class="list"><div class="skel"></div></div>`;
   let rows;
   try { const { data, error } = await sb.rpc('my_inbox'); if (error) throw error; rows = data || []; await cache.set('inbox', rows); }
@@ -26,10 +26,10 @@ async function newMessage() {
       const { data, error } = await sb.rpc('open_dm', { other: b.dataset.p }); if (error) return toast(error.message);
       close(); location.hash = '#/c/' + data;
     });
-    const g = $('#ng', s); if (g) g.onclick = () => { close(); newGroup(people || []); };
+    const g = $('#ng', s); if (g) g.onclick = () => { close(); newGroup(people || [], newMessage); };
   });
 }
-function newGroup(people) {
+function newGroup(people, back) {
   sheet(`<h3>קבוצת תפוצה חדשה</h3><input type="text" id="gt" placeholder="שם הקבוצה (למשל: צוות אינטל חיפה)">
     <div class="chips">${people.map(p => `<button class="chip" data-u="${p.id}" aria-pressed="false">${esc(p.full_name)}</button>`).join('')}</div>
     <div class="lrow"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="gc">פתיחה</button></div>`, (s, close) => {
@@ -40,7 +40,7 @@ function newGroup(people) {
       const { data, error } = await sb.rpc('create_group', { t, members: m }); if (error) return toast(error.message);
       close(); location.hash = '#/c/' + data;
     };
-  });
+  }, { back });
 }
 
 // ---------- שיחה ----------

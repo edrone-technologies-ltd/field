@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn } from './lib/core.js';
 
 const app = $('#app');
 // לשוניות תחתונות — מוצגות לפי ההרשאות
@@ -29,7 +29,13 @@ function renderLogin(msg = '') {
     try {
       await signIn($('#ph').value, $('#cd').value);
       try { localStorage.setItem('edrone-phone', $('#ph').value); } catch {}
-      await boot();
+      await // כל חץ חזרה באפליקציה = המסך הקודם בפועל (וה-href הוא גיבוי כשנכנסו ישר מקישור/התראה)
+document.addEventListener('click', e => {
+  const a = e.target.closest('a.back'); if (!a || e.defaultPrevented || a.dataset.hard) return;
+  if (history.length > 1 && sessionStorage.getItem('edrone-nav')) { e.preventDefault(); history.back(); }
+});
+addEventListener('hashchange', () => { try { sessionStorage.setItem('edrone-nav', '1'); } catch {} });
+boot();
     } catch (err) { $('#er').textContent = err.message; b.disabled = false; b.textContent = 'כניסה'; }
   };
 }
@@ -58,7 +64,7 @@ function renderMenu() {
     can('admin') && ['#/admin', 'shield', 'ניהול מערכת', 'צוות, תפקידים והרשאות'],
   ].filter(Boolean);
   const th = document.documentElement.dataset.theme || '';
-  app.innerHTML = `<header class="phead"><h1>עוד</h1></header>
+  app.innerHTML = `<header class="phead">${backBtn('#/')}<h1>עוד</h1></header>
     <div class="stack lg">
       <div class="card prof"><span class="avatar lg">${esc(initials(p.full_name))}</span><div class="grow"><b>${esc(p.full_name)}</b><small>${esc(ROLE_HE[p.role])} · ${esc(p.phone || '')}</small>
         ${p.is_pilot && p.pilot_license_expiry ? `<small class="${new Date(p.pilot_license_expiry) - Date.now() < 45 * 864e5 ? 'err' : ''}">רישיון מטיס ${esc(p.pilot_license_no || '')} · בתוקף עד ${new Date(p.pilot_license_expiry).toLocaleDateString('he-IL')}</small>` : ''}</div></div>
@@ -69,7 +75,7 @@ function renderMenu() {
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 12</div>
+      <div class="foot">E-Drone שטח · גרסה 13</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
@@ -159,4 +165,10 @@ if ('serviceWorker' in navigator) {
   });
   navigator.serviceWorker.register('sw.js').then(r => { r.update().catch(() => {}); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') r.update().catch(() => {}); }); }).catch(() => {});
 }
+// כל חץ חזרה באפליקציה = המסך הקודם בפועל (וה-href הוא גיבוי כשנכנסו ישר מקישור/התראה)
+document.addEventListener('click', e => {
+  const a = e.target.closest('a.back'); if (!a || e.defaultPrevented || a.dataset.hard) return;
+  if (history.length > 1 && sessionStorage.getItem('edrone-nav')) { e.preventDefault(); history.back(); }
+});
+addEventListener('hashchange', () => { try { sessionStorage.setItem('edrone-nav', '1'); } catch {} });
 boot();
