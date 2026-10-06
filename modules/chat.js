@@ -40,7 +40,7 @@ export async function renderChat(el, { site, project, conversation }) {
         ${m.photo_path ? `<img src="${esc(urls[m.photo_path] || '')}" alt="" data-z="${esc(urls[m.photo_path] || '')}">` : ''}
         ${m.body ? `<div class="tx">${esc(m.body).replace(/\n/g, '<br>')}</div>` : ''}
         <div class="when">${new Date(m.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div></div>`;
-    }).join('') : `<div class="empty-card"><span class="ei">${icon('chat', 26)}</span><span><b>אין הודעות עדיין</b><small>${conversation ? 'כתבו את ההודעה הראשונה' : `כאן מעדכנים את כל מי שעובד על ${esc(label)}`}</small></span></div>`;
+    }).join('') : `<div class="empty-card"><span class="ei">${icon('chat', 26)}</span><span><b>אין הודעות עדיין</b><small>${conversation ? 'כתבו את ההודעה הראשונה' : site ? `שיחת האפיון של ${esc(label)} — מנהלים וסוקרים בלבד` : `צ'אט הצוות של ${esc(label)} — רק מי ששובץ לפרויקט`}</small></span></div>`;
     $$('[data-z]', box).forEach(i => i.onclick = () => i.dataset.z && zoom(i.dataset.z, ''));
     window.scrollTo({ top: document.body.scrollHeight });
   }

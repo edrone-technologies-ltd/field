@@ -59,8 +59,8 @@ export async function renderSite(el, slug, tab = 'b') {
     <div><div class="eyebrow">סיור אפיון</div><h1>${esc(s.name)}</h1></div>
     ${contactCard(s.contact_name, s.contact_phone)}
     <div class="kpis"><div class="kpi"><b>${done}/${n}</b><span>מבנים הושלמו</span></div><div class="kpi"><b>${days ? nf(days) : '—'}</b><span>ימי עבודה שהוזנו</span></div>
-      <div class="kpi"><b>${(a => a ? nf(a) : '—')(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</b><span>מ"ר לפי התכנית</span></div></div>
-    <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט פרויקט</button></div>
+      ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ"ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
+    <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
     <div id="tabbody"></div>`;
   bindCopy(el);
   $$('.tabs button', el).forEach(b => b.onclick = () => location.hash = `#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`);
@@ -86,9 +86,9 @@ export async function renderBuilding(el, slug, bid) {
   const plans = await signedUrls('plans', b.plan_images.map(p => p.storage_path));
   const chips = (k, opts) => `<div class="chips">${opts.map(o => `<button type="button" class="chip" data-g="${k}" data-v="${esc(o)}" aria-pressed="${form[k] === o}">${esc(o)}</button>`).join('')}</div>`;
   const [sc, st] = STAT[spec.status];
-  el.innerHTML = `<div class="top"><button class="back" id="bk">→ ${esc(s.name)}</button><span class="grow"></span><span class="pill ${sc}" id="stp">${st}</span></div>
+  el.innerHTML = `<div class="top"><a class="back" id="bk" href="javascript:void 0" aria-label="חזרה ל${esc(s.name)}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><span class="grow"></span><span class="pill ${sc}" id="stp">${st}</span></div>
     <div><div class="eyebrow">${esc(s.name)}${b.group_label ? ' · ' + esc(s.group_word) + ' ' + esc(b.group_label) : ''}</div><h2>${esc(b.name)}</h2>${b.subtitle ? `<div class="muted">${esc(b.subtitle)}</div>` : ''}</div>
-    <div class="kpis"><div class="kpi"><b>${b.facade_area_m2 ? nf(b.facade_area_m2) : '—'}</b><span>${b.facade_area_m2 ? 'מ"ר לפי התכנית' : 'שטח: למדוד בשטח'}</span></div>
+    <div class="kpis"><div class="kpi"><b>${b.facade_area_m2 ? nf(b.facade_area_m2) : 'למדידה'}</b><span>${b.facade_area_m2 ? 'מ"ר לפי התכנית' : 'שטח חזיתות'}</span></div>
       <div class="kpi"><b>${b.floors ? nf(b.floors) : '—'}</b><span>קומות</span></div><div class="kpi"><b>${b.plan_source === 'plans' ? b.plan_images.length : 'סקיצה'}</b><span>${b.plan_source === 'plans' ? 'חזיתות בתכנית' : 'מקור'}</span></div></div>
     ${b.office_note ? `<div class="note">${esc(b.office_note)}</div>` : ''}
     ${contactCard(s.contact_name, s.contact_phone)}
