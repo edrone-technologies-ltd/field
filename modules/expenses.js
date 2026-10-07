@@ -1,5 +1,5 @@
 // הוצאות שטח: צילום קבלה → קטגוריה, סכום, פרויקט → אישור מנהל → נכנס לעלות הפרויקט (ולמאנדי) ולייצוא להנהלת החשבונות.
-import { sb, state, isManager, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, ask, dm, signedUrls } from '../lib/core.js';
+import { sb, state, isManager, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, ask, dm, signedUrls, isoDay } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 export const CATS = { fuel: 'דלק', parking: 'חניה', toll: 'כביש אגרה', food: 'אוכל', lodging: 'לינה', materials: 'חומרים / ציוד קטן', other: 'אחר' };
@@ -10,7 +10,7 @@ export async function renderExpenses(el) {
   const M = isManager();
   el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">הוצאות</h1>${M ? '<button class="btn ghost sm" id="xls">ייצוא</button>' : ''}</header>
     <button class="btn primary block big" id="newx">${icon('plus', 20)} הוצאה חדשה</button><div id="xb" class="stack lg"><div class="skel"></div></div>`;
-  const since = new Date(Date.now() - 60 * 864e5).toISOString().slice(0, 10);
+  const since = isoDay(new Date(Date.now() - 60 * 864e5));
   const { data: rows } = await sb.from('expenses').select('*, profiles:user_id(full_name), projects(name)').gte('day', since).order('day', { ascending: false }).order('created_at', { ascending: false });
   const mine = (rows || []).filter(r => r.user_id === state.user.id), pend = M ? (rows || []).filter(r => r.status === 'pending' && r.user_id !== state.user.id) : [];
   const urls = await signedUrls('field', (rows || []).map(r => r.receipt_path).filter(Boolean)).catch(() => ({}));
@@ -19,7 +19,7 @@ export async function renderExpenses(el) {
       <span class="grow"><b>${nis(r.amount)} · ${CATS[r.category]}</b><small>${dm(r.day)}${r.vendor ? ' · ' + esc(r.vendor) : ''}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}${decide ? ' · ' + esc(r.profiles?.full_name || '') : ''}</small>
       ${r.note ? `<small>${esc(r.note)}</small>` : ''}${r.manager_reply ? `<small class="mreply">תגובה: ${esc(r.manager_reply)}</small>` : ''}</span>
       ${decide ? `<span class="stack" style="gap:4px"><button class="chip" data-ok="${r.id}">אישור</button><button class="chip" data-no="${r.id}">דחייה</button></span>` : `<span class="pill ${c}">${t}</span>`}</div>`; };
-  const monthTot = mine.filter(r => r.day.slice(0, 7) === new Date().toISOString().slice(0, 7) && r.status !== 'rejected').reduce((t, r) => t + Number(r.amount), 0);
+  const monthTot = mine.filter(r => r.day.slice(0, 7) === isoDay().slice(0, 7) && r.status !== 'rejected').reduce((t, r) => t + Number(r.amount), 0);
   $('#xb').innerHTML = `${pend.length ? `<section><div class="sh-row"><h3 class="sh">לאישור</h3><span class="count">${pend.length}</span></div><div class="list">${pend.map(r => row(r, true)).join('')}</div></section>` : ''}
     <section><div class="sh-row"><h3 class="sh">שלי</h3><span class="more">החודש ${nis(monthTot)}</span></div><div class="list">${mine.map(r => row(r, false)).join('') || '<div class="muted small">עוד אין הוצאות</div>'}</div></section>
     ${M ? `<details class="fold"><summary><span class="sh">כל ההוצאות (60 יום)</span><span class="count">${(rows || []).length}</span></summary><div class="list">${(rows || []).map(r => row(r, false).replace('</b><small>', `</b><small>${esc(r.profiles?.full_name || '')} · `)).join('')}</div></details>` : ''}`;
@@ -38,7 +38,7 @@ export async function newExpense(projectId, done, back) {
   sheet(`<h3>הוצאה חדשה</h3>
     <label class="btn ghost block" style="position:relative">${icon('plus', 18)} <span id="rcn">צילום קבלה</span><input type="file" accept="image/*" capture="environment" id="rc" style="position:absolute;inset:0;opacity:0"></label>
     <div class="chips">${Object.entries(CATS).map(([k, t]) => `<button class="chip" data-c="${k}" aria-pressed="${k === cat}">${t}</button>`).join('')}</div>
-    <div class="row"><label class="field grow">סכום (₪)<input type="number" inputmode="decimal" step="0.01" id="xa"></label><label class="field grow">תאריך<input type="date" id="xd" value="${new Date().toISOString().slice(0, 10)}"></label></div>
+    <div class="row"><label class="field grow">סכום (₪)<input type="number" inputmode="decimal" step="0.01" id="xa"></label><label class="field grow">תאריך<input type="date" id="xd" value="${isoDay()}"></label></div>
     <label class="field">ספק / מקום<input type="text" id="xv" placeholder="למשל: פז, חניון עזריאלי"></label>
     <div id="fuel" class="row"><label class="field grow">ליטרים<input type="number" inputmode="decimal" id="xl"></label><label class="field grow">ק"מ ברכב<input type="number" inputmode="numeric" id="xo"></label></div>
     ${(vehicles || []).length ? `<label class="field" id="veh">רכב<select id="xr"><option value="">—</option>${vehicles.map(v => `<option value="${v.id}">${esc(v.name)}</option>`).join('')}</select></label>` : ''}
@@ -66,5 +66,5 @@ async function exportXls(rows) {
   const data = [['תאריך', 'עובד', 'קטגוריה', 'סכום ₪', 'ספק', 'פרויקט', 'ליטרים', 'ק"מ', 'הערה', 'קבלה']].concat(ok.map(r => [r.day, r.profiles?.full_name || '', CATS[r.category], Number(r.amount), r.vendor || '', r.projects?.name || '', r.liters || '', r.odometer || '', r.note || '', r.receipt_path ? 'יש' : 'אין']));
   data.push([], ['סה״כ', '', '', ok.reduce((t, r) => t + Number(r.amount), 0)]);
   const wb = X.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] }; const ws = X.utils.aoa_to_sheet(data); ws['!views'] = [{ RTL: true }]; ws['!cols'] = [11, 16, 14, 10, 18, 26, 8, 8, 24, 7].map(w => ({ wch: w }));
-  X.utils.book_append_sheet(wb, ws, 'הוצאות מאושרות'); X.writeFile(wb, `הוצאות-שטח-${new Date().toISOString().slice(0, 7)}.xlsx`);
+  X.utils.book_append_sheet(wb, ws, 'הוצאות מאושרות'); X.writeFile(wb, `הוצאות-שטח-${isoDay().slice(0, 7)}.xlsx`);
 }

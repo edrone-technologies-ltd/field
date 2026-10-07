@@ -1,5 +1,5 @@
 // ציוד: מצב הצי והציוד, היסטוריית תקלות, ודיווח תקלה בציוד. מצב הרחפנים מגיע מלוח בריאות הצי במאנדי.
-import { sb, state, isManager, cache, enqueue, sheet, uid, $, $$, esc, toast, dm } from '../lib/core.js';
+import { sb, state, isManager, cache, enqueue, sheet, uid, $, $$, esc, toast, dm, isoDay } from '../lib/core.js';
 
 const KIND = { drone: 'רחפנים', vehicle: 'רכבים', trailer: 'נגררים', pump: 'משאבות', battery: 'סוללות', other: 'אחר' };
 const HEALTH = { ok: ['תקין', 'ok'], warning: ['במעקב', 'warn'], grounded: ['מקורקע', 'bad'], maintenance: ['בטיפול', 'warn'] };
@@ -35,7 +35,7 @@ export async function renderEquipment(el) {
       <b>תקלות</b>${mine.map(i => `<div class="feed"><span class="pill ${i.status === 'open' ? 'warn' : 'ok'}">${i.status === 'open' ? 'פתוחה' : 'טופלה'}</span><span class="grow"><b>${esc(i.body)}</b><small>${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span></div>`).join('') || '<div class="small muted">אין תקלות רשומות.</div>'}
       <textarea id="eb" placeholder="דיווח תקלה בציוד הזה"></textarea>
       <div class="row"><button class="btn ghost grow" data-close>סגירה</button><button class="btn primary grow" id="es">דיווח</button></div>`, (s, close) => {
-      $$('[data-h]', s).forEach(b => b.onclick = async () => { r.health = b.dataset.h; await enqueue({ kind: 'update', table: 'equipment', rowId: r.id, patch: { health: r.health, health_date: new Date().toISOString().slice(0, 10) } }); close(); draw(); });
+      $$('[data-h]', s).forEach(b => b.onclick = async () => { r.health = b.dataset.h; await enqueue({ kind: 'update', table: 'equipment', rowId: r.id, patch: { health: r.health, health_date: isoDay() } }); close(); draw(); });
       $('#es', s).onclick = async () => {
         const body = $('#eb', s).value.trim(); if (!body) return toast('מה התקלה?');
         const row = { id: uid(), equipment_id: r.id, kind: 'equipment', body: `${r.name}: ${body}`, opened_by: state.user.id, status: 'open', severity: 'normal', created_at: new Date().toISOString() };

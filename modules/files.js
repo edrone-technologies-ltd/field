@@ -1,5 +1,5 @@
 // תיק אישי: מסמכים (רישיונות, ת"ז, תעודות, חוזה, 101) ותלושי שכר. עובד — צפייה בשלו. מנהלים — העלאה ומחיקה; תלושים — מנהלי מערכת בלבד.
-import { sb, state, isManager, sheet, icon, $, $$, esc, toast, confirmBox, uid, initials, ROLE_HE } from '../lib/core.js';
+import { sb, state, isManager, sheet, icon, $, $$, esc, toast, confirmBox, uid, initials, ROLE_HE, isoDay } from '../lib/core.js';
 
 export const KINDS = { payslip: 'תלוש שכר', license: 'רישיון', id: 'תעודה מזהה', certificate: 'תעודה / הסמכה', contract: 'חוזה העסקה', form101: 'טופס 101', other: 'אחר' };
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
@@ -75,7 +75,7 @@ function uploadSheet(p, done) {
   const kinds = Object.entries(KINDS).filter(([k]) => k !== 'payslip' || isAdmin());
   sheet(`<h3>העלאה לתיק של ${esc(p.full_name)}</h3>
     <div class="chips">${kinds.map(([k, t]) => `<button class="chip" data-k="${k}" aria-pressed="${k === kind}">${t}</button>`).join('')}</div>
-    <label class="field" id="fm">חודש התלוש<input type="month" id="um" value="${prev.toISOString().slice(0, 7)}"></label>
+    <label class="field" id="fm">חודש התלוש<input type="month" id="um" value="${isoDay(prev).slice(0, 7)}"></label>
     <label class="field" id="ft" hidden>שם המסמך<input type="text" id="ut" placeholder="למשל: רישיון מטיס, תעודת עבודה בגובה"></label>
     <label class="field" id="fx" hidden>בתוקף עד (לא חובה)<input type="date" id="ux"></label>
     <label class="btn ghost block" style="position:relative">${icon('plus', 18)} <span id="un">בחירת קובץ (PDF או תמונה)</span><input type="file" accept="application/pdf,image/*" id="uf" style="position:absolute;inset:0;opacity:0"></label>
@@ -109,7 +109,7 @@ function bulkPayslips(people, done) {
   let files = [];
   const guess = f => people.find(p => p.full_name.split(' ').some(w => w.length > 1 && f.name.includes(w)))?.id || '';
   sheet(`<h3>תלושי שכר לחודש</h3><div class="small muted">בוחרים את כל הקבצים. השיוך לעובד מנחש לפי השם בקובץ — בודקים ומתקנים לפני ההעלאה. כל עובד מקבל הודעה.</div>
-    <label class="field">חודש<input type="month" id="bm" value="${prev.toISOString().slice(0, 7)}"></label>
+    <label class="field">חודש<input type="month" id="bm" value="${isoDay(prev).slice(0, 7)}"></label>
     <label class="btn ghost block" style="position:relative">${icon('plus', 18)} בחירת קבצים<input type="file" accept="application/pdf,image/*" multiple id="bf" style="position:absolute;inset:0;opacity:0"></label>
     <div id="bl" class="list"></div>
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="bgo">העלאה</button></div>`, (s, close) => {

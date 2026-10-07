@@ -51,7 +51,7 @@ export async function renderSites(el) {
       const fold = FOLDED.has(k) && !q;
       return fold ? `<details class="fold"><summary><span class="sh">${esc(k)}</span><span class="count">${list.length}</span></summary><div class="list">${list.map(row).join('')}</div></details>`
         : `<section><div class="sh-row"><h3 class="sh">${esc(k)}</h3><span class="count">${list.length}</span></div><div class="list">${list.map(row).join('')}</div></section>`; }).join('')
-      || `<div class="empty-card"><span><b>לא נמצא</b><small>לידים חדשים במאנדי מופיעים כאן תוך כמה דקות</small></span></div>`;
+      || `<div class="empty-card"><span><b>לא נמצא</b><small>לידים חדשים מופיעים כאן תוך כמה דקות</small></span></div>`;
     $$('#sl .item').forEach(b => b.onclick = () => location.hash = b.dataset.one ? `#/b/${b.dataset.s}/${b.dataset.one}` : '#/site/' + b.dataset.s);
   };
   $('#sq').oninput = e => draw(e.target.value.trim());

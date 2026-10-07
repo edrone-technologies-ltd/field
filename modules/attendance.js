@@ -185,7 +185,7 @@ export async function renderHours(el, userId, month) {
   $('#mp').onclick = () => location.hash = `${base}/${prevMonth(month)}`;
   $('#mn').onclick = () => location.hash = `${base}/${nextMonth(month)}`;
   const S = await settings();
-  const from = new Date(monthStart(prevMonth(month)) + 'T00:00:00+03:00').toISOString(), to = new Date(monthStart(nextMonth(month)) + 'T00:00:00+03:00').toISOString();
+  const from = new Date(monthStart(prevMonth(month)) + 'T00:00:00+03:00').toISOString(), to = new Date(monthStart(nextMonth(month)) + 'T00:00:00+02:00').toISOString(); // +02 = חצות חורף; בקיץ שעה עודפת שמסוננת לפי יום מקומי
   const [{ data: shifts }, { data: am }, { data: who }, { data: edits }, { data: reqs }] = await Promise.all([
     sb.from('shifts').select('*').eq('user_id', userId).gte('start_at', from).lt('start_at', to).order('start_at'),
     sb.from('attendance_months').select('*').eq('user_id', userId).eq('month', monthStart(month)).maybeSingle(),
@@ -193,7 +193,7 @@ export async function renderHours(el, userId, month) {
     sb.from('shift_edits').select('*').eq('user_id', userId).order('at', { ascending: false }).limit(30),
     sb.from('shift_requests').select('*').eq('user_id', userId).gte('req_start', from).lt('req_start', to).order('created_at', { ascending: false }),
   ]);
-  const { data: abs } = await sb.from('absences').select('*').eq('user_id', userId).lte('date_from', `${month}-31`).gte('date_to', `${month}-01`).order('date_from');
+  const { data: abs } = await sb.from('absences').select('*').eq('user_id', userId).lt('date_from', monthStart(nextMonth(month))).gte('date_to', `${month}-01`).order('date_from');
   const R0 = reqs || [], pendingNew = R0.filter(r => !r.shift_id), byShift = id => R0.filter(r => r.shift_id === id);
   if (!me) $('#ht').textContent = who?.full_name || '';
   const R = computeMonth(shifts || [], month, S);
@@ -208,7 +208,7 @@ export async function renderHours(el, userId, month) {
     ${R.flags.length ? `<section><h3 class="sh">לתשומת לב</h3><div class="alist">${R.flags.map(f => `<div class="arow warn"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small style="white-space:normal;color:var(--ink)">${esc(f)}</small></span></div>`).join('')}</div></section>` : ''}
     <section><h3 class="sh">לפי ימים</h3><div class="list">${R.days.map(d => `<div class="lrow dayline"><span class="datebox"><b>${+d.date.slice(8)}</b><small>יום ${HE_D1[new Date(d.date + 'T12:00').getDay()]}</small></span>
       <span class="grow"><b>${d.shifts.map(s => `${tm(s.start_at)}–${s.end_at ? tm(s.end_at) : 'פתוחה'}${s.start_lat == null && s.source === 'app' ? ' ⌀' : ''}`).join(' · ')}</b>
-      <small>${hhmm(d.netH)} שעות${d.ot125 + d.ot150 ? ` · נוספות ${hhmm(d.ot125 + d.ot150)}` : ''}${d.isNight ? ' · לילה' : ''}${d.holiday ? ' · ' + d.holiday : ''}</small></span>
+      <small>${hhmm(d.netH)} שעות${d.ot125 + d.ot150 ? ` · נוספות ${hhmm(d.ot125 + d.ot150)}` : ''}${d.isNight ? ' · לילה' : ''}${d.holiday ? ' · ' + d.holiday : ''}${!me && d.shifts.some(x => x.late_sync_min) ? ` · <span class="pill warn">כניסה נשלחה באיחור ${Math.max(...d.shifts.map(x => x.late_sync_min || 0))} דק׳</span>` : ''}</small></span>
       ${me && !locked && !d.shifts.some(x => byShift(x.id).some(r => r.status === 'pending')) ? `<button class="chip" data-req="${d.shifts[0].id}">עריכה</button>` : !me && isManager() && !locked ? `<button class="chip" data-edit="${d.shifts[0].id}">תיקון</button>` : ''}</div>
       ${d.shifts.flatMap(x => byShift(x.id).filter(r => r.status === 'pending' || Date.now() - new Date(r.decided_at) < 30 * 864e5).map(r => reqLine(r, x) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : ''))).join('')}`).join('') || '<div class="muted small">אין משמרות בחודש הזה</div>'}
       ${pendingNew.map(r => reqLine(r) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : '')).join('')}</div>
@@ -261,7 +261,7 @@ export async function renderAttendance(el, month) {
   $('#mp').onclick = () => location.hash = `#/attendance/m/${prevMonth(month)}`;
   $('#mn').onclick = () => location.hash = `#/attendance/m/${nextMonth(month)}`;
   const S = await settings();
-  const from = new Date(monthStart(prevMonth(month)) + 'T00:00:00+03:00').toISOString(), to = new Date(monthStart(nextMonth(month)) + 'T00:00:00+03:00').toISOString();
+  const from = new Date(monthStart(prevMonth(month)) + 'T00:00:00+03:00').toISOString(), to = new Date(monthStart(nextMonth(month)) + 'T00:00:00+02:00').toISOString(); // +02 = חצות חורף; בקיץ שעה עודפת שמסוננת לפי יום מקומי
   const [{ data: people }, { data: shifts }, { data: ams }, { data: pend }] = await Promise.all([
     sb.from('profiles').select('id,full_name,role').eq('is_active', true).order('full_name'),
     sb.from('shifts').select('*').gte('start_at', from).lt('start_at', to).order('start_at'),
@@ -270,7 +270,7 @@ export async function renderAttendance(el, month) {
   ]);
   const [{ data: pabs }, { data: mabs }, { data: rates }] = await Promise.all([
     sb.from('absences').select('*').eq('status', 'pending').order('date_from'),
-    sb.from('absences').select('*').eq('status', 'approved').lte('date_from', `${month}-31`).gte('date_to', `${month}-01`),
+    sb.from('absences').select('*').eq('status', 'approved').lt('date_from', monthStart(nextMonth(month))).gte('date_to', `${month}-01`),
     sb.from('employee_rates').select('*'),
   ]);
   const rows = (people || []).map(p => ({ p, R: computeMonth((shifts || []).filter(s => s.user_id === p.id), month, S), am: (ams || []).find(a => a.user_id === p.id) }));

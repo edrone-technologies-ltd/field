@@ -268,7 +268,8 @@ export async function renderDay(el, id) {
       for (const m of miss) { const row = { id: uid(), work_day_id: D.day.id, item: m, qty: 1, reported_by: state.user.id }; D.missing.push(row); await insert('missing_items', row); }
       const now = new Date().toISOString();
       await save('work_days', { departed_at: now, status: 'en_route', equip_loaded: D.local.loaded, drone_ack: !!D.day.drone_ack });
-      for (const c of D.day.work_day_crew) if (!c.clock_in) { c.clock_in = now; await enqueue({ kind: 'insert', table: 'work_day_crew', row: { work_day_id: D.day.id, user_id: c.user_id, role: c.role, clock_in: now } }); }
+      for (const c of D.day.work_day_crew) if (!c.clock_in) c.clock_in = now;
+      await enqueue({ kind: 'rpc', fn: 'crew_depart', args: { d: D.day.id, t: now } });
       toast('נסיעה טובה'); draw();
     };
   }
