@@ -290,10 +290,11 @@ export async function renderBuilding(el, slug, bid) {
   const rate = () => { const a = Number(b.facade_area_m2), d = Number(days.value); $('#rate').textContent = a && d ? `≈ ${nf(Math.round(a / d))} מ"ר חזית ליום עבודה` : ''; };
   days.oninput = () => { set('days_expected', days.value === '' ? null : Number(days.value)); rate(); }; rate();
   // מונה ימים על כל חזית: הסה״כ למבנה = סכום החזיתות (כשסופרים לפי חזיתות, הסה״כ נעול)
-  const syncTotal = () => {
+  const syncTotal = (init = false) => {
     const vals = [...FD.values()].map(x => Number(x.d)).filter(v => v > 0), sum = vals.reduce((t, v) => t + v, 0);
     days.readOnly = !!vals.length; $('#dm').disabled = $('#dp').disabled = !!vals.length; $('#dsrc').textContent = vals.length ? 'מחושב מסכום החזיתות' : 'כל המבנה, כל החזיתות. חצי יום = 0.5';
-    if (vals.length) { days.value = sum; set('days_expected', sum); rate(); }
+    // בפתיחת המסך רק מציגים — שמירה מסומנת רק כשהמשתמש באמת שינה משהו
+    if (vals.length) { days.value = sum; if (init) form.days_expected = sum; else set('days_expected', sum); rate(); }
     const dirs = [...FD.values()].filter(x => x.d > 0).map(x => dirOfKey(x.k)).filter(Boolean);
     form.facades = vals.length && dirs.length ? [...new Set(dirs)] : null;
     // נשמר כמערך מסודר לפי סדר הכרטיסים, עם כותרת וכיוון — מנוע התכנית קורא אותו כמו שהוא
@@ -311,7 +312,7 @@ export async function renderBuilding(el, slug, bid) {
       $$('button', c).forEach(x => x.setAttribute('aria-pressed', x === btn)); dirty = true; syncTotal();
     }));
   };
-  bindFac(el); syncTotal();
+  bindFac(el); syncTotal(true);
   // תמונות חזית של הסוקר (כולל ממתינות בתור) + כרטיסי מצפן כשאין תמונות
   async function drawFacades() {
     const box = $('#facs'); if (!box) return;
