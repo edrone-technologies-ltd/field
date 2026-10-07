@@ -621,3 +621,14 @@ body.has-nav .app{padding-bottom:calc(72px + var(--safe-b))}
 .tabbar,.bar,.composer{bottom:calc(-1 * var(--vgap, 0px))}
 .fabs{bottom:calc(84px + var(--safe-b) - var(--vgap, 0px))}
 .toast{bottom:calc(76px + var(--safe-b) - var(--vgap, 0px))}
+.clock{flex-wrap:wrap} .cl-warn{flex-basis:100%;margin-top:8px;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--warn) 14%,var(--card));font-size:.85rem}
+.linkbtn{border:0;background:none;padding:0;color:var(--ink);font:700 .85rem Heebo,sans-serif;text-decoration:underline}
+.clock.hint{border-color:var(--lime);box-shadow:0 0 0 3px color-mix(in srgb,var(--lime) 35%,transparent)}
+/* מבחן וחתימה */
+.qz{display:flex;flex-direction:column;gap:6px;padding:10px 0;border-top:1px solid var(--line)} .qz.wrong b{color:var(--bad)}
+.qopt{text-align:right;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--card);font:500 .95rem Heebo,sans-serif;color:var(--ink)}
+.qopt.on{border-color:var(--lime);background:color-mix(in srgb,var(--lime) 18%,var(--card));font-weight:700}
+.qedit{display:flex;flex-direction:column;gap:6px;padding:10px;border:1px dashed var(--line);border-radius:12px}
+.qopt-e{display:flex;align-items:center;gap:8px} .qopt-e input[type=radio]{width:20px;height:20px;flex:0 0 auto}
+.sigpad{width:100%;height:150px;background:#fff;border:1px dashed var(--line);border-radius:12px;touch-action:none}
+.qedit input:not([type=radio]){width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font:500 .95rem Heebo,sans-serif;color:var(--ink);box-sizing:border-box} .qopt-e input:not([type=radio]){flex:1}

@@ -42,6 +42,7 @@ export async function myOpenShift() {
   if (s && closed.has(s.id)) s = null;
   await cache.set('open-shift', s); return s;
 }
+const km = m => m >= 1000 ? (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' ק"מ' : Math.round(m) + ' מ\'';
 async function consent() {
   if (state.profile.attendance_consent_at) return true;
   return new Promise(res => sheet(`<h3>רישום שעות ומיקום</h3>
@@ -61,9 +62,19 @@ export async function clockIn(after) {
   if (sh) return toast(`שבת — לא עובדים. אפשר להחתים מ-${tm(sh.end.toISOString())}`, 4000);
   toast('מאתר מיקום…', 9000);
   const loc = await locateOnce();
+  // גידור: רחוק גם מהמשרד וגם מאתר היום → העובד רואה, יכול לכתוב למה, והמנהל רואה סימון (המרחק נשמר בשרת)
+  let note = null;
+  if (loc && navigator.onLine) try {
+    const { data } = await sb.rpc('my_nearest_place', { la: loc.lat, ln: loc.lng }); const n = data?.[0];
+    if (n && n.dist > n.radius) {
+      note = await ask(`אתה ${km(n.dist)} מ${n.place}`, { hint: 'הכניסה תסומן למנהל. בדרך? באתר אחר? אפשר לכתוב כאן (לא חובה)', placeholder: 'למשל: יצאתי מהבית ישר לאתר', ok: 'כניסה למשמרת', optional: true });
+      if (note == null) return toast('הכניסה בוטלה');
+      note = note.trim() || null;
+    }
+  } catch { /* בלי קליטה — ממשיכים */ }
   let project_id = null;
   try { const { data } = await sb.from('work_days').select('project_id,work_day_crew!inner(user_id)').eq('day', ymd(new Date())).eq('work_day_crew.user_id', state.user.id).limit(1); project_id = data?.[0]?.project_id || null; } catch {}
-  const row = { id: uid(), user_id: state.user.id, start_at: new Date().toISOString(), start_lat: loc?.lat ?? null, start_lng: loc?.lng ?? null, start_acc: loc?.acc ?? null, project_id, source: 'app', status: 'open' };
+  const row = { id: uid(), user_id: state.user.id, start_at: new Date().toISOString(), start_lat: loc?.lat ?? null, start_lng: loc?.lng ?? null, start_acc: loc?.acc ?? null, project_id, source: 'app', status: 'open', note };
   await enqueue({ kind: 'insert', table: 'shifts', row }); await cache.set('open-shift', row);
   toast(loc ? 'נכנסת למשמרת' : 'נכנסת למשמרת (בלי מיקום)'); after && after();
 }
@@ -95,12 +106,29 @@ export async function clockCard(box) {
       ? `<span class="cl-dot"></span><span class="grow"><b>במשמרת מ-${tm(open.start_at)}</b><small id="cl-t">${elapsed()} שעות</small></span><button class="btn sm danger" id="cl-out">יציאה</button>`
       : `<span class="mic">${icon('clock', 20)}</span><span class="grow"><b>לא במשמרת</b><small><a href="#/hours">השעות שלי</a></small></span><button class="btn sm primary" id="cl-in">כניסה</button>`;
     $('#clockcard')?.remove(); box.prepend(el);
+    if (open && (Date.now() - new Date(open.start_at)) / 36e5 > 11) {
+      el.insertAdjacentHTML('beforeend', `<div class="cl-warn">משמרת פתוחה ${elapsed()} שעות — שכחת להחתים יציאה? <button class="linkbtn" id="cl-fix">יצאתי בשעה אחרת</button></div>`);
+      $('#cl-fix', el).onclick = () => requestSheet(open, ymd(new Date(open.start_at)).slice(0, 7), draw);
+    }
+    if (!open) suggestIn(el);
     if (open) { tick = setInterval(() => { const t = $('#cl-t'); if (t) t.textContent = elapsed() + ' שעות'; else clearInterval(tick); }, 30000); $('#cl-out').onclick = () => clockOut(open, draw); }
     else $('#cl-in').onclick = () => clockIn(draw);
   };
   draw();
 }
 
+
+// הצעת כניסה: רק אם כבר יש הרשאת מיקום (לא מקפיצים בקשה), ורק כשהעובד באמת במשרד או באתר של היום
+async function suggestIn(el) {
+  try {
+    if (!navigator.geolocation || !navigator.permissions) return;
+    if ((await navigator.permissions.query({ name: 'geolocation' })).state !== 'granted') return;
+    const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { maximumAge: 300000, timeout: 8000 }));
+    const { data } = await sb.rpc('my_nearest_place', { la: pos.coords.latitude, ln: pos.coords.longitude }); const n = data?.[0];
+    if (!n || n.dist > n.radius || !el.isConnected) return;
+    el.classList.add('hint'); const b = el.querySelector('.grow b'); if (b) b.textContent = `אתה ב${n.place} — להיכנס למשמרת?`;
+  } catch { /* */ }
+}
 
 // ---------- בקשת עריכה של עובד (נכנסת לשעות רק אחרי אישור מנהל) ----------
 function requestSheet(sh, month, done) {
@@ -208,7 +236,7 @@ export async function renderHours(el, userId, month) {
     ${R.flags.length ? `<section><h3 class="sh">לתשומת לב</h3><div class="alist">${R.flags.map(f => `<div class="arow warn"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small style="white-space:normal;color:var(--ink)">${esc(f)}</small></span></div>`).join('')}</div></section>` : ''}
     <section><h3 class="sh">לפי ימים</h3><div class="list">${R.days.map(d => `<div class="lrow dayline"><span class="datebox"><b>${+d.date.slice(8)}</b><small>יום ${HE_D1[new Date(d.date + 'T12:00').getDay()]}</small></span>
       <span class="grow"><b>${d.shifts.map(s => `${tm(s.start_at)}–${s.end_at ? tm(s.end_at) : 'פתוחה'}${s.start_lat == null && s.source === 'app' ? ' ⌀' : ''}`).join(' · ')}</b>
-      <small>${hhmm(d.netH)} שעות${d.ot125 + d.ot150 ? ` · נוספות ${hhmm(d.ot125 + d.ot150)}` : ''}${d.isNight ? ' · לילה' : ''}${d.holiday ? ' · ' + d.holiday : ''}${!me && d.shifts.some(x => x.late_sync_min) ? ` · <span class="pill warn">כניסה נשלחה באיחור ${Math.max(...d.shifts.map(x => x.late_sync_min || 0))} דק׳</span>` : ''}</small></span>
+      <small>${hhmm(d.netH)} שעות${d.ot125 + d.ot150 ? ` · נוספות ${hhmm(d.ot125 + d.ot150)}` : ''}${d.isNight ? ' · לילה' : ''}${d.holiday ? ' · ' + d.holiday : ''}${!me && d.shifts.some(x => x.late_sync_min) ? ` · <span class="pill warn">כניסה נשלחה באיחור ${Math.max(...d.shifts.map(x => x.late_sync_min || 0))} דק׳</span>` : ''}${!me ? d.shifts.filter(x => x.start_dist_m > (S.geofence_m || 500) || x.end_dist_m > (S.geofence_m || 500)).map(x => ` · <span class="pill warn" title="${esc(x.note || '')}">${x.start_dist_m > (S.geofence_m || 500) ? 'כניסה' : 'יציאה'} ${km(x.start_dist_m > (S.geofence_m || 500) ? x.start_dist_m : x.end_dist_m)} מ${esc(x.start_dist_m > (S.geofence_m || 500) ? x.start_place : x.end_place)}</span>${x.note ? ` <small>"${esc(x.note)}"</small>` : ''}`).join('') : ''}</small></span>
       ${me && !locked && !d.shifts.some(x => byShift(x.id).some(r => r.status === 'pending')) ? `<button class="chip" data-req="${d.shifts[0].id}">עריכה</button>` : !me && isManager() && !locked ? `<button class="chip" data-edit="${d.shifts[0].id}">תיקון</button>` : ''}</div>
       ${d.shifts.flatMap(x => byShift(x.id).filter(r => r.status === 'pending' || Date.now() - new Date(r.decided_at) < 30 * 864e5).map(r => reqLine(r, x) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : ''))).join('')}`).join('') || '<div class="muted small">אין משמרות בחודש הזה</div>'}
       ${pendingNew.map(r => reqLine(r) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : '')).join('')}</div>
