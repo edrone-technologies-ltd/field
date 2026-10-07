@@ -1,5 +1,5 @@
 // יום שטח: בוקר ← העמסה ← באתר ← בעבודה ← סיום. השלב נגזר ממה שכבר נשמר, כל פעולה נכנסת לתור ונשלחת כשיש קליטה.
-import { coverArt, icon } from '../lib/core.js';
+import { coverArt, icon, navButtons } from '../lib/core.js';
 import { sunPlan, sunAdvice } from '../lib/sun.js';
 import { sb, state, cache, enqueue, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
@@ -122,7 +122,7 @@ export async function renderDay(el, id) {
         ${countdown()}
         ${D.day.gust_max != null ? `<div class="wx ${D.day.weather_alerted ? 'bad' : ''}">${D.day.weather_alerted ? '⚠ ' : ''}תחזית לשעות העבודה: רוח עד ${D.day.wind_max} קמ"ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ"מ` : ''}</div>` : ''}
         <div class="small muted">צוות: ${esc(crew.join(' · ') || '—')}${D.day.drone ? ` · כלי: ${esc(D.day.drone.name)}` : ''}</div>
-        <div class="row"><a class="btn ghost grow" href="https://waze.com/ul?q=${dest}&navigate=yes" target="_blank" rel="noopener">Waze</a><a class="btn ghost grow" href="https://www.google.com/maps/dir/?api=1&destination=${dest}" target="_blank" rel="noopener">Google Maps</a></div>
+        ${navButtons(site.lat || P.lat, site.lng || P.lng, D.day.address || site.address || site.name || P.name)}${site.lat || P.lat ? '' : '<div class="small muted">אין מיקום שמור לאתר — הניווט לפי כתובת</div>'}
       </div>
       ${contactCard(site.contact_name, site.contact_phone)}
       ${sunCard()}

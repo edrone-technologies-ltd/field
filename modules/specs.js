@@ -1,5 +1,5 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm } from '../lib/core.js';
+import { sb, state, can, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
@@ -58,6 +58,40 @@ export async function renderSites(el) {
   draw('');
 }
 
+
+// ---------- מיקום האתר (כפתור אחד לאתר) — לתחזית ולמתכנן השמש בביצוע ----------
+function siteLocHtml(s) {
+  return `<div class="card siteloc" id="siteloc">${s.lat ? `<div class="row"><span class="mic ok">${icon('pin', 19)}</span><span class="grow"><b>מיקום האתר נשמר</b><small class="muted">${s.geo_source === 'manual' ? 'נשמר בשטח' : 'משוער'}${s.geo_at ? ' · ' + new Date(s.geo_at).toLocaleDateString('he-IL') : ''} · <a href="https://www.google.com/maps?q=${s.lat},${s.lng}" target="_blank" rel="noopener">מפה</a></small></span><button class="chip" id="locset">עדכון</button></div>${navButtons(s.lat, s.lng)}<div id="wx3" class="wx3"></div>`
+    : `<div class="row"><span class="mic">${icon('pin', 19)}</span><span class="grow"><b>שמירת מיקום האתר</b><small class="muted">עומדים באתר ולוחצים — לתחזית רוח ולתכנון שמש בביצוע</small></span><button class="btn primary sm" id="locset">שמירה</button></div>`}</div>`;
+}
+function bindSiteLoc(s) {
+  const redraw = () => { const c = $('#siteloc'); if (c) { c.outerHTML = siteLocHtml(s); bindSiteLoc(s); } };
+  const b = $('#locset'); if (!b) return;
+  b.onclick = () => {
+    if (!navigator.geolocation) return toast('הטלפון לא תומך במיקום');
+    b.disabled = true; b.textContent = 'מאתר…';
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const { latitude: la, longitude: ln, accuracy } = pos.coords;
+      if (accuracy > 300) toast(`דיוק נמוך (${Math.round(accuracy)} מ׳) — כדאי לנסות בחוץ`, 3500);
+      const { error } = await sb.rpc('set_site_location', { s: s.id, la, ln, acc: Math.round(accuracy) });
+      if (error) { b.disabled = false; b.textContent = 'שמירה'; return toast(error.message); }
+      Object.assign(s, { lat: la, lng: ln, geo_source: 'manual', geo_at: new Date().toISOString() }); toast('מיקום האתר נשמר'); redraw();
+    }, () => { b.disabled = false; b.textContent = 'שמירה'; toast('לא התקבלה הרשאת מיקום'); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  };
+  if (s.lat) wx3(s);
+}
+// תחזית 3 ימים לאתר (רוח ומשבים בשעות העבודה)
+async function wx3(s) {
+  const box = $('#wx3'); if (!box) return;
+  try {
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${s.lat}&longitude=${s.lng}&hourly=wind_speed_10m,wind_gusts_10m,precipitation&timezone=Asia%2FJerusalem&forecast_days=4`);
+    const h = (await r.json()).hourly; const days = {};
+    h.time.forEach((t, i) => { const d = t.slice(0, 10), hr = +t.slice(11, 13); if (hr < 6 || hr > 17) return; const x = days[d] ||= { w: 0, g: 0, r: 0 }; x.w = Math.max(x.w, h.wind_speed_10m[i]); x.g = Math.max(x.g, h.wind_gusts_10m[i]); x.r += h.precipitation[i] || 0; });
+    box.innerHTML = Object.entries(days).slice(0, 4).map(([d, x]) => { const bad = x.g >= 35 || x.w >= 25 || x.r >= 2;
+      return `<div class="wxd ${bad ? 'bad' : ''}"><b>${new Date(d + 'T12:00').toLocaleDateString('he-IL', { weekday: 'short' })}</b><small>משבים ${Math.round(x.g)}</small>${x.r >= 0.5 ? `<small>גשם ${x.r.toFixed(1)}</small>` : ''}</div>`; }).join('');
+  } catch { box.innerHTML = ''; }
+}
+
 // ---------- אתר: מבנים + צ'אט ----------
 export async function renderSite(el, slug, tab = 'b') {
   el.innerHTML = `<div class="skel"></div>`;
@@ -70,11 +104,12 @@ export async function renderSite(el, slug, tab = 'b') {
       ${s.classification === 'restricted' ? '<span class="pill warn">אתר מוגבל</span>' : ''}</div>
     <div><div class="eyebrow">סיור אפיון</div><h1>${esc(s.name)}</h1></div>
     ${contactCard(s.contact_name, s.contact_phone)}
+    ${siteLocHtml(s)}
     <div class="kpis"><div class="kpi"><b>${done}/${n}</b><span>מבנים הושלמו</span></div><div class="kpi"><b>${days ? nf(days) : '—'}</b><span>ימי עבודה שהוזנו</span></div>
       ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ"ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
     <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
     <div id="tabbody"></div>`;
-  bindCopy(el);
+  bindCopy(el); bindSiteLoc(s);
   $$('.tabs button', el).forEach(b => b.onclick = () => location.hash = `#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`);
   const body = $('#tabbody');
   if (tab === 'c') { const { renderChat } = await import('./chat.js'); return renderChat(body, { site: s }); }
@@ -109,6 +144,7 @@ export async function renderBuilding(el, slug, bid) {
       <div class="kpi"><b>${b.floors ? nf(b.floors) : '—'}</b><span>קומות</span></div><div class="kpi"><b>${b.plan_source === 'plans' ? b.plan_images.length : 'סקיצה'}</b><span>${b.plan_source === 'plans' ? 'חזיתות בתכנית' : 'מקור'}</span></div></div>`}
     ${b.office_note ? `<div class="note">${esc(b.office_note)}</div>` : ''}
     ${contactCard(s.contact_name, s.contact_phone)}
+    ${s.kind === 'lead' && s.buildings.length === 1 ? siteLocHtml(s) : ''}
     ${b.plan_images.length ? `<div><h3>${b.plan_source === 'plans' ? 'החזיתות מהתכנית' : 'מיקום בסקיצה'}</h3><div class="small muted">גוללים הצידה, לחיצה מגדילה</div></div>
       <div class="facades">${b.plan_images.map((p, i) => `<button class="fc" data-i="${i}"><img loading="lazy" src="${esc(plans[p.storage_path])}" alt="${esc(p.title)}"><div><b>${esc(p.title)}</b>${esc(p.dims_text || '')}${p.area_m2 ? ' · ' + nf(p.area_m2) + ' מ"ר' : ''}</div></button>`).join('')}</div>` : ''}
     <fieldset ${editable ? '' : 'disabled'} style="border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:14px">
@@ -199,6 +235,7 @@ export async function renderBuilding(el, slug, bid) {
       await save(true); location.hash = '#/site/' + slug;
     };
   }
+  bindSiteLoc(s);
   $('#bk').onclick = async () => { if (dirty && editable) await save(false, true); location.hash = s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug; };
   addEventListener('hashchange', function h() { if (dirty && editable) save(false, true); removeEventListener('hashchange', h); }, { once: true });
 }

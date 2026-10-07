@@ -525,3 +525,8 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .yday{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border-radius:18px;background:var(--card);border:1px solid var(--line);color:inherit;text-decoration:none}
 .yday .ys{display:grid;grid-template-columns:repeat(4,1fr);text-align:center}
 .yday .ys b{display:block;font-family:var(--f-display);font-size:1.25rem} .yday .ys small{font-size:.72rem;color:var(--muted)}
+.siteloc .mic.ok{background:var(--okbg);color:var(--ok)} .siteloc small a{color:inherit}
+.wx3{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:10px}
+.wxd{text-align:center;padding:6px 4px;border-radius:10px;background:var(--card2)} .wxd b{display:block;font-size:.85rem} .wxd small{display:block;font-size:.72rem;color:var(--muted)}
+.wxd.bad{background:var(--badbg)} .wxd.bad small{color:var(--bad)}
+.siteloc b{display:block}.siteloc small{display:block}.siteloc .navbtns{margin-top:10px}
