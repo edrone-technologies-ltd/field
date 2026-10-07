@@ -63,6 +63,28 @@ export async function renderSites(el) {
 
 
 // ---------- מיקום האתר (כפתור אחד לאתר) — לתחזית ולמתכנן השמש בביצוע ----------
+// ---------- מפת אתר (תצ"א / מפת מתחם): אחת לאתר, בראש העמוד ----------
+const siteMapHtml = s => (s.map_path || can('specs')) ? `<div class="card sitemap" id="sitemap"><div class="skel"></div></div>` : '';
+async function bindSiteMap(s) {
+  const box = $('#sitemap'); if (!box) return;
+  const url = s.map_path ? (await signedUrls('plans', [s.map_path]))[s.map_path] : '';
+  box.innerHTML = url ? `<button class="smimg" type="button"><img src="${esc(url)}" alt="מפת האתר"></button><div class="row"><b class="grow">מפת האתר</b>${can('specs') ? '<label class="chip">החלפה<input type="file" accept="image/*" hidden></label>' : ''}</div>`
+    : `<label class="row addmap"><span class="mic">${icon('pin', 19)}</span><span class="grow"><b>מפת האתר</b><small class="muted">תצ"א או מפת מתחם עם מספרי המבנים — מופיעה לכל מי שעובד באתר</small></span><span class="chip">העלאה</span><input type="file" accept="image/*" hidden></label>`;
+  const im = $('.smimg', box); if (im) im.onclick = () => zoom(url, 'מפת האתר · ' + s.name);
+  const inp = $('input[type=file]', box);
+  if (inp) inp.onchange = async () => {
+    const f = inp.files[0]; if (!f) return;
+    if (!navigator.onLine) return toast('העלאת מפה דורשת קליטה');
+    toast('מעלה…');
+    try {
+      const blob = await shrink(f, 2400), path = `${s.id}/site-map-${Date.now()}.jpg`;
+      const { error } = await sb.storage.from('plans').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
+      const { error: e2 } = await sb.rpc('set_site_map', { s: s.id, path }); if (e2) throw e2;
+      s.map_path = path; await cache.set('site:' + s.slug, s); toast('המפה נשמרה'); bindSiteMap(s);
+    } catch (e) { toast(e.message || 'ההעלאה נכשלה'); }
+  };
+}
+
 function siteLocHtml(s) {
   return `<div class="card siteloc" id="siteloc">${s.lat ? `<div class="row"><span class="mic ok">${icon('pin', 19)}</span><span class="grow"><b>מיקום האתר נשמר</b><small class="muted">${s.geo_source === 'manual' ? 'נשמר בשטח' : 'משוער'}${s.geo_at ? ' · ' + new Date(s.geo_at).toLocaleDateString('he-IL') : ''} · <a href="https://www.google.com/maps?q=${s.lat},${s.lng}" target="_blank" rel="noopener">מפה</a></small></span><button class="chip" id="locset">עדכון</button></div>${navButtons(s.lat, s.lng)}<div id="wx3" class="wx3"></div>`
     : `<div class="row"><span class="mic">${icon('pin', 19)}</span><span class="grow"><b>שמירת מיקום האתר</b><small class="muted">עומדים באתר ולוחצים — לתחזית רוח ולתכנון שמש בביצוע</small></span><button class="btn primary sm" id="locset">שמירה</button></div>`}</div>`;
@@ -146,13 +168,14 @@ export async function renderSite(el, slug, tab = 'b') {
       ${s.classification === 'restricted' ? '<span class="pill warn">אתר מוגבל</span>' : ''}</div>
     <div><div class="eyebrow">סיור אפיון</div><h1>${esc(s.name)}</h1></div>
     ${contactCard(s.contact_name, s.contact_phone)}
+    ${siteMapHtml(s)}
     ${siteLocHtml(s)}
     <div class="kpis"><div class="kpi"><b>${done}/${n}</b><span>מבנים הושלמו</span></div><div class="kpi"><b>${days ? nf(Math.ceil(days - 1e-3)) : '—'}</b><span>ימי עבודה${days % 1 ? ` (${nf(days)} עוגל)` : ''}</span></div>
       ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ"ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
     ${can('finance') ? '<div class="card" id="price"></div>' : ''}
     <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
     <div id="tabbody"></div>`;
-  bindCopy(el); bindSiteLoc(s); priceCard(s, Math.ceil(days - 1e-3));
+  bindCopy(el); bindSiteLoc(s); bindSiteMap(s); priceCard(s, Math.ceil(days - 1e-3));
   $$('.tabs button', el).forEach(b => b.onclick = () => location.hash = `#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`);
   const body = $('#tabbody');
   if (tab === 'c') { const { renderChat } = await import('./chat.js'); return renderChat(body, { site: s }); }
@@ -197,7 +220,7 @@ export async function renderBuilding(el, slug, bid) {
       <div class="kpi"><b>${b.floors ? nf(b.floors) : '—'}</b><span>קומות</span></div><div class="kpi"><b>${b.plan_source === 'plans' ? b.plan_images.length : 'סקיצה'}</b><span>${b.plan_source === 'plans' ? 'חזיתות בתכנית' : 'מקור'}</span></div></div>`}
     ${b.office_note ? `<div class="note">${esc(b.office_note)}</div>` : ''}
     ${contactCard(s.contact_name, s.contact_phone)}
-    ${s.kind === 'lead' && s.buildings.length === 1 ? siteLocHtml(s) : ''}
+    ${s.kind === 'lead' && s.buildings.length === 1 ? siteMapHtml(s) + siteLocHtml(s) : ''}
     ${b.plan_images.length ? `<div><h3>${b.plan_source === 'plans' ? 'החזיתות מהתכנית' : 'מיקום בסקיצה'}</h3><div class="small muted">גוללים הצידה, לחיצה מגדילה</div></div>
       <div class="facades">${b.plan_images.map((p, i) => `<div class="fc"><button class="fcimg" data-i="${i}"><img loading="lazy" src="${esc(plans[p.storage_path])}" alt="${esc(p.title)}"></button><div><b>${esc(p.title)}</b>${esc(p.dims_text || '')}${p.area_m2 ? ' · ' + nf(p.area_m2) + ' מ"ר' : ''}</div>${FAC.some(f => f.id === p.id) ? counter(p.id) : ''}</div>`).join('')}</div>` : ''}
     ${!imgs.length ? `<div><h3>ימים לפי חזית</h3><div class="small muted">מצלמים כל חזית, מסמנים כיוון וסופרים ימים. אפשר גם בהמשך, מהמשרד</div></div>
@@ -343,7 +366,7 @@ export async function renderBuilding(el, slug, bid) {
       await save(true); location.hash = '#/site/' + slug;
     };
   }
-  bindSiteLoc(s);
+  bindSiteLoc(s); bindSiteMap(s);
   $('#bk').onclick = async () => { if (dirty && editable) await save(false, true); location.hash = s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug; };
   addEventListener('hashchange', function h() { if (dirty && editable) save(false, true); removeEventListener('hashchange', h); }, { once: true });
 }

@@ -8,7 +8,7 @@ const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיח
 const T_STATUS = { todo: ['לביצוע', ''], in_progress: ['בעבודה', 'lime'], done: ['בוצע', 'ok'], blocked: ['נתקע', 'bad'], dropped: ['בוטל', ''] };
 const NEXT = { todo: 'in_progress', in_progress: 'done', done: 'todo', blocked: 'in_progress', dropped: 'todo' };
 const hhmm = t => (t || '').slice(0, 5);
-const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,lat,lng)), work_day_crew(user_id,role,hours,clock_in,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
+const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,lat,lng,map_path)), work_day_crew(user_id,role,hours,clock_in,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
 
 // ---------- רשימת הימים שלי ----------
 export async function renderToday(el) {
@@ -126,6 +126,7 @@ export async function renderDay(el, id) {
       </div>
       ${D.day.logistics?.length ? `<div class="card stack" style="gap:6px"><b>לפני היציאה</b>${D.day.logistics.map(l => `<div class="small">• ${esc(l)}</div>`).join('')}</div>` : ''}
       ${contactCard(site.contact_name, site.contact_phone)}
+      ${site.map_path ? '<div class="card sitemap" id="daymap"></div>' : ''}
       ${sunCard()}
       ${P.work_notes ? `<div class="note"><b>דגשים מהמשרד:</b> ${esc(P.work_notes)}</div>` : ''}
       ${site.access_notes ? `<div class="note">${esc(site.access_notes)}</div>` : ''}
@@ -253,6 +254,9 @@ export async function renderDay(el, id) {
     const s = stage();
     el.innerHTML = header() + `<div class="stack" id="body">${[sMorning, sLoad, sSite, sWork, sClose, sDone][s]()}</div>`;
     bindCopy(el); bindPhotos(el);
+    const dm0 = $('#daymap', el);
+    if (dm0) signedUrls('plans', [site.map_path]).then(u => { const url = u[site.map_path]; if (!url) { dm0.remove(); return; }
+      dm0.innerHTML = `<button class="smimg" type="button"><img src="${esc(url)}" alt="מפת האתר"></button><b>מפת האתר</b>`; $('.smimg', dm0).onclick = () => zoom(url, 'מפת האתר'); });
     const bar = document.createElement('div'); bar.className = 'bar';
     if (s === 0) { bar.innerHTML = `<button class="btn primary" id="nx">מתחילים העמסה</button>`; bar.querySelector('#nx').onclick = () => { D.local.stage = 1; keep(); draw(); }; }
     if (s === 1) bindLoad(bar);
