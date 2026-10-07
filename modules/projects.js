@@ -112,9 +112,11 @@ export async function renderProject(el, id, tab = 'o') {
         ${s && can('specs') ? `<a class="lrow kv" href="#/site/${esc(s.slug)}"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>אפיון האתר</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
       </div>
       ${s?.lat || p.lat ? navButtons(s?.lat || p.lat, s?.lng || p.lng) : ''}
+      ${M ? '<div class="sigline" id="sig"></div>' : ''}
       <div id="gal"></div>
       ${D.reps.length ? `<section><h3 class="sh">דוחות שטח</h3><div class="list">${D.reps.slice(0, 4).map(r => `<div class="rep compact"><span class="grow"><b>${dm(r.report_date)}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}${r.hours ? ` · ${nf(r.hours)} שעות` : ''}</b><small>${esc([r.crew, r.work].filter(Boolean).join(' · '))}</small>${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}</span>${r.had_issues ? '<span class="pill warn">תקלה</span>' : ''}</div>`).join('')}</div></section>` : ''}
       ${M && p.monday_item_id ? `<a class="more center" href="https://edroneil-force.monday.com/boards/5099780041/pulses/${esc(p.monday_item_id)}" target="_blank" rel="noopener">פתיחת הפרויקט במאנדי</a>` : ''}`;
+    if (M) import('../lib/audit.js').then(m => m.signature($('#sig'), { project_id: id }));
     const phs = D.reps.flatMap(r => (r.photos || []).filter(Boolean).map(x => ({ x, d: r.report_date })));
     if (phs.length) signedUrls('media', phs.map(o => o.x)).then(u => { const g = $('#gal'); if (g) { g.innerHTML = `<section><h3 class="sh">מהשטח</h3><div class="gallery">${phs.slice(0, 9).map(o => `<button data-z="${esc(u[o.x])}"><img src="${esc(u[o.x])}" alt="" loading="lazy"><span>${dm(o.d)}</span></button>`).join('')}</div></section>`; $$('[data-z]', g).forEach(b => b.onclick = () => zoom(b.dataset.z, '')); } });
     $$('[data-x]', box).forEach(b => b.onclick = () => closeIssue(b.dataset.x, () => overview(box)));

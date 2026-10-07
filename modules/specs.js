@@ -195,9 +195,11 @@ export async function renderSite(el, slug, tab = 'b') {
     ${siteTools(s, { price: true, days: Math.ceil(days - 1e-3) })}
     <div class="kpis"><div class="kpi"><b>${done}/${n}</b><span>מבנים הושלמו</span></div><div class="kpi"><b>${days ? nf(Math.ceil(days - 1e-3)) : '—'}</b><span>ימי עבודה${days % 1 ? ` (${nf(days)} עוגל)` : ''}</span></div>
       ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ"ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
+    <div class="sigline" id="sig"></div>
     <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
     <div id="tabbody"></div>`;
   bindCopy(el); bindSiteTools(s, { days: Math.ceil(days - 1e-3) });
+  import('../lib/audit.js').then(m => m.signature($('#sig'), { site_id: s.id }));
   $$('.tabs button', el).forEach(b => b.onclick = () => replaceHash(`#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`));
   const body = $('#tabbody');
   if (tab === 'c') { const { renderChat } = await import('./chat.js'); return renderChat(body, { site: s }); }
@@ -240,6 +242,7 @@ export async function renderBuilding(el, slug, bid) {
       <a class="lrow" href="#/site/${esc(slug)}"><span class="grow"><b>${s.buildings.length > 1 ? `כל המבנים בליד (${s.buildings.length})` : 'יש כמה מבנים? הוספת מבנה'}</b></span><span class="chev">${icon('chev', 18)}</span></a></div>` : `
     <div class="kpis"><div class="kpi"><b>${b.facade_area_m2 ? nf(b.facade_area_m2) : 'למדידה'}</b><span>${b.facade_area_m2 ? 'מ"ר לפי התכנית' : 'שטח חזיתות'}</span></div>
       <div class="kpi"><b>${b.floors ? nf(b.floors) : '—'}</b><span>קומות</span></div><div class="kpi"><b>${b.plan_source === 'plans' ? b.plan_images.length : 'סקיצה'}</b><span>${b.plan_source === 'plans' ? 'חזיתות בתכנית' : 'מקור'}</span></div></div>`}
+    <div class="sigline" id="sig"></div>
     ${b.office_note ? `<div class="note">${esc(b.office_note)}</div>` : ''}
     ${contactCard(s.contact_name, s.contact_phone)}
     ${s.kind === 'lead' && s.buildings.length === 1 ? siteTools(s) : ''}
@@ -391,6 +394,7 @@ export async function renderBuilding(el, slug, bid) {
     };
   }
   bindSiteTools(s);
+  import('../lib/audit.js').then(m => m.signature($('#sig'), { building_id: b.id }, { surveyor: spec.surveyor_id }));
   $('#bk').onclick = async () => { if (dirty && editable) await save(false, true); goUp(s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug); };
   addEventListener('hashchange', function h() { if (dirty && editable) save(false, true); removeEventListener('hashchange', h); }, { once: true });
 }

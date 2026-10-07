@@ -586,3 +586,10 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .kpi bdi{font-size:.92em;white-space:nowrap}
 .sunline{display:flex;gap:8px;align-items:flex-start;padding:9px 12px;border-radius:12px;background:color-mix(in srgb,#FACC15 16%,var(--card));font-size:.86rem;line-height:1.5} .sunline small{color:var(--muted)}
 body:has(.fabs) #app{padding-bottom:170px}
+/* חתימת משתמש + היסטוריה */
+.sigline{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--muted);min-height:0} .sigline:empty{display:none}
+.sigline .sig{flex:1;line-height:1.4} .sigline b{color:var(--ink);font-weight:700}
+.siglink{border:0;background:none;color:var(--limed,#4A6B10);font:700 .78rem Heebo,sans-serif;text-decoration:underline;padding:4px 0}
+.hist{display:flex;flex-direction:column;gap:2px;max-height:60vh;overflow:auto;margin:8px 0}
+.hrow{display:flex;gap:10px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid var(--line)} .hrow small{display:block;color:var(--muted);font-size:.82rem;line-height:1.4}
+.hrow time{font-size:.75rem;color:var(--muted);white-space:nowrap}

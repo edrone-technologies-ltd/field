@@ -190,7 +190,7 @@ export async function renderDay(el, id) {
       <div class="row"><h3 class="grow">משימות היום</h3><span class="pill ${done === tot && tot ? 'ok' : 'lime'}">${done}/${tot}</span></div>
       <div class="progress"><i style="width:${tot ? Math.round(done / tot * 100) : 0}%"></i></div>
       <div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-t="${t.id}"><span class="tick">${t.status === 'done' ? '✓' : t.status === 'blocked' ? '!' : ''}</span>
-        <span class="t"><b>${esc(t.title)}</b><small>${esc(T_STATUS[t.status]?.[0] || '')}${t.status_note ? ' · ' + esc(t.status_note) : ''}${t.risk && t.status !== 'done' ? ' · ' + esc(t.risk) : ''}</small></span></button>`).join('') || '<div class="empty">אין משימות משובצות להיום.</div>'}</div>
+        <span class="t"><b>${esc(t.title)}</b><small>${esc(T_STATUS[t.status]?.[0] || '')}${t.status === 'done' && t.done_by ? ' · ' + esc((D.team.find(u => u.id === t.done_by)?.full_name || '').split(' ')[0]) + (t.done_at ? ' ' + new Date(t.done_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '') : ''}${t.status_note ? ' · ' + esc(t.status_note) : ''}${t.risk && t.status !== 'done' ? ' · ' + esc(t.risk) : ''}</small></span></button>`).join('') || '<div class="empty">אין משימות משובצות להיום.</div>'}</div>
       <div class="small muted">הקשה = הסטטוס הבא. לחיצה ארוכה = נתקע (עם הערה).</div>
       <button class="btn ghost block" id="addtask">+ משימה שהלקוח ביקש בשטח</button>
       ${D.issues.length ? `<div class="stack" style="gap:6px"><h3>תקלות היום</h3>${D.issues.map(i => `<div class="feed"><span class="pill ${i.severity === 'critical' ? 'bad' : 'warn'}">${esc(kindHe(i.kind))}</span><span class="grow"><b>${esc(i.body)}</b></span></div>`).join('')}</div>` : ''}
@@ -259,6 +259,8 @@ export async function renderDay(el, id) {
     const s = stage();
     el.innerHTML = header() + `<div class="stack" id="body">${[sMorning, sLoad, sSite, sWork, sClose, sDone][s]()}</div>`;
     bindCopy(el); bindPhotos(el);
+    if (isManager()) { let sg = $('#daysig', el); if (!sg) { sg = document.createElement('div'); sg.className = 'sigline'; sg.id = 'daysig'; el.appendChild(sg); }
+      import('../lib/audit.js').then(m => m.signature(sg, { work_day_id: D.day.id })); }
     const dm0 = $('#daymap', el);
     if (dm0) signedUrls('plans', [site.map_path]).then(u => { const url = u[site.map_path]; if (!url) { dm0.remove(); return; }
       dm0.innerHTML = `<button class="smimg" type="button"><img src="${esc(url)}" alt="מפת האתר"></button><b>מפת האתר</b>`; $('.smimg', dm0).onclick = () => zoom(url, 'מפת האתר'); });
