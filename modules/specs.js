@@ -92,6 +92,45 @@ async function wx3(s) {
   } catch { box.innerHTML = ''; }
 }
 
+
+// ---------- הערכת מחיר (הרשאת כספים בלבד) — לפי הפרמטרים החיים מלוח התמחור במאנדי ----------
+const BASE = [31.2524, 34.7908]; // ב"ש
+async function roadKm(lat, lng) {
+  try {
+    const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${BASE[1]},${BASE[0]};${lng},${lat}?overview=false`);
+    const j = await r.json(); if (j.routes?.[0]) return { km: j.routes[0].distance / 1000, est: false };
+  } catch {}
+  const R = 6371, dl = (lat - BASE[0]) * Math.PI / 180, dg = (lng - BASE[1]) * Math.PI / 180;
+  const a = Math.sin(dl / 2) ** 2 + Math.cos(BASE[0] * Math.PI / 180) * Math.cos(lat * Math.PI / 180) * Math.sin(dg / 2) ** 2;
+  return { km: 2 * R * Math.asin(Math.sqrt(a)) * 1.3, est: true }; // קו אוויר × 1.3 כשאין ניתוב
+}
+export function estimate(P, days, km, margin) {
+  const daily = (P.rate_stas + P.rate_uriel) * P.hours_day + P.material_day + P.fuel_day + P.overhead_month / P.days_month / (P.crews || 1);
+  const far = km > P.lodging_km;
+  const travel = far ? km * 2 * P.km_cost + P.lodging_day * days : km * 2 * P.km_cost * days;
+  const cost = daily * days + travel;
+  return { daily, travel, far, cost, price: cost / (1 - margin / 100) };
+}
+async function priceCard(s, days) {
+  const box = $('#price'); if (!box) return;
+  const { data } = await sb.from('pricing_params').select('key, value');
+  if (!data?.length) { box.remove(); return; }
+  const P = Object.fromEntries(data.map(x => [x.key, Number(x.value)]));
+  if (!days) { box.innerHTML = `<div class="row"><span class="mic">${icon('cash', 19)}</span><span class="grow"><b>הערכת מחיר</b><small class="muted">תופיע אחרי שיוזנו ימי עבודה למבנים</small></span></div>`; return; }
+  if (!s.lat) { box.innerHTML = `<div class="row"><span class="mic">${icon('cash', 19)}</span><span class="grow"><b>הערכת מחיר</b><small class="muted">חסר מיקום אתר — שמרו מיקום כדי לחשב נסיעה ולינה</small></span></div>`; return; }
+  const d = await roadKm(s.lat, s.lng);
+  let m = Math.round(P.margin <= 1 ? P.margin * 100 : P.margin);
+  const draw = () => {
+    const e = estimate(P, days, d.km, m);
+    box.innerHTML = `<div class="row"><span class="mic">${icon('cash', 19)}</span><span class="grow"><b>הערכת מחיר</b><small class="muted">${nf(days)} ימים · ${Math.round(d.km)} ק"מ מב"ש${d.est ? ' (משוער)' : ''}${e.far ? ' · כולל לינה' : ''}</small></span></div>
+      <div class="kpis"><div class="kpi"><b>₪${nf(Math.round(e.price))}</b><span>מחיר לפני מע"מ</span></div><div class="kpi"><b>₪${nf(Math.round(e.cost))}</b><span>עלות מלאה</span></div><div class="kpi"><b>₪${nf(Math.round(e.price / days))}</b><span>ליום</span></div></div>
+      <div class="row" style="margin-top:8px"><small class="grow muted">מרווח</small><div class="stepper"><button type="button" data-m="-5">−</button><b style="min-width:3.5em;text-align:center">${m}%</b><button type="button" data-m="5">+</button></div></div>
+      <small class="muted">יום: ₪${nf(Math.round(e.daily))} (שכר, חומר, דלק, תקורה) · נסיעה${e.far ? '+לינה' : ''}: ₪${nf(Math.round(e.travel))}. הערכה בלבד — ההצעה נבנית במאנדי.</small>`;
+    $$('[data-m]', box).forEach(b => b.onclick = () => { m = Math.min(80, Math.max(0, m + Number(b.dataset.m))); draw(); });
+  };
+  draw();
+}
+
 // ---------- אתר: מבנים + צ'אט ----------
 export async function renderSite(el, slug, tab = 'b') {
   el.innerHTML = `<div class="skel"></div>`;
@@ -107,9 +146,10 @@ export async function renderSite(el, slug, tab = 'b') {
     ${siteLocHtml(s)}
     <div class="kpis"><div class="kpi"><b>${done}/${n}</b><span>מבנים הושלמו</span></div><div class="kpi"><b>${days ? nf(days) : '—'}</b><span>ימי עבודה שהוזנו</span></div>
       ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ"ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
+    ${can('finance') ? '<div class="card" id="price"></div>' : ''}
     <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
     <div id="tabbody"></div>`;
-  bindCopy(el); bindSiteLoc(s);
+  bindCopy(el); bindSiteLoc(s); priceCard(s, days);
   $$('.tabs button', el).forEach(b => b.onclick = () => location.hash = `#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`);
   const body = $('#tabbody');
   if (tab === 'c') { const { renderChat } = await import('./chat.js'); return renderChat(body, { site: s }); }
