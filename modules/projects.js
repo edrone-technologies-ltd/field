@@ -1,5 +1,6 @@
 // פרויקטים: מרכז הביצוע. סקירה ממאנדי + אתר ואפיון, תכנית עבודה מהאפיון, שיבוץ ימים, צ'אט צוות, תקלות וסיכום.
 import { navButtons } from '../lib/core.js';
+import { facadeOrder } from '../lib/sun.js';
 import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
 const ARCHIVE = 'group_mm5052gw';
@@ -165,7 +166,7 @@ export async function renderProject(el, id, tab = 'o') {
       ${M && p.site_id ? `<button class="btn ${D.tasks.length ? 'ghost' : 'primary'} block" id="gen">${D.tasks.length ? 'בנייה מחדש מהאפיון' : 'בניית תכנית עבודה מהאפיון'}</button>` : ''}
       ${blocked.length ? `<div class="stack" style="gap:6px"><h3>נתקעו</h3>${blocked.map(taskRow).join('')}</div>` : ''}
       ${[...by.entries()].map(([n, ts]) => { const wd = dayOf(n); const dn = ts.filter(t => t.status === 'done').length;
-        return `<div class="stack" style="gap:6px"><div class="row"><h3 class="grow">${n ? 'יום ' + n : 'בלי יום'}${wd ? ` · ${dayLabel(wd.day)}` : ''}</h3><span class="pill ${dn === ts.length ? 'ok' : ''}">${dn}/${ts.length}</span></div>${ts.map(taskRow).join('')}</div>`; }).join('')}
+        return `<div class="stack" style="gap:6px"><div class="row"><h3 class="grow">${n ? 'יום ' + n : 'בלי יום'}${wd ? ` · ${dayLabel(wd.day)}` : ''}</h3><span class="pill ${dn === ts.length ? 'ok' : ''}">${dn}/${ts.length}</span></div>${dayBrief(wd, ts)}${ts.map(taskRow).join('')}</div>`; }).join('')}
       ${D.tasks.length ? '<div class="small muted">הקשה = הסטטוס הבא. לחיצה ארוכה = נתקע עם הערה.</div>' : ''}`;
     const g = $('#gen'); if (g) g.onclick = async () => {
       if (D.tasks.length && !(await confirmBox('לבנות את התכנית מחדש?', { body: 'משימות שכבר התחילו או בוצעו נשארות כמו שהן.', ok: 'בנייה מחדש' }))) return;
@@ -173,6 +174,19 @@ export async function renderProject(el, id, tab = 'o') {
       toast(`נבנתה תכנית ל-${data} ימי עבודה`); reload('t');
     };
     bindTasks(box, () => plan(box));
+  }
+  // תקציר יום: סדר חזיתות לפי השמש (כשיש תאריך), חומר וכמות, לוגיסטיקה מהאפיון
+  function dayBrief(wd, ts) {
+    const exec = ts.filter(t => t.phase === 'ביצוע' && t.status !== 'done');
+    const out = [];
+    if (wd && exec.length) {
+      const fac = [...new Set(exec.flatMap(t => t.facades || []))];
+      const ord = facadeOrder(wd.day, p.sites?.lat || p.lat, p.sites?.lng || p.lng, fac);
+      if (ord.length > 1) out.push(`<small><b>סדר לפי השמש:</b> ${ord.map(o => `${esc(o.name)} <span class="muted">(${esc(o.when)})</span>`).join(' ← ')}</small>`);
+    }
+    if (wd?.gallons_planned) out.push(`<small><b>חומר:</b> ${nf(wd.gallons_planned)} גלון ${esc(wd.material_planned || '')}</small>`);
+    (wd?.logistics || []).forEach(l => out.push(`<small class="issue">${esc(l)}</small>`));
+    return out.length ? `<div class="daybrief">${out.join('')}</div>` : '';
   }
   function taskRow(t) {
     return `<button class="task ${t.status}" data-t="${t.id}"><span class="tick">${t.status === 'done' ? '✓' : t.status === 'blocked' ? '!' : ''}</span><span class="t"><b>${esc(t.title)}</b>
@@ -206,12 +220,35 @@ export async function renderProject(el, id, tab = 'o') {
       <div class="field">צוות<div class="chips">${D.team.map(x => `<button class="chip" data-u="${x.id}" aria-pressed="false">${esc(x.full_name)}</button>`).join('')}</div></div>
       <label class="field">רחפן<select id="sdr"><option value="">בלי רחפן</option>${D.drones.map(x => `<option value="${x.id}">${esc(x.name)}${x.health === 'grounded' ? ' — מקורקע' : x.health === 'warning' ? ' — במעקב' : ''}</option>`).join('')}</select></label>
       <label class="field">שעת התייצבות<input type="time" id="st" value="07:00"></label>
+      <div class="field">תחזית לימים שנבחרו<small>יום עם רוח, משבים או גשם מעל הסף מדולג אוטומטית. הקשה על יום = דילוג / ביטול דילוג</small><div id="wxs" class="wxs"><div class="small muted">בודק תחזית…</div></div></div>
       ${D.days.some(d => d.status === 'planned') ? '<div class="note">ימים מתוכננים שעוד לא נפתחו יוחלפו בשיבוץ החדש.</div>' : ''}
       <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="sgo">שיבוץ</button></div>`, (s, close) => {
       $$('[data-u]', s).forEach(c => c.onclick = () => c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') !== 'true'));
+      // תחזית: open-meteo עד 16 יום קדימה, בשעות העבודה 06-17. מעבר לטווח — אין נתון ולא מדלגים
+      const lat = p.sites?.lat || p.lat, lng = p.sites?.lng || p.lng; let fc = {}; const manual = new Map();  // date → true=דילוג / false=לא לדלג
+      const add1 = d => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + 1); return isoDay(x); };
+      const plan = () => {
+        const n = +$('#sn', s).value || 1, out = []; let d = $('#sd', s).value; if (!d) return out;
+        for (let guard = 0; out.filter(x => !x.skip).length < n && guard < 60; guard++, d = add1(d)) {
+          const dow = new Date(d + 'T12:00').getDay(); if (dow === 5 || dow === 6) continue;
+          const w = fc[d], bad = w && (w.g >= 35 || w.w >= 25 || w.r >= 2);
+          out.push({ d, w, bad, skip: manual.has(d) ? manual.get(d) : !!bad });
+        }
+        return out;
+      };
+      const drawWx = () => {
+        const list = plan();
+        $('#wxs', s).innerHTML = (lat ? '' : '<div class="small muted">אין מיקום לאתר — אין בדיקת תחזית. שומרים מיקום בעמוד האתר.</div>')
+          + list.map(x => `<button type="button" class="wxday ${x.skip ? 'skip' : ''} ${x.bad ? 'bad' : ''}" data-wd="${x.d}"><b>${dayLabel(x.d)}</b><small>${x.w ? `משבים ${Math.round(x.w.g)}${x.w.r >= 0.5 ? ` · גשם ${x.w.r.toFixed(1)}` : ''}` : 'אין תחזית עדיין'}</small><small>${x.skip ? 'מדולג' : 'עבודה'}</small></button>`).join('');
+        $$('[data-wd]', s).forEach(b => b.onclick = () => { const x = list.find(y => y.d === b.dataset.wd); manual.set(x.d, !x.skip); drawWx(); });
+      };
+      $('#sd', s).onchange = $('#sn', s).oninput = drawWx;
+      if (lat) fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=wind_speed_10m,wind_gusts_10m,precipitation&timezone=Asia%2FJerusalem&forecast_days=16`)
+        .then(r => r.json()).then(j => { const h = j.hourly; h.time.forEach((t, i) => { const d = t.slice(0, 10), hr = +t.slice(11, 13); if (hr < 6 || hr > 17) return; const x = fc[d] ||= { w: 0, g: 0, r: 0 }; x.w = Math.max(x.w, h.wind_speed_10m[i]); x.g = Math.max(x.g, h.wind_gusts_10m[i]); x.r += h.precipitation[i] || 0; }); drawWx(); }).catch(drawWx);
+      else drawWx();
       $('#sgo', s).onclick = async () => {
         const crew = $$('[data-u][aria-pressed="true"]', s).map(c => c.dataset.u);
-        const args = { p: id, start_day: $('#sd', s).value, lead: $('#sl', s).value, crew, drone: $('#sdr', s).value || null, report: $('#st', s).value || '07:00', ndays: +$('#sn', s).value || null };
+        const args = { p: id, start_day: $('#sd', s).value, lead: $('#sl', s).value, crew, drone: $('#sdr', s).value || null, report: $('#st', s).value || '07:00', ndays: +$('#sn', s).value || null, skip: plan().filter(x => x.skip).map(x => x.d) };
         if (!args.start_day || !args.lead) return toast('חסר תאריך או ראש צוות');
         const { data, error } = await sb.rpc('schedule_work_days', args); if (error) return toast(error.message, 4000);
         close(); toast(`שובצו ${data} ימי עבודה`); reload('d');

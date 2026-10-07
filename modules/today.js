@@ -1,6 +1,6 @@
 // יום שטח: בוקר ← העמסה ← באתר ← בעבודה ← סיום. השלב נגזר ממה שכבר נשמר, כל פעולה נכנסת לתור ונשלחת כשיש קליטה.
 import { coverArt, icon, navButtons } from '../lib/core.js';
-import { sunPlan, sunAdvice } from '../lib/sun.js';
+import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
 import { sb, state, cache, enqueue, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
 const STEPS = ['בוקר', 'העמסה', 'באתר', 'בעבודה', 'סיום'];
@@ -124,6 +124,7 @@ export async function renderDay(el, id) {
         <div class="small muted">צוות: ${esc(crew.join(' · ') || '—')}${D.day.drone ? ` · כלי: ${esc(D.day.drone.name)}` : ''}</div>
         ${navButtons(site.lat || P.lat, site.lng || P.lng, D.day.address || site.address || site.name || P.name)}${site.lat || P.lat ? '' : '<div class="small muted">אין מיקום שמור לאתר — הניווט לפי כתובת</div>'}
       </div>
+      ${D.day.logistics?.length ? `<div class="card stack" style="gap:6px"><b>לפני היציאה</b>${D.day.logistics.map(l => `<div class="small">• ${esc(l)}</div>`).join('')}</div>` : ''}
       ${contactCard(site.contact_name, site.contact_phone)}
       ${sunCard()}
       ${P.work_notes ? `<div class="note"><b>דגשים מהמשרד:</b> ${esc(P.work_notes)}</div>` : ''}
@@ -136,7 +137,11 @@ export async function renderDay(el, id) {
     const lat = site.lat || P.lat, lng = site.lng || P.lng;
     const pl = sunPlan(D.day.day, lat || 31.9, lng || 34.9), adv = sunAdvice(pl), hrs = pl.hours.filter(h => h.h >= 7 && h.h < 17);
     const hh = h => String(h).padStart(2, '0') + ':00';
+    // החזיתות של היום מהתכנית: סדר מומלץ רק להן
+    const fac = [...new Set(D.tasks.filter(t => t.phase === 'ביצוע').flatMap(t => t.facades || []))];
+    const ord = fac.length ? facadeOrder(D.day.day, lat, lng, fac) : [];
     return `<div class="card sun"><div class="row"><b class="grow">סדר שטיפה לפי השמש</b><small class="muted">${lat ? '' : 'מיקום משוער'}</small></div>
+      ${ord.length ? `<div class="sunorder">${ord.map((o, i) => `<span><b>${i + 1}. ${esc(o.name)}</b><small>${esc(o.when)}</small></span>`).join('')}</div>` : ''}
       <div class="sungrid"><span></span>${hrs.map(h => `<small>${h.h}</small>`).join('')}${pl.plan.map(f => `<b>${f.name}</b>${f.lit.filter((_, i) => pl.hours[i].h >= 7 && pl.hours[i].h < 17).map(l => `<i class="${l ? 'lit' : ''}"></i>`).join('')}`).join('')}</div>
       <ol class="sunlist">${adv.timed.map(r => `<li><b>${r.name}</b> · <bdi dir="ltr">${hh(r.win[0])}–${hh(r.win[1])}</bdi></li>`).join('')}${adv.flex.length ? `<li><b>${adv.flex.map(r => r.name).join(', ')}</b> · בצל כל היום — לשבץ בין לבין</li>` : ''}${adv.sunny.map(r => `<li><b>${r.name}</b> · בשמש כמעט כל היום — עדיף מוקדם בבוקר או ביום מעונן</li>`).join('')}</ol></div>`;
   }

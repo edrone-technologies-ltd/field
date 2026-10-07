@@ -530,3 +530,16 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .wxd{text-align:center;padding:6px 4px;border-radius:10px;background:var(--card2)} .wxd b{display:block;font-size:.85rem} .wxd small{display:block;font-size:.72rem;color:var(--muted)}
 .wxd.bad{background:var(--badbg)} .wxd.bad small{color:var(--bad)}
 .siteloc b{display:block}.siteloc small{display:block}.siteloc .navbtns{margin-top:10px}
+.daybrief{display:flex;flex-direction:column;gap:3px;padding:8px 12px;border-radius:12px;background:var(--card-2,rgba(127,127,127,.07))} .daybrief small{font-size:.82rem;line-height:1.45} .daybrief .issue{color:var(--warn)}
+.fc{cursor:default} .fcimg{display:block;width:100%;padding:0;border:0;background:#fff;cursor:zoom-in}
+.fcount{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0 10px 10px;padding:4px;border-radius:12px;background:var(--bg);border:1px solid var(--line)}
+.fcount button{width:44px;height:40px;border-radius:10px;border:0;background:var(--card);font-size:1.3rem;font-weight:700;color:var(--ink)}
+.fcount b{font-size:1rem;color:var(--muted)} .fcount.set{border-color:var(--lime);background:color-mix(in srgb,var(--lime) 14%,var(--card))} .fcount.set b{color:var(--ink)}
+.fc.compass{flex-basis:46%} .fc .cmp{display:flex;align-items:center;justify-content:center;aspect-ratio:2/1;font:800 1.4rem Rubik,sans-serif;color:var(--muted);background:var(--bg)}
+.fdir{display:flex;gap:4px;margin:0 10px 6px} .fdir button{flex:1;padding:6px 0;border-radius:9px;border:1px solid var(--line);background:var(--card);font-size:.8rem;color:var(--muted)}
+.fdir button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.fc.addfc{flex-basis:46%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:150px;border-style:dashed;cursor:pointer;position:relative;color:var(--muted)}
+.fc.addfc input{position:absolute;inset:0;opacity:0} .fc.addfc small{font-size:.75rem}
+.sunorder{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0} .sunorder span{flex:1 1 40%;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line)} .sunorder b{display:block} .sunorder small{color:var(--muted);font-size:.78rem}
+.wxs{display:flex;flex-wrap:wrap;gap:6px} .wxday{flex:1 1 30%;display:flex;flex-direction:column;align-items:flex-start;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);text-align:right;color:var(--ink)}
+.wxday small{font-size:.75rem;color:var(--muted)} .wxday.bad{border-color:var(--warn)} .wxday.skip{opacity:.55;text-decoration:line-through}

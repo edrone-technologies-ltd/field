@@ -31,6 +31,7 @@ h2{font-family:Rubik;font-size:1.15rem;margin-bottom:10px}
 .gal{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
 .gal img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:10px;cursor:zoom-in;background:#eee}
 .up{display:flex;flex-wrap:wrap;gap:8px}.up span{background:#F3F8E6;color:var(--limed);font-weight:700;border-radius:10px;padding:6px 12px;font-size:.9rem}
+.plan div{display:flex;gap:12px;padding:8px 0;border-bottom:1px solid var(--line)} .plan div:last-child{border:0} .plan b{min-width:92px;color:var(--limed)}
 .foot{text-align:center;color:var(--muted);font-size:.8rem;margin-top:24px}
 .err{max-width:420px;margin:80px auto;text-align:center;padding:20px}
 .zoom{position:fixed;inset:0;background:#000e;display:flex;align-items:center;justify-content:center;z-index:9}.zoom img{max-width:96vw;max-height:92vh;border-radius:8px}
@@ -53,7 +54,8 @@ fetch('https://pshdouedsfaklqdggfst.supabase.co/functions/v1/share?t=' + encodeU
         <div class="kpis"><div><b>${d.days_done}</b><span>ימי עבודה שבוצעו</span></div><div><b>${d.progress != null ? d.progress + '%' : (d.status === 'הושלם' ? '100%' : '—')}</b><span>התקדמות</span></div><div><b>${d.photos.length}</b><span>תמונות</span></div></div>
         ${d.progress != null ? `<div class="bar"><i style="width:${d.progress}%"></i></div>` : ''}
         ${d.first ? `<p style="margin-top:12px;color:#4A515B">העבודה החלה ב-${fd(d.first)}${d.last && d.last !== d.first ? ` · יום עבודה אחרון: ${fd(d.last)}` : ''}</p>` : ''}</div>
-      ${d.upcoming.length ? `<div class="card"><h2>ימי העבודה הבאים</h2><div class="up">${d.upcoming.map(x => `<span>${fd(x)}</span>`).join('')}</div></div>` : ''}
+      ${d.plan?.some(x => x.items.length) ? `<div class="card"><h2>לוח העבודה הקרוב</h2><div class="plan">${d.plan.map(x => `<div><b>${fd(x.day)}</b><span>${esc(x.items.join(' · ') || 'עבודה באתר')}</span></div>`).join('')}</div></div>`
+        : d.upcoming.length ? `<div class="card"><h2>ימי העבודה הבאים</h2><div class="up">${d.upcoming.map(x => `<span>${fd(x)}</span>`).join('')}</div></div>` : ''}
       ${d.photos.length ? `<div class="card"><h2>מהשטח</h2><div class="gal">${d.photos.map(u => `<img src="${esc(u)}" alt="" loading="lazy">`).join('')}</div></div>` : ''}
       <div class="foot">עודכן ${new Date(d.updated).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })} · E-Drone Technologies</div>
     </main>`;
