@@ -604,3 +604,10 @@ body:has(.fabs) #app{padding-bottom:170px}
 .kbbody{line-height:1.7;font-size:.97rem} .chips.scroll{flex-wrap:nowrap;overflow-x:auto} .pill.muted{opacity:.6}
 .kbshots{display:flex;flex-direction:column;gap:14px} .kbshots figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
 .kbshots img{display:block;width:100%;max-height:520px;object-fit:contain;object-position:top;background:var(--bg);cursor:zoom-in} .kbshots figcaption{padding:10px 12px;font-weight:700;font-size:.92rem}
+/* שלד קבוע: הדף עצמו לא גולל — רק אזור התוכן. כך הבר התחתון (ושאר הסרגלים הצמודים) לא "צף" באמצע המסך
+   בזמן גלילה מהירה באייפון (באג ידוע של iOS עם position:fixed כשהדף כולו גולל). */
+html,body{height:100%;overflow:hidden}
+body{min-height:0}
+.app{height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;max-width:none;margin:0;
+  padding-inline:max(16px, calc((100% - 760px) / 2 + 16px));box-sizing:border-box}
+@media print{html,body{height:auto;overflow:visible}.app{height:auto;overflow:visible}}

@@ -133,7 +133,7 @@ async function route() {
 }
 async function routeInner() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
-  window.scrollTo(0, 0);
+  app.scrollTop = 0;
   document.querySelectorAll('.bar,.composer,.fabs').forEach(x => x.remove());
   $('#sheet').hidden = true;
   nav(WITH_NAV.has(h[0]), h[0] === 'alerts' || h[0] === 'reports' ? (isManager() ? '' : 'menu') : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses'].includes(h[0]) ? 'menu' : h[0]);

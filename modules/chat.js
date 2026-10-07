@@ -68,7 +68,7 @@ export async function renderChat(el, { site, project, conversation }) {
     $$('[data-do-ack]', box).forEach(b => b.onclick = async () => { const id = b.dataset.doAck; if (!acks.has(id)) acks.set(id, []); acks.get(id).push(state.user.id); draw(); await enqueue({ kind: 'insert', table: 'message_acks', row: { message_id: id, user_id: state.user.id } }); });
     $$('[data-ack]', box).forEach(b => b.onclick = () => { const who = acks.get(b.dataset.ack) || [];
       sheet(`<h3>אישרו קריאה</h3><div class="list">${who.map(u => `<div class="lrow"><span class="avatar sm">${esc(initials(names.get(u)))}</span><b class="grow">${esc(names.get(u) || '')}</b><span class="pill ok">✓</span></div>`).join('') || '<div class="muted">עדיין אף אחד</div>'}</div><button class="btn ghost block" data-close>סגירה</button>`); });
-    window.scrollTo({ top: document.body.scrollHeight });
+    const sc = document.getElementById('app'); sc.scrollTo({ top: sc.scrollHeight });
   }
   await load();
   if (channel) sb.removeChannel(channel);
