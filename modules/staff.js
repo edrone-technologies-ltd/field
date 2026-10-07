@@ -37,6 +37,8 @@ export async function renderStaff(el) {
         <small>${esc(pr?.job_title || ROLE_HE[p.role] || '')}${pr?.employment_type && pr.employment_type !== 'עובד' ? ' · ' + esc(pr.employment_type) : ''} · החודש ${hhmm(R?.totals.net || 0)} שעות</small></span>
         ${r ? `<span class="pill">${PAY_TYPES[r.pay_type] || ''}</span>` : ''}<span class="chev">${icon('chev', 18)}</span></a>`; }).join('')}</div>
     <div class="small muted">נקודה ירוקה = במשמרת עכשיו. עובד חדש מוסיפים בניהול המערכת.</div>`;
+  import('./onboarding.js').then(async m => { for (const p of active) { const it = await m.status(p.id).catch(() => []); const d = it.filter(x => x.done).length;
+    const row = $(`#sl a[href="#/staff/${p.id}"] small`); if (row && it.length && d < it.length) row.insertAdjacentHTML('beforeend', ` · <span class="onbp">קליטה ${d}/${it.length}</span>`); } });
   const b = $('#bulk'); if (b) b.onclick = async () => (await import('./files.js')).bulkUpload(active, () => renderStaff(el));
 }
 
@@ -44,7 +46,7 @@ export async function renderStaff(el) {
 export async function renderEmployee(el, userId, tab = 'info') {
   if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
   const { data: p } = await sb.from('profiles').select('*').eq('id', userId).single();
-  const TABS = [['info', 'פרטים'], ...(isAdmin() ? [['pay', 'שכר']] : []), ['hours', 'שעות'], ['docs', 'מסמכים']];
+  const TABS = [['info', 'פרטים'], ...(isAdmin() ? [['pay', 'שכר']] : []), ['hours', 'שעות'], ['docs', 'מסמכים'], ['onb', 'קליטה']];
   el.innerHTML = `<header class="phead"><a class="back" href="#/staff" aria-label="חזרה">${icon('back', 20)}</a><span class="avatar">${esc(initials(p?.full_name))}</span><div class="grow"><b class="ttl">${esc(p?.full_name || '')}</b><small class="muted">${esc(ROLE_HE[p?.role] || '')}${p?.phone ? ' · ' + esc(p.phone) : ''}</small></div>${p?.phone ? `<a class="btn ghost sm" href="tel:${esc(p.phone)}">חיוג</a>` : ''}</header>
     <div class="tabs" id="et">${TABS.map(([k, t]) => `<button data-t="${k}" aria-selected="${k === tab}">${t}</button>`).join('')}</div><div id="eb" class="stack lg"></div>`;
   $$('#et button').forEach(b => b.onclick = () => { replaceHash(`#/staff/${userId}/${b.dataset.t}`, false); $$('#et button').forEach(x => x.setAttribute('aria-selected', x === b)); show(b.dataset.t); });
@@ -52,6 +54,7 @@ export async function renderEmployee(el, userId, tab = 'info') {
   const show = async t => {
     box.innerHTML = '<div class="skel"></div>';
     if (t === 'docs') return (await import('./files.js')).employeeDocs(box, userId);
+    if (t === 'onb') return (await import('./onboarding.js')).onboardingTab(box, userId);
     if (t === 'pay' && isAdmin()) return payTab(box, p);
     if (t === 'hours') return hoursTab(box, p);
     return infoTab(box, p);

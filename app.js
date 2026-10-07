@@ -109,7 +109,7 @@ export async function pushCard(box) {
   try { if (localStorage.getItem('edrone-push-dismiss')) return; } catch {}
   const st = await pushState().catch(() => 'unsupported');
   if (!['off', 'install'].includes(st) || !box) return;
-  const c = document.createElement('div'); c.className = 'promo';
+  const c = document.createElement('div'); c.className = 'promo pushpromo';
   c.innerHTML = `<span class="mic">${icon('chat', 20)}</span><span class="grow"><b>${st === 'off' ? 'להפעיל התראות?' : 'מתקינים את האפליקציה'}</b><small>${st === 'off' ? 'כדי לדעת מיד על הודעה, שיבוץ או תקלה' : (/iphone|ipad/i.test(navigator.userAgent) ? 'בספארי: שיתוף ← "הוסף למסך הבית". אחר כך אפשר להפעיל התראות' : 'מוסיפים למסך הבית, ואז אפשר להפעיל התראות')}</small></span>
     ${st === 'off' ? '<button class="btn primary sm" id="pc-on">הפעלה</button>' : ''}<button class="x" id="pc-x" aria-label="סגירה">×</button>`;
   box.prepend(c);
@@ -153,6 +153,7 @@ async function routeInner() {
     case 'dispatch': return (await import('./modules/dispatch.js')).renderDispatch(app, h[1]);
     case 'client-report': return (await import('./modules/clientreport.js')).renderClientReport(app, h[1]);
     case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
+    case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
     case 'expenses': return (await import('./modules/expenses.js')).renderExpenses(app);
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
     case 'staff': case 'files': { const m = await import('./modules/staff.js'); return h[1] ? m.renderEmployee(app, h[1], h[2]) : m.renderStaff(app); }

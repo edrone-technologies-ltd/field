@@ -632,3 +632,9 @@ body.has-nav .app{padding-bottom:calc(72px + var(--safe-b))}
 .qopt-e{display:flex;align-items:center;gap:8px} .qopt-e input[type=radio]{width:20px;height:20px;flex:0 0 auto}
 .sigpad{width:100%;height:150px;background:#fff;border:1px dashed var(--line);border-radius:12px;touch-action:none}
 .qedit input:not([type=radio]){width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--bg);font:500 .95rem Heebo,sans-serif;color:var(--ink);box-sizing:border-box} .qopt-e input:not([type=radio]){flex:1}
+/* קליטה */
+.onb .tick{width:26px;height:26px;border-radius:50%;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;flex:0 0 auto;font-weight:800;color:#fff}
+.onb .tick.on{background:var(--lime);border-color:var(--lime);color:#16181C} .onb small{display:block;color:var(--muted);font-size:.8rem}
+.onbp{color:var(--warn);font-weight:700} .promo .x{border:0;background:none;font-size:1.3rem;color:var(--muted);padding:0 4px}
+body.onb-active #kbdue, body.onb-active .pushpromo{display:none}
+a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo small{color:var(--muted)}
