@@ -113,40 +113,40 @@ export async function renderDay(el, id) {
 
   // ---------- שלבים ----------
   function sMorning() {
-    const lead = D.day.work_day_crew.find(c => c.role === 'lead')?.profiles;
-    const crew = D.day.work_day_crew.map(c => c.profiles?.full_name).filter(Boolean);
-    const dest = encodeURIComponent(D.day.address || site.address || site.name || P.name || '');
+    const crew = D.day.work_day_crew.map(c => (c.profiles?.full_name || '') + (c.role === 'lead' ? ' ★' : '')).filter(x => x.trim());
     const nTasks = D.tasks.filter(t => t.phase !== 'הכנה').length;
+    // סדר המסך = סדר הבוקר: מתי ולאן → מה המשרד ביקש → מה לקחת → מה עושים היום → איך (שמש) → מי ואיפה (איש קשר, מפה)
     return `<div class="card stack" style="gap:10px">
-        <div class="kpis"><div class="kpi"><b>${hhmm(D.day.report_time) || '—'}</b><span>יציאה מהמשרד</span></div><div class="kpi"><b>${D.day.site_arrival ? hhmm(D.day.site_arrival) + (D.day.site_end ? '–' + hhmm(D.day.site_end) : '') : nTasks}</b><span>${D.day.site_arrival ? 'שעות באתר' : 'משימות היום'}</span></div><div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים מתוכנן</span></div></div>
+        <div class="kpis"><div class="kpi"><b>${hhmm(D.day.report_time) || '—'}</b><span>יציאה מהמשרד</span></div>
+          ${D.day.site_arrival ? `<div class="kpi"><b><bdi dir="ltr">${hhmm(D.day.site_arrival)}${D.day.site_end ? '–' + hhmm(D.day.site_end) : ''}</bdi></b><span>באתר</span></div>` : `<div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div>`}
+          <div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלון ${esc(D.day.material_planned || '')}</span></div></div>
         ${countdown()}
         ${D.day.gust_max != null ? `<div class="wx ${D.day.weather_alerted ? 'bad' : ''}">${D.day.weather_alerted ? '⚠ ' : ''}תחזית לשעות העבודה: רוח עד ${D.day.wind_max} קמ"ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ"מ` : ''}</div>` : ''}
         <div class="small muted">צוות: ${esc(crew.join(' · ') || '—')}${D.day.drone ? ` · כלי: ${esc(D.day.drone.name)}` : ''}</div>
         ${navButtons(site.lat || P.lat, site.lng || P.lng, D.day.address || site.address || site.name || P.name)}${site.lat || P.lat ? '' : '<div class="small muted">אין מיקום שמור לאתר — הניווט לפי כתובת</div>'}
       </div>
-      ${D.day.logistics?.length ? `<div class="card stack" style="gap:6px"><b>לפני היציאה</b>${D.day.logistics.map(l => `<div class="small">• ${esc(l)}</div>`).join('')}</div>` : ''}
-      ${contactCard(site.contact_name, site.contact_phone)}
-      ${site.map_path ? '<div class="card sitemap" id="daymap"></div>' : ''}
-      ${sunCard()}
       ${P.work_notes ? `<div class="note"><b>דגשים מהמשרד:</b> ${esc(P.work_notes)}</div>` : ''}
       ${site.access_notes ? `<div class="note">${esc(site.access_notes)}</div>` : ''}
+      ${D.day.logistics?.length ? `<div class="card stack" style="gap:6px"><b>לפני היציאה</b>${D.day.logistics.map(l => `<div class="small">• ${esc(l)}</div>`).join('')}</div>` : ''}
       ${D.tasks.length ? `<div class="stack" style="gap:6px"><h3>בתכנית היום</h3>${D.tasks.map(t => `<div class="feed"><span class="pill">${esc(t.phase || '')}</span><span class="grow"><b>${esc(t.title)}</b>${t.risk ? `<small class="issue">${esc(t.risk)}</small>` : ''}${t.instructions ? `<small>${esc(t.instructions)}</small>` : ''}</span></div>`).join('')}</div>` : ''}
-      ${lead ? `<div class="small muted">ראש צוות: ${esc(lead.full_name)}</div>` : ''}`;
+      ${sunCard()}
+      ${contactCard(site.contact_name, site.contact_phone)}
+      ${site.map_path ? '<div class="card sitemap compact" id="daymap"></div>' : ''}`;
   }
   // תכנון שמש: באיזה שעות כל חזית בצל — כדי לא לשטוף בשמש ישירה (מתייבש מהר ומשאיר סימנים)
+  // כשהתכנית יודעת אילו חזיתות היום — רק הסדר שלהן. הטבלה המלאה מקופלת ל"פירוט"
   function sunCard() {
     const lat = site.lat || P.lat, lng = site.lng || P.lng;
     const a = D.day.site_arrival ? +D.day.site_arrival.slice(0, 2) : null;
     if (a != null && (a >= 18 || a < 5)) return '';  // משמרת לילה — אין שיקול שמש
     const pl = sunPlan(D.day.day, lat || 31.9, lng || 34.9), adv = sunAdvice(pl), hrs = pl.hours.filter(h => h.h >= 7 && h.h < 17);
     const hh = h => String(h).padStart(2, '0') + ':00';
-    // החזיתות של היום מהתכנית: סדר מומלץ רק להן
     const fac = [...new Set(D.tasks.filter(t => t.phase === 'ביצוע').flatMap(t => t.facades || []))];
     const ord = fac.length ? facadeOrder(D.day.day, lat, lng, fac) : [];
+    const grid = `<div class="sungrid"><span></span>${hrs.map(h => `<small>${h.h}</small>`).join('')}${pl.plan.map(f => `<b>${f.name}</b>${f.lit.filter((_, i) => pl.hours[i].h >= 7 && pl.hours[i].h < 17).map(l => `<i class="${l ? 'lit' : ''}"></i>`).join('')}`).join('')}</div>`;
+    const list = `<ol class="sunlist">${adv.timed.map(r => `<li><b>${r.name}</b> · <bdi dir="ltr">${hh(r.win[0])}–${hh(r.win[1])}</bdi></li>`).join('')}${adv.flex.length ? `<li><b>${adv.flex.map(r => r.name).join(', ')}</b> · בצל כל היום — לשבץ בין לבין</li>` : ''}${adv.sunny.map(r => `<li><b>${r.name}</b> · בשמש כמעט כל היום — עדיף מוקדם בבוקר או ביום מעונן</li>`).join('')}</ol>`;
     return `<div class="card sun"><div class="row"><b class="grow">סדר שטיפה לפי השמש</b><small class="muted">${lat ? '' : 'מיקום משוער'}</small></div>
-      ${ord.length ? `<div class="sunorder">${ord.map((o, i) => `<span><b>${i + 1}. ${esc(o.name)}</b><small>${esc(o.when)}</small></span>`).join('')}</div>` : ''}
-      <div class="sungrid"><span></span>${hrs.map(h => `<small>${h.h}</small>`).join('')}${pl.plan.map(f => `<b>${f.name}</b>${f.lit.filter((_, i) => pl.hours[i].h >= 7 && pl.hours[i].h < 17).map(l => `<i class="${l ? 'lit' : ''}"></i>`).join('')}`).join('')}</div>
-      <ol class="sunlist">${adv.timed.map(r => `<li><b>${r.name}</b> · <bdi dir="ltr">${hh(r.win[0])}–${hh(r.win[1])}</bdi></li>`).join('')}${adv.flex.length ? `<li><b>${adv.flex.map(r => r.name).join(', ')}</b> · בצל כל היום — לשבץ בין לבין</li>` : ''}${adv.sunny.map(r => `<li><b>${r.name}</b> · בשמש כמעט כל היום — עדיף מוקדם בבוקר או ביום מעונן</li>`).join('')}</ol></div>`;
+      ${ord.length ? `<div class="sunorder">${ord.map((o, i) => `<span><b>${i + 1}. ${esc(o.name)}</b><small>${esc(o.when)}</small></span>`).join('')}</div><details class="sunmore"><summary>פירוט לכל החזיתות</summary>${grid}${list}</details>` : grid + list}</div>`;
   }
   function countdown() {
     if (!D.day.report_time || D.day.day !== isoDay()) return '';
@@ -182,7 +182,12 @@ export async function renderDay(el, id) {
   }
   function sWork() {
     const done = D.tasks.filter(t => t.status === 'done').length, tot = D.tasks.filter(t => t.status !== 'dropped').length;
-    return `<div class="row"><h3 class="grow">משימות היום</h3><span class="pill ${done === tot && tot ? 'ok' : 'lime'}">${done}/${tot}</span></div>
+    // סדר החזיתות לפי השמש — בשורה אחת מעל המשימות, כי בזמן העבודה זה מה שקובע מאיפה מתחילים
+    const fac = [...new Set(D.tasks.filter(t => t.phase === 'ביצוע' && t.status !== 'done').flatMap(t => t.facades || []))];
+    const a0 = D.day.site_arrival ? +D.day.site_arrival.slice(0, 2) : 7, night = a0 >= 18 || a0 < 5;
+    const ord = fac.length > 1 && !night ? facadeOrder(D.day.day, site.lat || P.lat, site.lng || P.lng, fac) : [];
+    return `${ord.length ? `<div class="sunline">${icon('sun', 16)}<span>${ord.map(o => `<b>${esc(o.name)}</b> <small>${esc(o.when)}</small>`).join(' ← ')}</span></div>` : ''}
+      <div class="row"><h3 class="grow">משימות היום</h3><span class="pill ${done === tot && tot ? 'ok' : 'lime'}">${done}/${tot}</span></div>
       <div class="progress"><i style="width:${tot ? Math.round(done / tot * 100) : 0}%"></i></div>
       <div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-t="${t.id}"><span class="tick">${t.status === 'done' ? '✓' : t.status === 'blocked' ? '!' : ''}</span>
         <span class="t"><b>${esc(t.title)}</b><small>${esc(T_STATUS[t.status]?.[0] || '')}${t.status_note ? ' · ' + esc(t.status_note) : ''}${t.risk && t.status !== 'done' ? ' · ' + esc(t.risk) : ''}</small></span></button>`).join('') || '<div class="empty">אין משימות משובצות להיום.</div>'}</div>

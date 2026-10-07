@@ -1,5 +1,5 @@
 // לוח שיבוץ שבועי (מנהלים): מי עובד איפה בכל יום. התנגשויות (שני פרויקטים באותו יום) והיעדרויות מסומנות. הקשה על תא ריק = שיבוץ.
-import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, HE_D1, isoDay, dm } from '../lib/core.js';
+import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, HE_D1, isoDay, dm, replaceHash } from '../lib/core.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const sunday = s => addDays(s, -new Date(s + 'T12:00:00').getDay());
@@ -12,8 +12,8 @@ export async function renderDispatch(el, start) {
   el.innerHTML = `<header class="phead"><a class="back" href="#/schedule" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">לוח שיבוץ</h1></header>
     <div class="monthbar"><button id="wp" aria-label="שבוע קודם">${icon('back', 18)}</button><b>${dm(start)} – ${dm(end)}</b><button id="wn" aria-label="שבוע הבא">${icon('chev', 18)}</button></div>
     <div id="db"><div class="skel tall"></div></div>`;
-  $('#wp').onclick = () => location.hash = '#/dispatch/' + addDays(start, -7);
-  $('#wn').onclick = () => location.hash = '#/dispatch/' + addDays(start, 7);
+  $('#wp').onclick = () => replaceHash('#/dispatch/' + addDays(start, -7));
+  $('#wn').onclick = () => replaceHash('#/dispatch/' + addDays(start, 7));
   const [{ data: people }, { data: wds }, { data: abs }, { data: projects }] = await Promise.all([
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).order('full_name'),
     sb.from('work_days').select('id,day,status,project_id,crew_lead_id,gust_max,weather_alerted,projects(name),work_day_crew(user_id)').gte('day', start).lte('day', end),

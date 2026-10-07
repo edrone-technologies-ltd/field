@@ -19,8 +19,16 @@ export async function renderChat(el, { site, project, conversation }) {
     ${showImportant ? `<button class="cbtn" id="cimp" aria-pressed="false" title="הודעה חשובה — דורשת אישור קריאה">!</button>` : ''}
     <button class="cbtn send" id="csend" aria-label="שליחה">${icon('send', 20)}</button>`;
   document.body.appendChild(comp);
-  const names = new Map();
-  try { const { data } = await sb.from('profiles').select('id,full_name'); (data || []).forEach(p => names.set(p.id, p.full_name)); } catch {}
+  const names = new Map(), roles = new Map();
+  try { const { data } = await sb.from('profiles').select('id,full_name,role,is_active'); (data || []).forEach(p => { names.set(p.id, p.full_name); if (p.is_active !== false) roles.set(p.id, p.role); }); } catch {}
+  // מי אפשר לתייג: רק מי שיש לו גישה לשיחה הזאת
+  let taggable = [];
+  try {
+    if (conversation) taggable = (conversation.members || []).map(m => m.id);
+    else if (project) { const { data } = await sb.from('project_members').select('user_id').eq('project_id', project.id); taggable = [...new Set([...(data || []).map(x => x.user_id), ...[...roles].filter(([, r]) => ['admin', 'ops_manager'].includes(r)).map(([id]) => id)])]; }
+    else taggable = [...roles].filter(([, r]) => ['admin', 'ops_manager', 'surveyor'].includes(r)).map(([id]) => id);
+  } catch {}
+  taggable = taggable.filter(id => id !== state.user.id && names.get(id)).sort((a, b) => names.get(a).localeCompare(names.get(b), 'he'));
   let rows = [], acks = new Map(), audience = conversation ? (conversation.members || []).length : 0;
   async function load() {
     try { const { data } = await sb.from('messages').select('*').eq(key.col, key.id).order('created_at').limit(300); rows = data || []; } catch {}
@@ -37,6 +45,9 @@ export async function renderChat(el, { site, project, conversation }) {
     if (me) return `<button class="ackinfo" data-ack="${m.id}">${icon('users', 14)} אישרו ${who.length}${audience > 1 ? ' מתוך ' + (audience - 1) : ''}</button>`;
     return who.includes(state.user.id) ? `<div class="acked">אישרת ✓</div>` : `<button class="btn primary sm ackbtn" data-do-ack="${m.id}">קראתי ואישרתי</button>`;
   }
+  const tagHtml = m => { let h = esc(m.body);
+    for (const u of m.mentions || []) { const n = names.get(u); if (n) h = h.split('@' + esc(n)).join(`<span class="tag ${u === state.user.id ? 'me' : ''}">@${esc(n)}</span>`); }
+    return h.replace(/\n/g, '<br>'); };
   async function draw() {
     const urls = await signedUrls('field', rows.map(r => r.photo_path).filter(Boolean));
     const box = $('#msgs'); if (!box) return;
@@ -46,11 +57,11 @@ export async function renderChat(el, { site, project, conversation }) {
       const sep = d !== lastDay ? `<div class="dsep"><span>${dlabel(m.created_at)}</span></div>` : '';
       const showWho = !me && (m.author_id !== lastAuthor || d !== lastDay);
       lastDay = d; lastAuthor = m.author_id;
-      return `${sep}<div class="msg ${me ? 'me' : ''} ${m.important ? 'imp' : ''} ${showWho ? '' : 'cont'}">
+      return `${sep}<div class="msg ${me ? 'me' : ''} ${m.important ? 'imp' : ''} ${showWho ? '' : 'cont'} ${(m.mentions || []).includes(state.user.id) ? 'tagged' : ''}">
         ${showWho ? `<div class="who">${esc(m.author_label || names.get(m.author_id) || '')}${m.source === 'monday' ? ' · מהמשרד' : ''}</div>` : ''}
         ${m.important ? '<div class="impl">חשוב</div>' : ''}
         ${m.photo_path ? `<img src="${esc(urls[m.photo_path] || '')}" alt="" data-z="${esc(urls[m.photo_path] || '')}">` : ''}
-        ${m.body ? `<div class="tx">${esc(m.body).replace(/\n/g, '<br>')}</div>` : ''}
+        ${m.body ? `<div class="tx">${tagHtml(m)}</div>` : ''}
         ${ackLine(m, me)}<div class="when">${new Date(m.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div></div>`;
     }).join('') : `<div class="empty-card"><span class="ei">${icon('chat', 26)}</span><span><b>אין הודעות עדיין</b><small>${conversation ? 'כתבו את ההודעה הראשונה' : site ? `שיחת האפיון של ${esc(label)} — מנהלים וסוקרים בלבד` : `צ'אט הצוות של ${esc(label)} — רק מי ששובץ לפרויקט`}</small></span></div>`;
     $$('[data-z]', box).forEach(i => i.onclick = () => i.dataset.z && zoom(i.dataset.z, ''));
@@ -69,12 +80,27 @@ export async function renderChat(el, { site, project, conversation }) {
   const imp = $('#cimp');
   if (imp) imp.onclick = () => imp.setAttribute('aria-pressed', imp.getAttribute('aria-pressed') !== 'true');
   const ta = $('#ctext');
-  ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight) + 'px'; };
+  const pop = document.createElement('div'); pop.className = 'mpop'; pop.hidden = true; comp.appendChild(pop);
+  const atQuery = () => { const v = ta.value.slice(0, ta.selectionStart); const m = /(^|\s)@([^\s@]{0,20}(?: [^\s@]{0,20})?)$/.exec(v); return m ? { q: m[2], at: v.length - m[2].length - 1 } : null; };
+  const showPop = () => {
+    const a = atQuery(); if (!a || !taggable.length) { pop.hidden = true; return; }
+    const q = a.q.trim(), list = taggable.filter(id => !q || names.get(id).split(' ').some(w => w.startsWith(q)) || names.get(id).startsWith(q)).slice(0, 6);
+    if (!list.length) { pop.hidden = true; return; }
+    pop.innerHTML = list.map(id => `<button type="button" data-tag="${id}"><span class="avatar sm">${esc(initials(names.get(id)))}</span>${esc(names.get(id))}</button>`).join('');
+    pop.hidden = false;
+    $$('[data-tag]', pop).forEach(b => b.onmousedown = b.ontouchstart = e => { e.preventDefault();
+      const a2 = atQuery(); if (!a2) return; const n = names.get(b.dataset.tag), caret = ta.selectionStart;
+      ta.value = ta.value.slice(0, a2.at) + '@' + n + ' ' + ta.value.slice(caret); const pos = a2.at + n.length + 2;
+      ta.setSelectionRange(pos, pos); ta.focus(); pop.hidden = true; ta.oninput(); });
+  };
+  ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = Math.min(140, ta.scrollHeight) + 'px'; showPop(); };
+  ta.onblur = () => setTimeout(() => { pop.hidden = true; }, 150);
   async function send(photoPath) {
     const body = ta.value.trim();
     if (!body && !photoPath) return;
+    const mentions = taggable.filter(id => body.includes('@' + names.get(id)));
     const row = { id: crypto.randomUUID(), [key.col]: key.id, author_id: state.user.id, body: body || '', photo_path: photoPath || null,
-      important: imp?.getAttribute('aria-pressed') === 'true', created_at: new Date().toISOString() };
+      important: imp?.getAttribute('aria-pressed') === 'true', mentions: mentions.length ? mentions : null, created_at: new Date().toISOString() };
     rows.push(row); draw();
     ta.value = ''; ta.oninput(); imp?.setAttribute('aria-pressed', 'false');
     const { created_at, ...dbRow } = row;

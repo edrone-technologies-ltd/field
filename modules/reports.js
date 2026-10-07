@@ -1,6 +1,6 @@
 // מערכת הדוחות: כל דוח נפתח מתוך פרויקט (או מהבית ← בחירת פרויקט).
 // יומי (מסך יום השטח במצב דוח) · תקלה / אירוע בטיחות · החתמת לקוח · סיכום פרויקט פנימי · אפיון.
-import { sb, state, isManager, can, enqueue, signedUrls, addFieldPhoto, sheet, uid, icon, coverArt, $, $$, esc, nf, toast, zoom, isoDay, dayLabel, dm, confirmBox } from '../lib/core.js';
+import { sb, state, isManager, can, enqueue, signedUrls, addFieldPhoto, sheet, uid, icon, coverArt, $, $$, esc, nf, toast, zoom, isoDay, dayLabel, dm, confirmBox, goUp } from '../lib/core.js';
 
 const ROLE_CAN_SIGN = () => isManager() || state.profile.role === 'crew_lead';
 export const TYPES = [
@@ -115,7 +115,7 @@ export async function renderSignoff(el, pid) {
     $('#sgo').disabled = true;
     await enqueue({ kind: 'file', path, blob: await sig.blob(), type: 'image/png' });
     await enqueue({ kind: 'insert', table: 'project_signoffs', row: { id, project_id: pid, signer_name: name, signer_role: $('#sr').value.trim() || null, full_ok: $('#sf').checked, rating: F.rating, works: $('#sw').value.trim() || null, notes: $('#snt').value.trim() || null, signature_path: path, created_by: state.user.id } });
-    toast('נחתם ונשלח למשרד'); location.hash = '#/p/' + pid + '/d';
+    toast('נחתם ונשלח למשרד'); goUp('#/p/' + pid + '/d');
   };
 }
 
@@ -142,7 +142,7 @@ export async function renderSummary(el, pid) {
   const bar = document.createElement('div'); bar.className = 'bar'; bar.innerHTML = '<button class="btn primary" id="sgo">שמירת הסיכום</button>'; document.body.appendChild(bar);
   $('#sgo').onclick = async () => {
     const row = { project_id: pid, quality: F.quality || null, issues: $('#f1').value.trim() || null, solutions: $('#f2').value.trim() || null, lessons: $('#f3').value.trim() || null, notes: $('#f4').value.trim() || null, updated_by: state.user.id };
-    await enqueue({ kind: 'insert', table: 'project_summaries', row }); toast('הסיכום נשמר'); location.hash = '#/p/' + pid + '/d';
+    await enqueue({ kind: 'insert', table: 'project_summaries', row }); toast('הסיכום נשמר'); goUp('#/p/' + pid + '/d');
   };
 }
 

@@ -1,5 +1,5 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet } from '../lib/core.js';
+import { sb, state, can, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
@@ -198,7 +198,7 @@ export async function renderSite(el, slug, tab = 'b') {
     <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
     <div id="tabbody"></div>`;
   bindCopy(el); bindSiteTools(s, { days: Math.ceil(days - 1e-3) });
-  $$('.tabs button', el).forEach(b => b.onclick = () => location.hash = `#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`);
+  $$('.tabs button', el).forEach(b => b.onclick = () => replaceHash(`#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`));
   const body = $('#tabbody');
   if (tab === 'c') { const { renderChat } = await import('./chat.js'); return renderChat(body, { site: s }); }
   const groups = [...new Set(s.buildings.map(b => b.group_label || ''))];
@@ -386,10 +386,10 @@ export async function renderBuilding(el, slug, bid) {
     $('#sv').onclick = () => save(false);
     $('#dn').onclick = async () => {
       if (!(Number(form.days_expected) > 0)) { toast('חסר: ימי עבודה צפויים (יותר מ-0)'); days.focus(); return; }
-      await save(true); location.hash = '#/site/' + slug;
+      await save(true); goUp(s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug);
     };
   }
   bindSiteTools(s);
-  $('#bk').onclick = async () => { if (dirty && editable) await save(false, true); location.hash = s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug; };
+  $('#bk').onclick = async () => { if (dirty && editable) await save(false, true); goUp(s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug); };
   addEventListener('hashchange', function h() { if (dirty && editable) save(false, true); removeEventListener('hashchange', h); }, { once: true });
 }

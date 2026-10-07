@@ -1,5 +1,5 @@
 // פורטל עובדים (מנהלים): רשימת הצוות ← כרטיס עובד עם פרטים, שכר (מנהלי מערכת), שעות החודש ומסמכים/תלושים.
-import { sb, state, isManager, sheet, icon, $, $$, esc, toast, initials, ROLE_HE, dm } from '../lib/core.js';
+import { sb, state, isManager, sheet, icon, $, $$, esc, toast, initials, ROLE_HE, dm, replaceHash } from '../lib/core.js';
 import { computeMonth, hhmm, ymd, DEFAULTS } from '../lib/labor.js';
 import { estimatePay, PAY_TYPES } from '../lib/pay.js';
 
@@ -47,7 +47,7 @@ export async function renderEmployee(el, userId, tab = 'info') {
   const TABS = [['info', 'פרטים'], ...(isAdmin() ? [['pay', 'שכר']] : []), ['hours', 'שעות'], ['docs', 'מסמכים']];
   el.innerHTML = `<header class="phead"><a class="back" href="#/staff" aria-label="חזרה">${icon('back', 20)}</a><span class="avatar">${esc(initials(p?.full_name))}</span><div class="grow"><b class="ttl">${esc(p?.full_name || '')}</b><small class="muted">${esc(ROLE_HE[p?.role] || '')}${p?.phone ? ' · ' + esc(p.phone) : ''}</small></div>${p?.phone ? `<a class="btn ghost sm" href="tel:${esc(p.phone)}">חיוג</a>` : ''}</header>
     <div class="tabs" id="et">${TABS.map(([k, t]) => `<button data-t="${k}" aria-selected="${k === tab}">${t}</button>`).join('')}</div><div id="eb" class="stack lg"></div>`;
-  $$('#et button').forEach(b => b.onclick = () => { history.replaceState(null, '', `#/staff/${userId}/${b.dataset.t}`); $$('#et button').forEach(x => x.setAttribute('aria-selected', x === b)); show(b.dataset.t); });
+  $$('#et button').forEach(b => b.onclick = () => { replaceHash(`#/staff/${userId}/${b.dataset.t}`, false); $$('#et button').forEach(x => x.setAttribute('aria-selected', x === b)); show(b.dataset.t); });
   const box = $('#eb');
   const show = async t => {
     box.innerHTML = '<div class="skel"></div>';

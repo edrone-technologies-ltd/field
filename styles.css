@@ -576,3 +576,13 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .stile.todo{border-color:var(--lime);background:color-mix(in srgb,var(--lime) 10%,var(--card))}
 .stimg{display:block;width:100%;height:38px;border-radius:8px;background:#fff center/cover no-repeat;border:1px solid var(--line)}
 .tchip{cursor:pointer;user-select:none} .tchip:has(input:checked){background:var(--ink);color:var(--bg);border-color:var(--ink)}
+/* תיוג בצ'אט */
+.composer{position:fixed} .mpop{position:absolute;bottom:100%;inset-inline:12px;margin-bottom:6px;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.14);padding:4px;display:flex;flex-direction:column;max-height:260px;overflow:auto}
+.mpop button{display:flex;align-items:center;gap:10px;padding:9px 10px;border:0;background:none;border-radius:10px;font:600 .95rem Heebo,sans-serif;color:var(--ink);text-align:right}
+.mpop button:active,.mpop button:hover{background:var(--bg)}
+.msg .tag{font-weight:800;color:var(--limed,#4A6B10)} .msg .tag.me{background:color-mix(in srgb,var(--lime) 35%,transparent);border-radius:6px;padding:0 3px}
+.msg.tagged:not(.me){box-shadow:inset 3px 0 0 var(--lime)}
+.sitemap.compact .smimg img{max-height:150px} .sunmore summary{font-size:.82rem;color:var(--muted);cursor:pointer;margin-top:6px}
+.kpi bdi{font-size:.92em;white-space:nowrap}
+.sunline{display:flex;gap:8px;align-items:flex-start;padding:9px 12px;border-radius:12px;background:color-mix(in srgb,#FACC15 16%,var(--card));font-size:.86rem;line-height:1.5} .sunline small{color:var(--muted)}
+body:has(.fabs) #app{padding-bottom:170px}

@@ -1,5 +1,5 @@
 // נוכחות: כניסה/יציאה בלחיצה (מיקום רק ברגע ההחתמה), השעות שלי, ונוכחות צוות למנהלים (תיקון עם יומן, אישור ונעילה, ייצוא לחשבת השכר).
-import { sb, state, isManager, cache, enqueue, sheet, uid, icon, $, $$, esc, toast, confirmBox, ask, HE_DOW, HE_D1, dm } from '../lib/core.js';
+import { sb, state, isManager, cache, enqueue, sheet, uid, icon, $, $$, esc, toast, confirmBox, ask, HE_DOW, HE_D1, dm, replaceHash } from '../lib/core.js';
 import { computeMonth, inShabbat, CATS, hhmm, ymd, DEFAULTS } from '../lib/labor.js';
 import { estimatePay, PAY_TYPES } from '../lib/pay.js';
 
@@ -182,8 +182,8 @@ export async function renderHours(el, userId, month) {
     <div class="monthbar"><button id="mp" aria-label="חודש קודם">${icon('back', 18)}</button><b>${monthName(month)}</b><button id="mn" aria-label="חודש הבא">${icon('chev', 18)}</button></div>
     <div id="hb" class="stack lg"><div class="skel"></div></div>`;
   const base = me ? '#/hours' : `#/attendance/${userId}`;
-  $('#mp').onclick = () => location.hash = `${base}/${prevMonth(month)}`;
-  $('#mn').onclick = () => location.hash = `${base}/${nextMonth(month)}`;
+  $('#mp').onclick = () => replaceHash(`${base}/${prevMonth(month)}`);
+  $('#mn').onclick = () => replaceHash(`${base}/${nextMonth(month)}`);
   const S = await settings();
   const from = new Date(monthStart(prevMonth(month)) + 'T00:00:00+03:00').toISOString(), to = new Date(monthStart(nextMonth(month)) + 'T00:00:00+02:00').toISOString(); // +02 = חצות חורף; בקיץ שעה עודפת שמסוננת לפי יום מקומי
   const [{ data: shifts }, { data: am }, { data: who }, { data: edits }, { data: reqs }] = await Promise.all([
@@ -258,8 +258,8 @@ export async function renderAttendance(el, month) {
   el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1>נוכחות צוות</h1></header>
     <div class="monthbar"><button id="mp" aria-label="חודש קודם">${icon('back', 18)}</button><b>${monthName(month)}</b><button id="mn" aria-label="חודש הבא">${icon('chev', 18)}</button></div>
     <div id="ab" class="stack lg"><div class="skel"></div></div>`;
-  $('#mp').onclick = () => location.hash = `#/attendance/m/${prevMonth(month)}`;
-  $('#mn').onclick = () => location.hash = `#/attendance/m/${nextMonth(month)}`;
+  $('#mp').onclick = () => replaceHash(`#/attendance/m/${prevMonth(month)}`);
+  $('#mn').onclick = () => replaceHash(`#/attendance/m/${nextMonth(month)}`);
   const S = await settings();
   const from = new Date(monthStart(prevMonth(month)) + 'T00:00:00+03:00').toISOString(), to = new Date(monthStart(nextMonth(month)) + 'T00:00:00+02:00').toISOString(); // +02 = חצות חורף; בקיץ שעה עודפת שמסוננת לפי יום מקומי
   const [{ data: people }, { data: shifts }, { data: ams }, { data: pend }] = await Promise.all([

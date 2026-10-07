@@ -1,5 +1,5 @@
 // פרויקטים: מרכז הביצוע. סקירה ממאנדי + אתר ואפיון, תכנית עבודה מהאפיון, שיבוץ ימים, צ'אט צוות, תקלות וסיכום.
-import { navButtons } from '../lib/core.js';
+import { navButtons, replaceHash } from '../lib/core.js';
 import { facadeOrder } from '../lib/sun.js';
 import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
@@ -74,7 +74,7 @@ export async function renderProject(el, id, tab = 'o') {
       <span class="ph-bottom"><span class="pill ${TONE[p.status_label] ?? ''}">${esc(p.status_label || '')}</span><b>${esc(p.name)}</b><small>${esc(p.client_name || '')}</small></span></div>
     <div class="tabs" id="pt">${TABS.map(([k, t]) => `<button data-t="${k}" aria-selected="${k === tab || (tab === 'i' && k === 'o')}">${t}</button>`).join('')}</div>
     <div id="pb" class="stack"></div>`;
-  $$('#pt button').forEach(b => b.onclick = () => { history.replaceState(null, '', `#/p/${id}/${b.dataset.t}`); renderTab(b.dataset.t); $$('#pt button').forEach(x => x.setAttribute('aria-selected', x === b)); });
+  $$('#pt button').forEach(b => b.onclick = () => { replaceHash(`#/p/${id}/${b.dataset.t}`, false); renderTab(b.dataset.t); $$('#pt button').forEach(x => x.setAttribute('aria-selected', x === b)); });
   const reload = t => renderProject(el, id, t);
 
   function renderTab(t) {

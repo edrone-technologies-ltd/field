@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack } from './lib/core.js';
 
 const app = $('#app');
 // לשוניות תחתונות — מוצגות לפי ההרשאות
@@ -29,13 +29,7 @@ function renderLogin(msg = '') {
     try {
       await signIn($('#ph').value, $('#cd').value);
       try { localStorage.setItem('edrone-phone', $('#ph').value); } catch {}
-      await // כל חץ חזרה באפליקציה = המסך הקודם בפועל (וה-href הוא גיבוי כשנכנסו ישר מקישור/התראה)
-document.addEventListener('click', e => {
-  const a = e.target.closest('a.back'); if (!a || e.defaultPrevented || a.dataset.hard) return;
-  if (history.length > 1 && sessionStorage.getItem('edrone-nav')) { e.preventDefault(); history.back(); }
-});
-addEventListener('hashchange', () => { try { sessionStorage.setItem('edrone-nav', '1'); } catch {} });
-boot();
+      await boot();
     } catch (err) { $('#er').textContent = err.message; b.disabled = false; b.textContent = 'כניסה'; }
   };
 }
@@ -194,10 +188,10 @@ if ('serviceWorker' in navigator) {
   });
   navigator.serviceWorker.register('sw.js').then(r => { r.update().catch(() => {}); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') r.update().catch(() => {}); }); }).catch(() => {});
 }
-// כל חץ חזרה באפליקציה = המסך הקודם בפועל (וה-href הוא גיבוי כשנכנסו ישר מקישור/התראה)
+// כל חץ חזרה באפליקציה = המסך הקודם בפועל; כשאין (נכנסו מקישור/התראה) — ה-href הוא מסך האב, בהחלפה
+initNav();
 document.addEventListener('click', e => {
   const a = e.target.closest('a.back'); if (!a || e.defaultPrevented || a.dataset.hard) return;
-  if (history.length > 1 && sessionStorage.getItem('edrone-nav')) { e.preventDefault(); history.back(); }
+  e.preventDefault(); goBack(a.getAttribute('href') || '#/');
 });
-addEventListener('hashchange', () => { try { sessionStorage.setItem('edrone-nav', '1'); } catch {} });
 boot();
