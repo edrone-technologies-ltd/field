@@ -1,6 +1,6 @@
 // משימות אישיות (מעקב): מנהל פותח לעובד משימה — לרוב מקושרת לליד/אתר — והעובד רואה אותה בראש מסך הבית,
 // עם חיוג / וואטסאפ / מייל לאיש הקשר וסימון "בוצע". כל פעולה נחתמת ביומן הפעולות.
-import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials } from '../lib/core.js';
+import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials, ask } from '../lib/core.js';
 
 const SEL = 'id,title,instructions,due,status,assignee_id,created_by,site_id,done_at,sites(name,slug,contact_name,contact_phone)';
 const emailIn = t => (String(t || '').match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [])[0];
@@ -14,8 +14,8 @@ export async function myTasks(box) {
   let mine = [], others = [], names = new Map();
   try {
     const [{ data: a }, { data: b }, { data: p }] = await Promise.all([
-      sb.from('tasks').select(SEL).eq('assignee_id', me).eq('phase', 'מעקב').neq('status', 'done').order('due', { nullsFirst: false }),
-      isManager() ? sb.from('tasks').select(SEL).eq('created_by', me).eq('phase', 'מעקב').neq('assignee_id', me).neq('status', 'done').order('due', { nullsFirst: false }) : Promise.resolve({ data: [] }),
+      sb.from('tasks').select(SEL).eq('assignee_id', me).eq('phase', 'מעקב').not('status', 'in', '(done,dropped)').order('due', { nullsFirst: false }),
+      isManager() ? sb.from('tasks').select(SEL).eq('created_by', me).eq('phase', 'מעקב').neq('assignee_id', me).not('status', 'in', '(done,dropped)').order('due', { nullsFirst: false }) : Promise.resolve({ data: [] }),
       sb.from('profiles').select('id,full_name'),
     ]);
     mine = a || []; others = b || []; (p || []).forEach(x => names.set(x.id, x.full_name));
@@ -35,10 +35,12 @@ export async function myTasks(box) {
   box.innerHTML = `${mine.length ? `<section><div class="sh-row"><h3 class="sh">המשימות שלי</h3><span class="count">${mine.length}</span></div><div class="stack">${mine.map(t => row(t, true)).join('')}</div></section>` : ''}
     ${others.length ? `<details class="fold"><summary><span class="sh">משימות שפתחתי לצוות</span><span class="count">${others.length}</span></summary><div class="stack">${others.map(t => row(t, false)).join('')}</div></details>` : ''}`;
   $$('[data-done]', box).forEach(b => b.onclick = async () => {
+    const note = await ask('מה סוכם?', { multiline: true, placeholder: 'למשל: נקבעה פגישה ל-12.10 בשעה 10:00 (לא חובה)', ok: 'סימון בוצע', optional: true });
+    if (note == null) return;
     b.disabled = true;
-    const { error } = await sb.from('tasks').update({ status: 'done', done_by: me, done_at: new Date().toISOString() }).eq('id', b.dataset.done);
+    const { error } = await sb.from('tasks').update({ status: 'done', done_by: me, done_at: new Date().toISOString(), done_note: note.trim() || null }).eq('id', b.dataset.done);
     if (error) { b.disabled = false; return toast(error.message); }
-    toast('סומן כבוצע'); myTasks(box);
+    toast('סומן כבוצע — עודכן גם במאנדי'); myTasks(box);
   });
 }
 
