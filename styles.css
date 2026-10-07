@@ -545,3 +545,23 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .wxday small{font-size:.75rem;color:var(--muted)} .wxday.bad{border-color:var(--warn)} .wxday.skip{opacity:.55;text-decoration:line-through}
 .sitemap{padding:10px;display:flex;flex-direction:column;gap:8px} .smimg{display:block;padding:0;border:0;background:#fff;border-radius:10px;overflow:hidden;cursor:zoom-in}
 .smimg img{display:block;width:100%;max-height:280px;object-fit:contain} .addmap{cursor:pointer}
+/* מציג תמונות + סימון */
+.viewer,.annot{position:fixed;inset:0;z-index:60;background:#0B0C0E;color:#fff;display:flex;flex-direction:column}
+.annot{z-index:61}
+.vtop{display:flex;align-items:center;gap:10px;padding:calc(env(safe-area-inset-top) + 8px) 12px 8px}
+.vt{flex:1;min-width:0;text-align:center;font-weight:700;font-size:.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis} .vt small{opacity:.6;font-weight:500;margin-inline-start:6px}
+.vbtn{background:rgba(255,255,255,.12);color:#fff;border:0;border-radius:12px;padding:9px 13px;font:700 .88rem Heebo,sans-serif;min-width:44px;min-height:40px}
+.vbtn.primary{background:var(--lime);color:#16181C}
+.vstage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:pan-y}
+.vstage.z{overflow:auto;display:block;touch-action:auto} .vimg{max-width:100%;max-height:100%;object-fit:contain;user-select:none;-webkit-user-drag:none}
+.vstage.z .vimg{max-width:none;max-height:none;width:250%}
+.vnav{position:absolute;top:50%;transform:translateY(-50%);width:46px;height:64px;border:0;border-radius:14px;background:rgba(255,255,255,.14);color:#fff;font-size:2rem;line-height:1}
+.vprev{right:8px} .vnext{left:8px}
+.astage{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;padding:6px;position:relative}
+.astage canvas{max-width:100%;max-height:100%;touch-action:none;background:#222;border-radius:6px} .aload{position:absolute;opacity:.7}
+.atools{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;padding:10px 10px calc(env(safe-area-inset-bottom) + 10px)}
+.seg{display:flex;gap:4px;background:rgba(255,255,255,.08);border-radius:12px;padding:4px}
+.seg button{border:0;background:none;color:#fff;font:700 .85rem Heebo,sans-serif;padding:8px 11px;border-radius:9px;min-height:38px}
+.seg button[aria-pressed="true"]{background:rgba(255,255,255,.22)}
+.seg [data-c] i{display:block;width:20px;height:20px;border-radius:50%;background:var(--c);border:2px solid rgba(255,255,255,.5)}
+.seg [data-c][aria-pressed="true"] i{border-color:#fff;box-shadow:0 0 0 2px var(--lime)}
