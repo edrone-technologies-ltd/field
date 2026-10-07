@@ -597,3 +597,8 @@ body:has(.fabs) #app{padding-bottom:170px}
 .tcard{background:var(--card);border:1px solid var(--line);border-inline-start:4px solid var(--lime);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}
 .tcard small{display:block;color:var(--muted);font-size:.8rem} .tacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .tacts .chip{text-decoration:none} .avatar.xs{width:22px;height:22px;font-size:.62rem;display:inline-flex}
+/* מרכז ידע */
+.kbic{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--muted);flex:0 0 auto}
+.kbic.vid{background:#111827;color:#fff}
+.kbvid{position:relative;width:100%;aspect-ratio:16/9;border-radius:14px;overflow:hidden;background:#000} .kbvid iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+.kbbody{line-height:1.7;font-size:.97rem} .chips.scroll{flex-wrap:nowrap;overflow-x:auto} .pill.muted{opacity:.6}

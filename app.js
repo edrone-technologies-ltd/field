@@ -65,6 +65,7 @@ function renderMenu() {
       ['#/expenses', 'receipt', 'הוצאות', 'דלק, חניה, אוכל ולינה'],
     ]],
     ['שטח', [
+      ['#/kb', 'book', 'מרכז ידע', 'הדרכות וסרטוני תפעול'],
       can('specs') && ['#/specs', 'clipboard', 'אפיונים', 'סיורים לפי אתר ומבנה'],
       isManager() && ['#/reports', 'photo', 'דוחות שטח', 'כל הדוחות והתמונות'],
       can('equipment') && ['#/equipment', 'drone', 'ציוד', 'רחפנים ותקלות'],
@@ -151,6 +152,7 @@ async function routeInner() {
     case 'purchase': if (guard('purchase')) return (await import('./modules/purchase.js')).renderPurchase(app); return;
     case 'dispatch': return (await import('./modules/dispatch.js')).renderDispatch(app, h[1]);
     case 'client-report': return (await import('./modules/clientreport.js')).renderClientReport(app, h[1]);
+    case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
     case 'expenses': return (await import('./modules/expenses.js')).renderExpenses(app);
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
     case 'staff': case 'files': { const m = await import('./modules/staff.js'); return h[1] ? m.renderEmployee(app, h[1], h[2]) : m.renderStaff(app); }
