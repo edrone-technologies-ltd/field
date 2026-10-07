@@ -21,7 +21,7 @@ export async function load() {
     M ? q(sb.from('spec_visits').select('*')) : [],
     q(sb.from('equipment').select('id,name,health,health_detail,health_date').eq('kind', 'drone').order('name')),
     M ? q(sb.from('profiles').select('full_name,role,is_pilot,pilot_license_expiry,is_active')) : [],
-    q(sb.from('work_days').select('id,day,status,report_time,project_id,crew_lead_id,is_last_day,day_goal,gust_max,wind_max,weather_alerted,work_day_crew(user_id,confirmed_at,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
+    q(sb.from('work_days').select('id,day,status,report_time,site_arrival,project_id,crew_lead_id,is_last_day,day_goal,gust_max,wind_max,weather_alerted,work_day_crew(user_id,confirmed_at,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
     M ? q(sb.from('sync_log').select('created_at').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)) : [],
     M ? q(sb.from('sync_log').select('entity,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],
     q(sb.rpc('my_inbox')),
@@ -97,7 +97,7 @@ export async function renderHome(el) {
   const myDay = mine.map(w => { const pr = byId.get(w.project_id) || {}; return `<a class="photo-hero" href="#/day/${w.id}">
       <span class="img" style="background-image:url('${cov[w.project_id] || ''}')"></span>
       <span class="ph-top"><span class="chip-dark">יום השטח שלך${w.is_last_day ? ' · יום אחרון' : ''}</span><span class="chip-dark">${DAY_ST[w.status]}</span></span>
-      <span class="ph-bottom"><b>${esc(pr.name || '')}</b><small>${w.report_time ? 'התייצבות ' + w.report_time.slice(0, 5) : ''}${w.day_goal ? ' · ' + esc(w.day_goal) : ''}</small>
+      <span class="ph-bottom"><b>${esc(pr.name || '')}</b><small>${w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) : ''}${w.day_goal ? ' · ' + esc(w.day_goal) : ''}</small>
       <span class="btn primary">${w.status === 'planned' ? 'פתיחת היום' : w.status === 'done' ? 'סיכום היום' : 'המשך היום'}</span></span></a>`; }).join('');
 
   if (!M) {
@@ -152,7 +152,7 @@ export async function renderHome(el) {
 const dayRow = (w, byId) => { const me = (w.work_day_crew || []).find(c => c.user_id === state.user.id);
   const needConfirm = me && !me.confirmed_at && w.status === 'planned' && w.day > today();
   return `<div class="dayrow"><a class="lrow" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
-  <span class="grow"><b>${esc(byId.get(w.project_id)?.name || '')}</b><small>${w.report_time ? 'התייצבות ' + w.report_time.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון' : ''}${me?.confirmed_at && w.status === 'planned' ? ' · אישרת הגעה ✓' : ''}</small></span><span class="pill ${w.status === 'done' ? 'ok' : w.status === 'planned' ? '' : 'lime'}">${DAY_ST[w.status]}</span></a>
+  <span class="grow"><b>${esc(byId.get(w.project_id)?.name || '')}</b><small>${w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון' : ''}${me?.confirmed_at && w.status === 'planned' ? ' · אישרת הגעה ✓' : ''}</small></span><span class="pill ${w.status === 'done' ? 'ok' : w.status === 'planned' ? '' : 'lime'}">${DAY_ST[w.status]}</span></a>
   ${needConfirm ? `<button class="btn primary sm block" data-confirm="${w.id}">מאשר הגעה</button>` : ''}</div>`; };
 function bindConfirm(root) {
   $$('[data-confirm]', root).forEach(b => b.onclick = async () => { b.disabled = true; const { error } = await sb.rpc('confirm_day', { d: b.dataset.confirm });

@@ -17,7 +17,7 @@ export async function renderToday(el) {
   const t = isoDay(), until = isoDay(new Date(Date.now() + 10 * 864e5)), from = isoDay(new Date(Date.now() - 3 * 864e5));
   let days;
   try {
-    let q = sb.from('work_days').select('id,day,status,report_time,day_goal,is_last_day,project_id,crew_lead_id,projects(name,client_name),work_day_crew(user_id)').gte('day', from).lte('day', until).order('day').order('report_time');
+    let q = sb.from('work_days').select('id,day,status,report_time,site_arrival,day_goal,is_last_day,project_id,crew_lead_id,projects(name,client_name),work_day_crew(user_id)').gte('day', from).lte('day', until).order('day').order('report_time');
     const { data, error } = await q; if (error) throw error;
     days = (data || []).filter(d => isManager() || d.crew_lead_id === state.user.id || d.work_day_crew.some(c => c.user_id === state.user.id));
     await cache.set('mydays', days);
@@ -27,7 +27,7 @@ export async function renderToday(el) {
   if (!open.length) { box.innerHTML = `<div class="empty">אין ימי שטח משובצים לך בימים הקרובים.<br>השיבוץ נעשה מתוך הפרויקט.</div>`; return; }
   const by = {}; open.forEach(d => (by[d.day] ||= []).push(d));
   box.innerHTML = Object.entries(by).map(([day, ds]) => `<div class="group-h">${dayLabel(day)}</div>${ds.map(d => `<a class="item" href="#/day/${d.id}">
-      <span class="t"><b>${esc(d.projects?.name || '')}</b><small>${d.report_time ? 'התייצבות ' + hhmm(d.report_time) + ' · ' : ''}${esc(d.day_goal || d.projects?.client_name || '')}</small></span>
+      <span class="t"><b>${esc(d.projects?.name || '')}</b><small>${d.report_time ? 'יציאה ' + hhmm(d.report_time) + ' · ' : ''}${d.site_arrival ? 'באתר ' + hhmm(d.site_arrival) + ' · ' : ''}${esc(d.day_goal || d.projects?.client_name || '')}</small></span>
       ${statusPill(d)}</a>`).join('')}`).join('');
 }
 function statusPill(d) {
@@ -118,7 +118,7 @@ export async function renderDay(el, id) {
     const dest = encodeURIComponent(D.day.address || site.address || site.name || P.name || '');
     const nTasks = D.tasks.filter(t => t.phase !== 'הכנה').length;
     return `<div class="card stack" style="gap:10px">
-        <div class="kpis"><div class="kpi"><b>${hhmm(D.day.report_time) || '—'}</b><span>התייצבות</span></div><div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div><div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים מתוכנן</span></div></div>
+        <div class="kpis"><div class="kpi"><b>${hhmm(D.day.report_time) || '—'}</b><span>יציאה מהמשרד</span></div><div class="kpi"><b>${D.day.site_arrival ? hhmm(D.day.site_arrival) + (D.day.site_end ? '–' + hhmm(D.day.site_end) : '') : nTasks}</b><span>${D.day.site_arrival ? 'שעות באתר' : 'משימות היום'}</span></div><div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים מתוכנן</span></div></div>
         ${countdown()}
         ${D.day.gust_max != null ? `<div class="wx ${D.day.weather_alerted ? 'bad' : ''}">${D.day.weather_alerted ? '⚠ ' : ''}תחזית לשעות העבודה: רוח עד ${D.day.wind_max} קמ"ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ"מ` : ''}</div>` : ''}
         <div class="small muted">צוות: ${esc(crew.join(' · ') || '—')}${D.day.drone ? ` · כלי: ${esc(D.day.drone.name)}` : ''}</div>
@@ -135,6 +135,8 @@ export async function renderDay(el, id) {
   // תכנון שמש: באיזה שעות כל חזית בצל — כדי לא לשטוף בשמש ישירה (מתייבש מהר ומשאיר סימנים)
   function sunCard() {
     const lat = site.lat || P.lat, lng = site.lng || P.lng;
+    const a = D.day.site_arrival ? +D.day.site_arrival.slice(0, 2) : null;
+    if (a != null && (a >= 18 || a < 5)) return '';  // משמרת לילה — אין שיקול שמש
     const pl = sunPlan(D.day.day, lat || 31.9, lng || 34.9), adv = sunAdvice(pl), hrs = pl.hours.filter(h => h.h >= 7 && h.h < 17);
     const hh = h => String(h).padStart(2, '0') + ':00';
     // החזיתות של היום מהתכנית: סדר מומלץ רק להן
@@ -149,7 +151,7 @@ export async function renderDay(el, id) {
     if (!D.day.report_time || D.day.day !== isoDay()) return '';
     const [h, m] = D.day.report_time.split(':').map(Number); const at = new Date(); at.setHours(h, m, 0, 0);
     const min = Math.round((at - Date.now()) / 6e4);
-    return min > 0 ? `<div class="row"><span class="dot ok"></span><b>עוד ${min >= 60 ? Math.floor(min / 60) + ' ש׳ ' : ''}${min % 60} דק׳ להתייצבות</b></div>` : '';
+    return min > 0 ? `<div class="row"><span class="dot ok"></span><b>עוד ${min >= 60 ? Math.floor(min / 60) + ' ש׳ ' : ''}${min % 60} דק׳ ליציאה מהמשרד</b></div>` : '';
   }
   function droneGate() {
     const dr = D.day.drone; if (!dr) return '';

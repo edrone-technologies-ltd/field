@@ -179,7 +179,9 @@ export async function renderProject(el, id, tab = 'o') {
   function dayBrief(wd, ts) {
     const exec = ts.filter(t => t.phase === 'ביצוע' && t.status !== 'done');
     const out = [];
-    if (wd && exec.length) {
+    const night = wd?.site_arrival && (+wd.site_arrival.slice(0, 2) >= 18 || +wd.site_arrival.slice(0, 2) < 5);
+    if (night) out.push(`<small><b>משמרת לילה</b> · באתר ${wd.site_arrival.slice(0, 5)}${wd.site_end ? '–' + wd.site_end.slice(0, 5) : ''}</small>`);
+    if (wd && exec.length && !night) {
       const fac = [...new Set(exec.flatMap(t => t.facades || []))];
       const ord = facadeOrder(wd.day, p.sites?.lat || p.lat, p.sites?.lng || p.lng, fac);
       if (ord.length > 1) out.push(`<small><b>סדר לפי השמש:</b> ${ord.map(o => `${esc(o.name)} <span class="muted">(${esc(o.when)})</span>`).join(' ← ')}</small>`);
@@ -205,7 +207,7 @@ export async function renderProject(el, id, tab = 'o') {
   function daysTab(box) {
     box.innerHTML = `${M ? `<button class="btn ${D.days.length ? 'ghost' : 'primary'} block" id="sch">${D.days.length ? 'שיבוץ מחדש' : 'שיבוץ ימי עבודה'}</button>` : ''}
       ${D.days.map(d => { const st = DAY_ST[d.status] || ['', '']; const crew = (d.work_day_crew || []).map(c => (c.profiles?.full_name?.split(' ')[0] || '') + (d.status === 'planned' && c.role !== 'lead' ? (c.confirmed_at ? ' ✓' : ' ?') : '')).filter(Boolean);
-        return `<a class="item" href="#/day/${d.id}"><span class="t"><b>${dayLabel(d.day)}${d.is_last_day ? ' · יום אחרון' : ''}</b><small>${d.report_time ? d.report_time.slice(0, 5) + ' · ' : ''}${esc(crew.join(', ') || 'בלי צוות')}${d.gallons != null ? ` · ${nf(d.gallons)} גל׳` : ''}</small>${d.day_goal ? `<small>${esc(d.day_goal)}</small>` : ''}</span><span class="pill ${st[1]}">${st[0]}</span></a>`; }).join('')
+        return `<a class="item" href="#/day/${d.id}"><span class="t"><b>${dayLabel(d.day)}${d.is_last_day ? ' · יום אחרון' : ''}</b><small>${d.site_arrival ? 'באתר ' + d.site_arrival.slice(0, 5) + (d.site_end ? '–' + d.site_end.slice(0, 5) : '') + ' · ' : d.report_time ? d.report_time.slice(0, 5) + ' · ' : ''}${esc(crew.join(', ') || 'בלי צוות')}${d.gallons != null ? ` · ${nf(d.gallons)} גל׳` : ''}</small>${d.day_goal ? `<small>${esc(d.day_goal)}</small>` : ''}</span><span class="pill ${st[1]}">${st[0]}</span></a>`; }).join('')
         || '<div class="empty">אין ימי שטח משובצים.</div>'}`;
     const b = $('#sch'); if (b) b.onclick = scheduleSheet;
   }
@@ -215,23 +217,33 @@ export async function renderProject(el, id, tab = 'o') {
     const leads = D.team.filter(x => ['crew_lead', 'ops_manager', 'admin'].includes(x.role));
     sheet(`<h3>שיבוץ ימי עבודה</h3>
       <label class="field">מתחילים ב-<input type="date" id="sd" value="${start}"></label>
-      <label class="field">מספר ימים<small>${D.tasks.length ? 'לפי התכנית' : 'אין תכנית — לפי ימי השטח המתוכננים'}. שישי ושבת מדולגים</small><input type="number" id="sn" min="1" value="${maxDay}"></label>
+      <label class="field">מספר ימים<small>${D.tasks.length ? 'לפי התכנית' : 'אין תכנית — לפי ימי השטח המתוכננים'}. שבת מדולגת, שישי רק כשמסמנים</small><input type="number" id="sn" min="1" value="${maxDay}"></label>
       <label class="field">ראש צוות<select id="sl">${leads.map(x => `<option value="${x.id}">${esc(x.full_name)}</option>`).join('')}</select></label>
       <div class="field">צוות<div class="chips">${D.team.map(x => `<button class="chip" data-u="${x.id}" aria-pressed="false">${esc(x.full_name)}</button>`).join('')}</div></div>
       <label class="field">רחפן<select id="sdr"><option value="">בלי רחפן</option>${D.drones.map(x => `<option value="${x.id}">${esc(x.name)}${x.health === 'grounded' ? ' — מקורקע' : x.health === 'warning' ? ' — במעקב' : ''}</option>`).join('')}</select></label>
-      <label class="field">שעת התייצבות<input type="time" id="st" value="07:00"></label>
+      <div class="row"><label class="field grow">הגעה לאתר<input type="time" id="sa" value="07:00"></label><label class="field grow">סיום באתר<small>לא חובה</small><input type="time" id="se"></label></div>
+      <label class="field">יציאה מהמשרד<small id="sthint">מחשב לפי מרחק…</small><input type="time" id="st" value="06:00"></label>
+      <label class="tog"><span>כולל שישי <small class="muted">— מקרים חריגים, מסיימים לפני כניסת שבת</small></span><span class="sw"><input type="checkbox" id="sfr"><i></i></span></label>
       <div class="field">תחזית לימים שנבחרו<small>יום עם רוח, משבים או גשם מעל הסף מדולג אוטומטית. הקשה על יום = דילוג / ביטול דילוג</small><div id="wxs" class="wxs"><div class="small muted">בודק תחזית…</div></div></div>
       ${D.days.some(d => d.status === 'planned') ? '<div class="note">ימים מתוכננים שעוד לא נפתחו יוחלפו בשיבוץ החדש.</div>' : ''}
       <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="sgo">שיבוץ</button></div>`, (s, close) => {
       $$('[data-u]', s).forEach(c => c.onclick = () => c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') !== 'true'));
       // תחזית: open-meteo עד 16 יום קדימה, בשעות העבודה 06-17. מעבר לטווח — אין נתון ולא מדלגים
-      const lat = p.sites?.lat || p.lat, lng = p.sites?.lng || p.lng; let fc = {}; const manual = new Map();  // date → true=דילוג / false=לא לדלג
+      const lat = p.sites?.lat || p.lat, lng = p.sites?.lng || p.lng; const H = {}; const manual = new Map();  // date → true=דילוג / false=לא לדלג
+      const hr = id => { const v = $(id, s).value; return v ? +v.slice(0, 2) + +v.slice(3) / 60 : null; };
+      // תחזית לשעות המשמרת בפועל: משמרת לילה שחוצה חצות לוקחת גם את שעות הבוקר של היום הבא
+      const wxFor = d => {
+        const a = hr('#sa') ?? 7, e0 = hr('#se'), e = e0 ?? (a + 9) % 24, wrap = e <= a;
+        const keys = []; for (let h = 0; h < 24; h++) { if (h + 1 > a && (wrap || h < e)) keys.push(`${d}T${String(h).padStart(2, '0')}`); if (wrap && h < e) keys.push(`${add1(d)}T${String(h).padStart(2, '0')}`); }
+        const xs = keys.map(k => H[k]).filter(Boolean); if (!xs.length) return null;
+        return { w: Math.max(...xs.map(x => x.w)), g: Math.max(...xs.map(x => x.g)), r: xs.reduce((t, x) => t + x.r, 0) };
+      };
       const add1 = d => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + 1); return isoDay(x); };
       const plan = () => {
         const n = +$('#sn', s).value || 1, out = []; let d = $('#sd', s).value; if (!d) return out;
         for (let guard = 0; out.filter(x => !x.skip).length < n && guard < 60; guard++, d = add1(d)) {
-          const dow = new Date(d + 'T12:00').getDay(); if (dow === 5 || dow === 6) continue;
-          const w = fc[d], bad = w && (w.g >= 35 || w.w >= 25 || w.r >= 2);
+          const dow = new Date(d + 'T12:00').getDay(); if (dow === 6 || (dow === 5 && !$('#sfr', s).checked)) continue;
+          const w = wxFor(d), bad = w && (w.g >= 35 || w.w >= 25 || w.r >= 2);
           out.push({ d, w, bad, skip: manual.has(d) ? manual.get(d) : !!bad });
         }
         return out;
@@ -242,13 +254,30 @@ export async function renderProject(el, id, tab = 'o') {
           + list.map(x => `<button type="button" class="wxday ${x.skip ? 'skip' : ''} ${x.bad ? 'bad' : ''}" data-wd="${x.d}"><b>${dayLabel(x.d)}</b><small>${x.w ? `משבים ${Math.round(x.w.g)}${x.w.r >= 0.5 ? ` · גשם ${x.w.r.toFixed(1)}` : ''}` : 'אין תחזית עדיין'}</small><small>${x.skip ? 'מדולג' : 'עבודה'}</small></button>`).join('');
         $$('[data-wd]', s).forEach(b => b.onclick = () => { const x = list.find(y => y.d === b.dataset.wd); manual.set(x.d, !x.skip); drawWx(); });
       };
-      $('#sd', s).onchange = $('#sn', s).oninput = drawWx;
+      $('#sd', s).onchange = $('#sn', s).oninput = $('#sfr', s).onchange = $('#se', s).onchange = drawWx;
+      // יציאה מהמשרד = הגעה − נסיעה (כביש × מקדם תנועה) − העמסה. המנהל יכול לשנות ידנית
+      let travelMin = null, touched = false; const Dp = { office: [31.2524, 34.7908], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15 };
+      const recalc = () => {
+        const a = hr('#sa'); if (a == null) return;
+        const tot = (travelMin ?? 0) + Dp.load_min, dep = ((a * 60 - tot) % 1440 + 1440) % 1440, r5 = Math.floor(dep / 5) * 5;
+        if (!touched) $('#st', s).value = `${String(Math.floor(r5 / 60)).padStart(2, '0')}:${String(r5 % 60).padStart(2, '0')}`;
+        $('#sthint', s).textContent = travelMin != null ? `מומלץ: נסיעה ${Math.floor(travelMin / 60)}:${String(travelMin % 60).padStart(2, '0')} מ${Dp.office_name} + ${Dp.load_min} דק׳ העמסה` : lat ? 'מחשב מרחק…' : `אין מיקום לאתר — רק ${Dp.load_min} דק׳ העמסה. שומרים מיקום בעמוד האתר`;
+      };
+      $('#sa', s).onchange = () => { recalc(); drawWx(); }; $('#st', s).oninput = () => { touched = true; };
+      sb.from('app_settings').select('value').eq('key', 'dispatch').maybeSingle().then(async ({ data }) => {
+        Object.assign(Dp, data?.value || {}); recalc();
+        if (!lat) return;
+        try { const j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${Dp.office[1]},${Dp.office[0]};${lng},${lat}?overview=false`)).json();
+          if (j.routes?.[0]) travelMin = Math.ceil(j.routes[0].duration / 60 * Dp.traffic_factor); } catch {}
+        recalc();
+      });
       if (lat) fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=wind_speed_10m,wind_gusts_10m,precipitation&timezone=Asia%2FJerusalem&forecast_days=16`)
-        .then(r => r.json()).then(j => { const h = j.hourly; h.time.forEach((t, i) => { const d = t.slice(0, 10), hr = +t.slice(11, 13); if (hr < 6 || hr > 17) return; const x = fc[d] ||= { w: 0, g: 0, r: 0 }; x.w = Math.max(x.w, h.wind_speed_10m[i]); x.g = Math.max(x.g, h.wind_gusts_10m[i]); x.r += h.precipitation[i] || 0; }); drawWx(); }).catch(drawWx);
+        .then(r => r.json()).then(j => { const h = j.hourly; h.time.forEach((t, i) => { H[t.slice(0, 13)] = { w: h.wind_speed_10m[i], g: h.wind_gusts_10m[i], r: h.precipitation[i] || 0 }; }); drawWx(); }).catch(drawWx);
       else drawWx();
       $('#sgo', s).onclick = async () => {
         const crew = $$('[data-u][aria-pressed="true"]', s).map(c => c.dataset.u);
-        const args = { p: id, start_day: $('#sd', s).value, lead: $('#sl', s).value, crew, drone: $('#sdr', s).value || null, report: $('#st', s).value || '07:00', ndays: +$('#sn', s).value || null, skip: plan().filter(x => x.skip).map(x => x.d) };
+        const args = { p: id, start_day: $('#sd', s).value, lead: $('#sl', s).value, crew, drone: $('#sdr', s).value || null, report: $('#st', s).value || '06:00', ndays: +$('#sn', s).value || null, skip: plan().filter(x => x.skip).map(x => x.d),
+          arrive: $('#sa', s).value || null, shift_end: $('#se', s).value || null, fridays: $('#sfr', s).checked };
         if (!args.start_day || !args.lead) return toast('חסר תאריך או ראש צוות');
         const { data, error } = await sb.rpc('schedule_work_days', args); if (error) return toast(error.message, 4000);
         close(); toast(`שובצו ${data} ימי עבודה`); reload('d');
