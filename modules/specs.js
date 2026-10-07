@@ -1,5 +1,5 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons } from '../lib/core.js';
+import { sb, state, can, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
@@ -44,9 +44,9 @@ export async function renderSites(el) {
   const st = s => { const n = s.buildings.length, done = s.buildings.filter(b => (b.specs?.[0] || b.specs)?.status === 'done').length, draft = s.buildings.some(b => (b.specs?.[0] || b.specs)?.status === 'draft'); return { n, done, draft }; };
   const row = s => { const { n, done, draft } = st(s); const lead = s.kind === 'lead';
     const sub = lead ? [s.visit_date ? 'סיור ' + dm(s.visit_date) : null, s.contact_name, s.lead_owner].filter(Boolean).join(' · ') : `${n} מבנים · ${done} הושלמו`;
-    return `<button class="item" data-s="${esc(s.slug)}" data-one="${lead && n === 1 ? s.buildings[0].id : ''}" data-q="${esc(s.name + ' ' + (s.contact_name || ''))}">${s.cover_path ? `<img src="${esc(urls[s.cover_path])}" alt="">` : `<span class="rep-ph">${icon('clipboard', 22)}</span>`}
+    return `<button class="item" data-s="${esc(s.slug)}" data-one="${lead && n === 1 ? s.buildings[0].id : ''}" data-q="${esc(s.name + ' ' + (s.contact_name || ''))}">${s.cover_path ? `<img src="${esc(urls[s.cover_path])}" alt="">` : ''}
       <span class="t"><b>${esc(s.name)}</b><small>${esc(sub)}</small>${!lead ? `<span class="progress" style="margin-top:7px"><i style="width:${n ? Math.round(done / n * 100) : 0}%"></i></span>` : ''}</span>
-      <span class="pill ${done === n && n ? 'ok' : done || draft ? 'warn' : ''}">${lead ? (done === n && n ? 'בוצע' : draft || done ? 'בתהליך' : 'פתיחה') : `${done}/${n}`}</span></button>`; };
+      ${lead ? (done === n && n ? '<span class="pill ok">בוצע</span>' : draft || done ? '<span class="pill warn">בתהליך</span>' : `<span class="chev">${icon('chev', 18)}</span>`) : `<span class="pill ${done === n && n ? 'ok' : done ? 'warn' : ''}">${done}/${n}</span>`}</button>`; };
   const groups = {}; sites.forEach(s => { const g = s.kind === 'lead' ? (s.lead_group || 'לידים חדשים') : 'אתרים מרובי מבנים'; (groups[g] ||= []).push(s); });
   const keys = [...ORDER.filter(k => groups[k]), ...Object.keys(groups).filter(k => !ORDER.includes(k))];
   const draw = q => {
@@ -65,7 +65,7 @@ export async function renderSites(el) {
 // ---------- מיקום האתר (כפתור אחד לאתר) — לתחזית ולמתכנן השמש בביצוע ----------
 // ---------- מפת אתר (תצ"א / מפת מתחם): אחת לאתר, בראש העמוד ----------
 const siteMapHtml = s => (s.map_path || can('specs')) ? `<div class="card sitemap" id="sitemap"><div class="skel"></div></div>` : '';
-async function bindSiteMap(s) {
+async function bindSiteMap(s, after) {
   const box = $('#sitemap'); if (!box) return;
   const url = s.map_path ? (await signedUrls('plans', [s.map_path]))[s.map_path] : '';
   box.innerHTML = url ? `<button class="smimg" type="button"><img src="${esc(url)}" alt="מפת האתר"></button><div class="row"><b class="grow">מפת האתר</b>${can('specs') ? '<label class="chip">החלפה<input type="file" accept="image/*" hidden></label>' : ''}</div>`
@@ -80,9 +80,33 @@ async function bindSiteMap(s) {
       const blob = await shrink(f, 2400), path = `${s.id}/site-map-${Date.now()}.jpg`;
       const { error } = await sb.storage.from('plans').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
       const { error: e2 } = await sb.rpc('set_site_map', { s: s.id, path }); if (e2) throw e2;
-      s.map_path = path; await cache.set('site:' + s.slug, s); toast('המפה נשמרה'); bindSiteMap(s);
+      s.map_path = path; await cache.set('site:' + s.slug, s); toast('המפה נשמרה'); after ? after() : bindSiteMap(s);
     } catch (e) { toast(e.message || 'ההעלאה נכשלה'); }
   };
+}
+
+// ---------- כלי אתר בשורה אחת: מפה · ניווט ותחזית · מחיר. כל אחד נפתח בלחיצה — לא תופס את המסך ----------
+function siteTools(s, opts = {}) {
+  const t = [];
+  t.push(`<button class="stile" type="button" data-st="map">${s.map_path ? '<span class="stimg" id="stmap"></span>' : `<span class="mic">${icon('photo', 19)}</span>`}<b>מפת האתר</b><small>${s.map_path ? 'לחיצה להגדלה' : 'אין עדיין · העלאה'}</small></button>`);
+  t.push(`<button class="stile ${s.lat ? '' : 'todo'}" type="button" data-st="loc"><span class="mic ${s.lat ? 'ok' : ''}">${icon('pin', 19)}</span><b>${s.lat ? 'ניווט ותחזית' : 'שמירת מיקום'}</b><small>${s.lat ? 'Waze · Maps · 4 ימים' : 'עומדים באתר ולוחצים'}</small></button>`);
+  if (can('finance') && opts.price) t.push(`<button class="stile" type="button" data-st="price"><span class="mic">${icon('cash', 19)}</span><b>הערכת מחיר</b><small>${opts.days ? nf(opts.days) + ' ימי עבודה' : 'אחרי הזנת ימים'}</small></button>`);
+  return `<div class="stools">${t.join('')}</div>`;
+}
+function bindSiteTools(s, opts = {}) {
+  const box = $('.stools'); if (!box) return;
+  if (s.map_path) signedUrls('plans', [s.map_path]).then(u => { const e = $('#stmap'); if (e && u[s.map_path]) e.style.backgroundImage = `url("${u[s.map_path]}")`; });
+  $$('[data-st]', box).forEach(b => b.onclick = async () => {
+    const k = b.dataset.st;
+    if (k === 'map') {
+      if (s.map_path) { const u = await signedUrls('plans', [s.map_path]); if (u[s.map_path]) return zoom(u[s.map_path], 'מפת האתר · ' + s.name); }
+      sheet(`<h3>מפת האתר</h3>${siteMapHtml(s)}<button class="btn ghost block" data-close>סגירה</button>`, () => bindSiteMap(s, () => location.reload()), { back: null });
+    }
+    if (k === 'loc') sheet(`<h3>${esc(s.name)}</h3>${siteLocHtml(s)}${s.map_path && can('specs') ? `<button class="btn ghost block" id="mapre">${icon('photo', 18)} החלפת מפת האתר</button>` : ''}<button class="btn ghost block" data-close>סגירה</button>`, sh => {
+      bindSiteLoc(s); const m = $('#mapre', sh); if (m) m.onclick = () => sheet(`<h3>מפת האתר</h3>${siteMapHtml(s)}<button class="btn ghost block" data-close>סגירה</button>`, () => bindSiteMap(s, () => location.reload()));
+    });
+    if (k === 'price') sheet(`<div class="card" id="price"></div><button class="btn ghost block" data-close>סגירה</button>`, () => priceCard(s, opts.days));
+  });
 }
 
 function siteLocHtml(s) {
@@ -168,14 +192,12 @@ export async function renderSite(el, slug, tab = 'b') {
       ${s.classification === 'restricted' ? '<span class="pill warn">אתר מוגבל</span>' : ''}</div>
     <div><div class="eyebrow">סיור אפיון</div><h1>${esc(s.name)}</h1></div>
     ${contactCard(s.contact_name, s.contact_phone)}
-    ${siteMapHtml(s)}
-    ${siteLocHtml(s)}
+    ${siteTools(s, { price: true, days: Math.ceil(days - 1e-3) })}
     <div class="kpis"><div class="kpi"><b>${done}/${n}</b><span>מבנים הושלמו</span></div><div class="kpi"><b>${days ? nf(Math.ceil(days - 1e-3)) : '—'}</b><span>ימי עבודה${days % 1 ? ` (${nf(days)} עוגל)` : ''}</span></div>
       ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ"ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
-    ${can('finance') ? '<div class="card" id="price"></div>' : ''}
     <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
     <div id="tabbody"></div>`;
-  bindCopy(el); bindSiteLoc(s); bindSiteMap(s); priceCard(s, Math.ceil(days - 1e-3));
+  bindCopy(el); bindSiteTools(s, { days: Math.ceil(days - 1e-3) });
   $$('.tabs button', el).forEach(b => b.onclick = () => location.hash = `#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`);
   const body = $('#tabbody');
   if (tab === 'c') { const { renderChat } = await import('./chat.js'); return renderChat(body, { site: s }); }
@@ -220,7 +242,7 @@ export async function renderBuilding(el, slug, bid) {
       <div class="kpi"><b>${b.floors ? nf(b.floors) : '—'}</b><span>קומות</span></div><div class="kpi"><b>${b.plan_source === 'plans' ? b.plan_images.length : 'סקיצה'}</b><span>${b.plan_source === 'plans' ? 'חזיתות בתכנית' : 'מקור'}</span></div></div>`}
     ${b.office_note ? `<div class="note">${esc(b.office_note)}</div>` : ''}
     ${contactCard(s.contact_name, s.contact_phone)}
-    ${s.kind === 'lead' && s.buildings.length === 1 ? siteMapHtml(s) + siteLocHtml(s) : ''}
+    ${s.kind === 'lead' && s.buildings.length === 1 ? siteTools(s) : ''}
     ${b.plan_images.length ? `<div><h3>${b.plan_source === 'plans' ? 'החזיתות מהתכנית' : 'מיקום בסקיצה'}</h3><div class="small muted">גוללים הצידה, לחיצה מגדילה</div></div>
       <div class="facades">${b.plan_images.map((p, i) => `<div class="fc"><button class="fcimg" data-i="${i}"><img loading="lazy" src="${esc(plans[p.storage_path])}" alt="${esc(p.title)}"></button><div><b>${esc(p.title)}</b>${esc(p.dims_text || '')}${p.area_m2 ? ' · ' + nf(p.area_m2) + ' מ"ר' : ''}</div>${FAC.some(f => f.id === p.id) ? counter(p.id) : ''}</div>`).join('')}</div>` : ''}
     ${!imgs.length ? `<div><h3>ימים לפי חזית</h3><div class="small muted">מצלמים כל חזית, מסמנים כיוון וסופרים ימים. אפשר גם בהמשך, מהמשרד</div></div>
@@ -237,8 +259,9 @@ export async function renderBuilding(el, slug, bid) {
       <div class="field">חומר ניקוי ${chips('material', MAT)}</div>
       <div class="note" id="dirtNote" ${['מעל שנתיים', 'לא נשטף מעולם'].includes(form.washed_last) ? '' : 'hidden'}>לא נשטף מעל שנתיים: לכלוך מצטבר דורש מעברים חוזרים. כדאי להוסיף ימים.</div>
     </div>
-    <div class="sec"><h3>בשטח</h3>
-      ${TOGS.map(([k, l]) => `<label class="tog" for="t_${k}"><span>${l}</span><span class="sw"><input type="checkbox" id="t_${k}" ${form[k] ? 'checked' : ''}><i></i></span></label>`).join('')}
+    <div class="sec"><h3>באתר</h3>
+      <div class="field">מה יש באתר<small>מסמנים את מה שקיים. משפיע על רשימת ההעמסה ליום העבודה</small>
+        <div class="chips">${TOGS.map(([k, l]) => `<label class="chip tchip" for="t_${k}"><input type="checkbox" id="t_${k}" ${form[k] ? 'checked' : ''} hidden>${l}</label>`).join('')}</div></div>
       <div id="obstBox" ${form.obstacles ? '' : 'hidden'} class="stack">
         <label class="field" for="obstacles_text">פירוט המכשולים<textarea id="obstacles_text" placeholder="עצים, גגונים, חניה, קווי חשמל…">${esc(form.obstacles_text || '')}</textarea></label>
         <div class="field">צילום המכשולים<div class="photos" id="ph_obstacle"></div></div>
@@ -257,7 +280,7 @@ export async function renderBuilding(el, slug, bid) {
   $$('.fcimg', el).forEach(f => f.onclick = () => { const p = b.plan_images[+f.dataset.i]; zoom(plans[p.storage_path], p.title + ' · ' + (p.dims_text || '')); });
   bindCopy(el);
   const set = (k, v) => { form[k] = v; dirty = true; };
-  $$('.chip', el).forEach(c => c.onclick = () => {
+  $$('.chip[data-g]', el).forEach(c => c.onclick = () => {
     const g = c.dataset.g; set(g, form[g] === c.dataset.v ? null : c.dataset.v);
     $$(`.chip[data-g="${g}"]`, el).forEach(x => x.setAttribute('aria-pressed', x.dataset.v === form[g]));
     if (g === 'washed_last') $('#dirtNote').hidden = !['מעל שנתיים', 'לא נשטף מעולם'].includes(form[g]);
@@ -366,7 +389,7 @@ export async function renderBuilding(el, slug, bid) {
       await save(true); location.hash = '#/site/' + slug;
     };
   }
-  bindSiteLoc(s); bindSiteMap(s);
+  bindSiteTools(s);
   $('#bk').onclick = async () => { if (dirty && editable) await save(false, true); location.hash = s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug; };
   addEventListener('hashchange', function h() { if (dirty && editable) save(false, true); removeEventListener('hashchange', h); }, { once: true });
 }

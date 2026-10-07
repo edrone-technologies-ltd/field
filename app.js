@@ -63,37 +63,45 @@ async function unread() {
 // ---------- עוד: פרופיל, מודולים נוספים, הגדרות ----------
 function renderMenu() {
   const p = state.profile;
-  const rows = [
-    ['#/hours', 'clock', 'השעות שלי', 'כניסות, יציאות, היעדרויות ובקשות תיקון'],
-    ['#/myfile', 'clipboard', 'התיק שלי', 'תלושי שכר ומסמכים אישיים'],
-    ['#/expenses', 'report', 'הוצאות', 'דלק, חניה, אגרות, אוכל ולינה עם קבלה'],
-    isManager() && ['#/staff', 'users', 'עובדים', 'פרטים, שכר, שעות, מסמכים ותלושים'],
-    isManager() && ['#/attendance', 'clock', 'נוכחות צוות', 'מי במשמרת, בקשות לאישור, סיכום וייצוא לשכר'],
-    can('purchase') && ['#/purchase', 'report', 'רכש ומלאי', 'בקשת רכש ומצב מלאי'],
-    can('specs') && ['#/specs', 'clipboard', 'אפיונים', 'סיורי אפיון לפי אתר ומבנה'],
-    can('equipment') && ['#/equipment', 'wrench', 'ציוד', 'צי, ציוד ותקלות'],
-    isManager() && ['#/reports', 'report', 'דוחות שטח', 'כל דוחות הביצוע עם תמונות'],
-    isManager() && ['#/alerts', 'alert', 'לטיפול', 'כל מה שפתוח ודורש החלטה'],
-    can('admin') && ['#/admin', 'shield', 'ניהול מערכת', 'צוות, תפקידים והרשאות'],
-  ].filter(Boolean);
+  // שלוש קבוצות קבועות: מה שלי · עבודה בשטח · ניהול. אייקון אחר לכל פריט
+  const groups = [
+    ['שלי', [
+      ['#/hours', 'clock', 'השעות שלי', 'כניסה, יציאה ובקשות תיקון'],
+      ['#/myfile', 'file', 'התיק שלי', 'תלושים ומסמכים'],
+      ['#/expenses', 'receipt', 'הוצאות', 'דלק, חניה, אוכל ולינה'],
+    ]],
+    ['שטח', [
+      can('specs') && ['#/specs', 'clipboard', 'אפיונים', 'סיורים לפי אתר ומבנה'],
+      isManager() && ['#/reports', 'photo', 'דוחות שטח', 'כל הדוחות והתמונות'],
+      can('equipment') && ['#/equipment', 'drone', 'ציוד', 'רחפנים ותקלות'],
+      can('purchase') && ['#/purchase', 'cart', 'רכש ומלאי', 'בקשת רכש'],
+    ]],
+    ['ניהול', [
+      isManager() && ['#/alerts', 'alert', 'לטיפול', 'מה פתוח ודורש החלטה'],
+      isManager() && ['#/attendance', 'team', 'נוכחות צוות', 'אישורים וייצוא לשכר'],
+      isManager() && ['#/staff', 'users', 'עובדים', 'פרטים, שכר ומסמכים'],
+      can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
+    ]],
+  ].map(([t, r]) => [t, r.filter(Boolean)]).filter(([, r]) => r.length);
   const th = document.documentElement.dataset.theme || '';
   app.innerHTML = `<header class="phead">${backBtn('#/')}<h1>עוד</h1></header>
     <div class="stack lg">
       <div class="card prof"><span class="avatar lg">${esc(initials(p.full_name))}</span><div class="grow"><b>${esc(p.full_name)}</b><small>${esc(ROLE_HE[p.role])} · ${esc(p.phone || '')}</small>
         ${p.is_pilot && p.pilot_license_expiry ? `<small class="${new Date(p.pilot_license_expiry) - Date.now() < 45 * 864e5 ? 'err' : ''}">רישיון מטיס ${esc(p.pilot_license_no || '')} · בתוקף עד ${new Date(p.pilot_license_expiry).toLocaleDateString('he-IL')}</small>` : ''}</div></div>
-      ${rows.length ? `<div class="menu">${rows.map(([h, ic, t, s]) => `<a class="lrow" href="${h}"><span class="mic">${icon(ic, 20)}</span><span class="grow"><b>${t}</b><small>${s}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
+      ${groups.map(([g, rows]) => `<section><h3 class="sh">${g}</h3><div class="mgrid">${rows.map(([h, ic, t, s]) => `<a class="mtile" href="${h}"><span class="mic">${icon(ic, 20)}</span><b>${t}</b><small>${s}</small></a>`).join('')}</div></section>`).join('')}
       <div class="menu"><div class="lrow"><span class="mic">${icon('sun', 20)}</span><span class="grow"><b>תצוגה</b></span>
         <span class="seg">${[['', 'אוטומטי'], ['light', 'בהיר'], ['dark', 'כהה']].map(([v, l]) => `<button data-th="${v}" aria-pressed="${th === v}">${l}</button>`).join('')}</span></div>
         <button class="lrow" id="qrow"><span class="mic">${icon('send', 20)}</span><span class="grow"><b>סנכרון</b><small>מה ממתין לשליחה מהטלפון</small></span><span class="chev">${icon('chev', 18)}</span></button>
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
         <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
-      <div class="foot">E-Drone שטח · גרסה 26</div>
+      <div class="foot" id="ver">E-Drone שטח</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
   $('#qrow').onclick = async () => (await import('./lib/core.js')).showQueue();
   installHint(); pushRow();
+  caches.keys().then(k => { const v = k.find(x => x.startsWith('edrone-field-v')); const e = $('#ver'); if (v && e) e.textContent = 'E-Drone שטח · גרסה ' + v.split('-v')[1]; }).catch(() => {});
 }
 const PUSH_TXT = { on: 'פועלות — הודעות, שיבוצים ותקלות קריטיות', off: 'כבויות', denied: 'נחסמו בהגדרות הטלפון. מפעילים שם: הגדרות ← התראות ← E-Drone', install: 'קודם מתקינים במסך הבית, ואז אפשר להפעיל', unsupported: 'הטלפון לא תומך. צריך iOS 16.4 ומעלה' };
 async function pushRow() {

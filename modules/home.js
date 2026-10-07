@@ -239,7 +239,7 @@ async function yesterday() {
   ]);
   const hrs = shifts.reduce((t, s) => t + (s.end_at ? (new Date(s.end_at) - new Date(s.start_at)) / 36e5 : 0), 0);
   const projs = new Set([...reps.map(r => r.project_label), ...days.map(d => d.projects?.name)].filter(Boolean));
-  if (!projs.size && !hrs && !iss.length && !exps.length) return;
+  if (!projs.size && hrs < 0.5) return;  // מוצג רק כשהייתה עבודת שטח אתמול — לא כרטיס של אפסים
   const ex = exps.reduce((t, e) => t + Number(e.amount), 0);
   box.innerHTML = `<a class="yday" href="#/schedule"><span class="eyebrow">אתמול בשטח</span><span class="ys">
     <span><b>${projs.size}</b><small>פרויקטים</small></span><span><b>${hrs ? Math.round(hrs) : '—'}</b><small>שעות צוות</small></span>
