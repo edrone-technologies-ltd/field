@@ -1,5 +1,5 @@
 // ניהול מערכת: צוות, תפקידים, ומי רואה איזה מודול. admin בלבד (נאכף גם בשרת).
-import { sb, state, $, $$, esc, toast, ROLE_HE, initials } from '../lib/core.js';
+import { sb, state, $, $$, esc, toast, ROLE_HE, FIELD_HE, initials, sheet } from '../lib/core.js';
 
 const ROLES = ['admin', 'ops_manager', 'surveyor', 'crew_lead', 'crew', 'partner'];
 export async function renderAdmin(el) {
@@ -15,10 +15,11 @@ export async function renderAdmin(el) {
   const has = (r, m) => rm.some(x => x.role === r && x.module === m);
   $('#ad').innerHTML = `
     <div class="stack">
-    <h3>צוות</h3>
+    <div id="teams"></div>
+    <h3>אנשים והרשאות</h3>
     <div class="list">${people.map(p => `<div class="item" style="cursor:default">
       <span class="avatar" aria-hidden="true">${esc(initials(p.full_name))}</span>
-      <span class="t"><b>${esc(p.full_name)}</b><small>${esc(p.phone || '')}${p.is_pilot ? ' · מטיס' + (p.pilot_license_expiry ? ' עד ' + new Date(p.pilot_license_expiry).toLocaleDateString('he-IL') : '') : ''}</small></span>
+      <span class="t"><b>${esc(p.full_name)}</b><small>${esc(p.phone || '')}${p.field_role ? ' · ' + FIELD_HE[p.field_role] : ''}${p.is_pilot && p.pilot_license_expiry ? ' · רישיון עד ' + new Date(p.pilot_license_expiry).toLocaleDateString('he-IL') : ''}</small></span>
       <select data-role="${p.id}" aria-label="תפקיד" ${p.id === state.user.id ? 'disabled' : ''} style="width:auto">${ROLES.map(r => `<option value="${r}" ${p.role === r ? 'selected' : ''}>${ROLE_HE[r]}</option>`).join('')}</select>
       <label class="sw" title="פעיל"><input type="checkbox" data-act="${p.id}" ${p.is_active ? 'checked' : ''} ${p.id === state.user.id ? 'disabled' : ''}><i></i></label>
     </div>`).join('')}</div>
@@ -50,7 +51,49 @@ export async function renderAdmin(el) {
     const q = c.checked ? sb.from('site_members').insert({ site_id, user_id }) : sb.from('site_members').delete().eq('site_id', site_id).eq('user_id', user_id);
     const { error } = await q; toast(error ? 'לא נשמר' : 'השיוך עודכן');
   });
-  usageCard(el);
+  usageCard(el); teamsCard(people);
+}
+
+// צוותי שטח: מטיס + מפעיל מערכות, ואחד מהם ראש צוות (מקבל אוטומטית הרשאת ראש צוות)
+async function teamsCard(people) {
+  const box = $('#teams'); if (!box) return;
+  const { data: teams } = await sb.from('teams').select('*').eq('active', true).order('sort').order('name');
+  const N = id => people.find(p => p.id === id)?.full_name || '—';
+  const field = people.filter(p => p.is_active && ['crew', 'crew_lead', 'ops_manager', 'admin'].includes(p.role));
+  box.innerHTML = `<div class="row"><h3 class="grow">צוותי שטח</h3><button class="chip" id="tnew">+ צוות</button></div>
+    <div class="small muted">כל צוות: מטיס + מפעיל מערכות. ראש הצוות מקבל הרשאות ראש צוות; בשיבוץ בוחרים צוות בלחיצה.</div>
+    <div class="list">${(teams || []).map(t => `<button class="item" data-t="${t.id}"><span class="t"><b>${esc(t.name)}</b>
+      <small>מטיס: ${esc(N(t.pilot_id))}${t.lead_id === t.pilot_id ? ' ★' : ''} · מפעיל מערכות: ${esc(N(t.operator_id))}${t.lead_id === t.operator_id ? ' ★' : ''}</small></span></button>`).join('') || '<div class="empty small">עוד אין צוותים</div>'}</div>
+    <div class="small muted">★ = ראש צוות</div>`;
+  const edit = t => {
+    const f = { name: t?.name || `צוות ${(teams || []).length + 1}`, pilot_id: t?.pilot_id || null, operator_id: t?.operator_id || null, lead_id: t?.lead_id || null };
+    const pick = (k, title) => `<div class="field">${title}<div class="chips">${field.map(p => `<button type="button" class="chip" data-${k}="${p.id}" aria-pressed="${f[k + '_id'] === p.id}">${esc(p.full_name)}</button>`).join('')}</div></div>`;
+    sheet(`<h3>${t ? 'עריכת צוות' : 'צוות חדש'}</h3>
+      <label class="field">שם הצוות<input id="tn" value="${esc(f.name)}"></label>
+      ${pick('pilot', 'מטיס')}${pick('operator', 'מפעיל מערכות')}
+      <div class="field">ראש צוות<div class="chips" id="tl"></div></div>
+      <div class="row">${t ? '<button class="btn ghost" id="tdel">פירוק צוות</button>' : ''}<button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="tsv">שמירה</button></div>`, (s, close) => {
+      const lead = () => { $('#tl', s).innerHTML = [f.pilot_id, f.operator_id].filter(Boolean).map(id => `<button type="button" class="chip" data-lead="${id}" aria-pressed="${f.lead_id === id}">${esc(N(id))}</button>`).join('') || '<span class="small muted">בוחרים קודם מטיס ומפעיל</span>';
+        $$('[data-lead]', s).forEach(b => b.onclick = () => { f.lead_id = b.dataset.lead; lead(); }); };
+      ['pilot', 'operator'].forEach(k => $$(`[data-${k}]`, s).forEach(b => b.onclick = () => {
+        f[k + '_id'] = b.dataset[k]; const other = k === 'pilot' ? 'operator' : 'pilot';
+        if (f[other + '_id'] === f[k + '_id']) f[other + '_id'] = null;
+        if (![f.pilot_id, f.operator_id].includes(f.lead_id)) f.lead_id = null;
+        $$('[data-pilot],[data-operator]', s).forEach(x => x.setAttribute('aria-pressed', f[(x.dataset.pilot ? 'pilot' : 'operator') + '_id'] === (x.dataset.pilot || x.dataset.operator)));
+        lead(); }));
+      lead();
+      const d = $('#tdel', s); if (d) d.onclick = async () => { await sb.from('teams').update({ active: false }).eq('id', t.id); close(); toast('הצוות פורק'); teamsCard(people); };
+      $('#tsv', s).onclick = async () => {
+        if (!f.pilot_id || !f.operator_id) return toast('חסר מטיס או מפעיל מערכות');
+        if (!f.lead_id) return toast('מי ראש הצוות?');
+        const row = { name: $('#tn', s).value.trim() || f.name, pilot_id: f.pilot_id, operator_id: f.operator_id, lead_id: f.lead_id };
+        const { error } = t ? await sb.from('teams').update(row).eq('id', t.id) : await sb.from('teams').insert(row);
+        if (error) return toast(error.message); close(); toast('נשמר'); renderAdmin(document.getElementById('app'));
+      };
+    });
+  };
+  $('#tnew', box).onclick = () => edit(null);
+  $$('[data-t]', box).forEach(b => b.onclick = () => edit(teams.find(t => t.id === b.dataset.t)));
 }
 
 // מד שימוש בחבילה החינמית — אחסון ומסד נתונים. התראה אוטומטית ב-80% (שגרת בוקר)

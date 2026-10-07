@@ -4,7 +4,7 @@
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, confirmBox, signedUrls, backBtn, initials, replaceHash, goUp, zoom } from '../lib/core.js';
 
 // קהלי יעד: ריק = כולם. מנהלים רואים הכל תמיד
-const AUD = [['crew', 'צוות שטח'], ['crew_lead', 'ראש צוות'], ['surveyor', 'סוקר'], ['ops_manager', 'מנהלים']];
+const AUD = [['pilot', 'מטיסים'], ['operator', 'מפעילי מערכות'], ['crew_lead', 'ראשי צוות'], ['crew', 'כל צוות השטח'], ['surveyor', 'סוקר'], ['ops_manager', 'הנהלה ותפעול']];
 const audTxt = r => !r?.length ? '' : r.map(x => (AUD.find(a => a[0] === x) || [, x])[1]).join(', ');
 const isImg = f => /\.(jpe?g|png|webp)$/i.test(f.name || f.path);
 const ytId = u => (u.match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([\w-]{11})/) || [])[1];

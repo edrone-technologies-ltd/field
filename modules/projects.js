@@ -213,13 +213,15 @@ export async function renderProject(el, id, tab = 'o') {
         || '<div class="empty">אין ימי שטח משובצים.</div>'}`;
     const b = $('#sch'); if (b) b.onclick = scheduleSheet;
   }
-  function scheduleSheet() {
+  async function scheduleSheet() {
+    const { data: teams } = await sb.from('teams').select('id,name,pilot_id,operator_id,lead_id').eq('active', true).order('sort');
     const maxDay = Math.max(0, ...D.tasks.map(t => t.day_no || 0)) || Number(p.field_days_planned) || 1;
     let start = (() => { const d = new Date(Date.now() + 864e5); while ([5, 6].includes(d.getDay())) d.setDate(d.getDate() + 1); return isoDay(d); })();
     const leads = D.team.filter(x => ['crew_lead', 'ops_manager', 'admin'].includes(x.role));
     sheet(`<h3>שיבוץ ימי עבודה</h3>
       <label class="field">מתחילים ב-<input type="date" id="sd" value="${start}"></label>
       <label class="field">מספר ימים<small>${D.tasks.length ? 'לפי התכנית' : 'אין תכנית — לפי ימי השטח המתוכננים'}. שבת מדולגת, שישי רק כשמסמנים</small><input type="number" id="sn" min="1" value="${maxDay}"></label>
+      ${(teams || []).length ? `<div class="field">צוות<small>בחירת צוות ממלאת ראש צוות וצוות — אפשר לשנות</small><div class="chips">${teams.map(t => `<button type="button" class="chip" data-team="${t.id}" aria-pressed="false">${esc(t.name)}</button>`).join('')}</div></div>` : ''}
       <label class="field">ראש צוות<select id="sl">${leads.map(x => `<option value="${x.id}">${esc(x.full_name)}</option>`).join('')}</select></label>
       <div class="field">צוות<div class="chips">${D.team.map(x => `<button class="chip" data-u="${x.id}" aria-pressed="false">${esc(x.full_name)}</button>`).join('')}</div></div>
       <label class="field">רחפן<select id="sdr"><option value="">בלי רחפן</option>${D.drones.map(x => `<option value="${x.id}">${esc(x.name)}${x.health === 'grounded' ? ' — מקורקע' : x.health === 'warning' ? ' — במעקב' : ''}</option>`).join('')}</select></label>
@@ -230,6 +232,11 @@ export async function renderProject(el, id, tab = 'o') {
       ${D.days.some(d => d.status === 'planned') ? '<div class="note">ימים מתוכננים שעוד לא נפתחו יוחלפו בשיבוץ החדש.</div>' : ''}
       <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="sgo">שיבוץ</button></div>`, (s, close) => {
       $$('[data-u]', s).forEach(c => c.onclick = () => c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') !== 'true'));
+      $$('[data-team]', s).forEach(c => c.onclick = () => {
+        const t = teams.find(x => x.id === c.dataset.team); $$('[data-team]', s).forEach(x => x.setAttribute('aria-pressed', x === c));
+        const sel = $('#sl', s); if (t.lead_id && [...sel.options].some(o => o.value === t.lead_id)) sel.value = t.lead_id;
+        $$('[data-u]', s).forEach(x => x.setAttribute('aria-pressed', [t.pilot_id, t.operator_id].includes(x.dataset.u) && x.dataset.u !== t.lead_id));
+      });
       // תחזית: open-meteo עד 16 יום קדימה, בשעות העבודה 06-17. מעבר לטווח — אין נתון ולא מדלגים
       const lat = p.sites?.lat || p.lat, lng = p.sites?.lng || p.lng; const H = {}; const manual = new Map();  // date → true=דילוג / false=לא לדלג
       const hr = id => { const v = $(id, s).value; return v ? +v.slice(0, 2) + +v.slice(3) / 60 : null; };
