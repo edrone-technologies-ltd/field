@@ -593,3 +593,7 @@ body:has(.fabs) #app{padding-bottom:170px}
 .hist{display:flex;flex-direction:column;gap:2px;max-height:60vh;overflow:auto;margin:8px 0}
 .hrow{display:flex;gap:10px;align-items:flex-start;padding:8px 2px;border-bottom:1px solid var(--line)} .hrow small{display:block;color:var(--muted);font-size:.82rem;line-height:1.4}
 .hrow time{font-size:.75rem;color:var(--muted);white-space:nowrap}
+/* משימות אישיות */
+.tcard{background:var(--card);border:1px solid var(--line);border-inline-start:4px solid var(--lime);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.tcard small{display:block;color:var(--muted);font-size:.8rem} .tacts{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.tacts .chip{text-decoration:none} .avatar.xs{width:22px;height:22px;font-size:.62rem;display:inline-flex}

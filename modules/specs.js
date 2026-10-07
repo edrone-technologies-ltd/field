@@ -1,5 +1,5 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp } from '../lib/core.js';
+import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
@@ -90,6 +90,7 @@ function siteTools(s, opts = {}) {
   const t = [];
   t.push(`<button class="stile" type="button" data-st="map">${s.map_path ? '<span class="stimg" id="stmap"></span>' : `<span class="mic">${icon('photo', 19)}</span>`}<b>מפת האתר</b><small>${s.map_path ? 'לחיצה להגדלה' : 'אין עדיין · העלאה'}</small></button>`);
   t.push(`<button class="stile ${s.lat ? '' : 'todo'}" type="button" data-st="loc"><span class="mic ${s.lat ? 'ok' : ''}">${icon('pin', 19)}</span><b>${s.lat ? 'ניווט ותחזית' : 'שמירת מיקום'}</b><small>${s.lat ? 'Waze · Maps · 4 ימים' : 'עומדים באתר ולוחצים'}</small></button>`);
+  if (isManager()) t.push(`<button class="stile" type="button" data-st="task"><span class="mic">${icon('send', 19)}</span><b>משימה לצוות</b><small>${s.contact_name ? 'ליצור קשר עם ' + esc(s.contact_name.split(' ')[0]) : 'מעקב על הליד'}</small></button>`);
   if (can('finance') && opts.price) t.push(`<button class="stile" type="button" data-st="price"><span class="mic">${icon('cash', 19)}</span><b>הערכת מחיר</b><small>${opts.days ? nf(opts.days) + ' ימי עבודה' : 'אחרי הזנת ימים'}</small></button>`);
   return `<div class="stools">${t.join('')}</div>`;
 }
@@ -105,6 +106,7 @@ function bindSiteTools(s, opts = {}) {
     if (k === 'loc') sheet(`<h3>${esc(s.name)}</h3>${siteLocHtml(s)}${s.map_path && can('specs') ? `<button class="btn ghost block" id="mapre">${icon('photo', 18)} החלפת מפת האתר</button>` : ''}<button class="btn ghost block" data-close>סגירה</button>`, sh => {
       bindSiteLoc(s); const m = $('#mapre', sh); if (m) m.onclick = () => sheet(`<h3>מפת האתר</h3>${siteMapHtml(s)}<button class="btn ghost block" data-close>סגירה</button>`, () => bindSiteMap(s, () => location.reload()));
     });
+    if (k === 'task') return (await import('./tasks.js')).newTask({ site: s, title: s.kind === 'lead' ? `ליצור קשר${s.contact_name ? ' עם ' + s.contact_name : ''} ולתאם פגישת אפיון` : '' });
     if (k === 'price') sheet(`<div class="card" id="price"></div><button class="btn ghost block" data-close>סגירה</button>`, () => priceCard(s, opts.days));
   });
 }
