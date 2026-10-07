@@ -195,14 +195,24 @@ initNav();
 // באג אייפון (אפליקציית מסך הבית): אחרי שהמקלדת נסגרת המסך נשאר מכווץ — פס מת מתחת לבר התחתון עד סגירת האפליקציה.
 // מזהים (הגובה ירד מתחת למקסימום שנמדד / לגובה המסך) ומכריחים מדידה מחדש בהסתרה והחזרה רגעית של התוכן.
 {
-  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
-  let maxVH = Math.max(innerHeight, standalone && innerWidth < innerHeight ? screen.height : 0);
+  // אייפון בלבד (navigator.standalone קיים רק שם): עם שורת סטטוס שקופה, גובה המסך מחושב בלי שורת הסטטוס —
+  // והבר נעצר מעל התחתית בגובה שלה. מודדים את הפער ומורידים את הסרגלים התחתונים עד הקצה. באנדרואיד לא נוגעים.
+  const iosPWA = navigator.standalone === true;
+  const fitIOS = () => {
+    if (!iosPWA || innerWidth > innerHeight || document.activeElement?.matches?.('input,textarea,select,[contenteditable]')) return;
+    const g = screen.height - innerHeight;
+    document.documentElement.style.setProperty('--vgap', (g > 0 && g < 120 ? g : 0) + 'px');
+  };
+  fitIOS(); addEventListener('resize', () => setTimeout(fitIOS, 50));
+  // בזמן הקלדה — בלי הורדה (אחרת שורת ההקלדה בצ'אט נבלעת מתחת למקלדת)
+  document.addEventListener('focusin', e => { if (iosPWA && e.target.matches?.('input,textarea,select,[contenteditable]')) document.documentElement.style.setProperty('--vgap', '0px'); }); addEventListener('orientationchange', () => setTimeout(fitIOS, 300));
+  let maxVH = innerHeight;
   addEventListener('resize', () => { if (innerWidth < innerHeight) maxVH = Math.max(maxVH, innerHeight); });
   const heal = () => {
     if (innerWidth > innerHeight || maxVH - innerHeight <= 4) return;
     const els = [app, document.getElementById('tabbar')].filter(Boolean), st = app.scrollTop;
     els.forEach(e => e.style.display = 'none'); void document.body.offsetHeight; els.forEach(e => e.style.display = '');
-    app.scrollTop = st;
+    app.scrollTop = st; fitIOS();
   };
   document.addEventListener('focusout', e => { if (e.target.matches?.('input,textarea,select,[contenteditable]')) { setTimeout(heal, 140); setTimeout(heal, 600); } });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(heal, 300); });
