@@ -1,8 +1,12 @@
 // מרכז ידע: הדרכות "איך מתפעלים" — סרטון (קישור דרייב/יוטיוב שמתנגן בפנים), הסבר, מסמכים.
 // בחינם: סרטונים לא נשמרים בשרת שלנו (רק קישור). לשרת עולים רק PDF ותמונות עד 10MB.
 // "צפיתי והבנתי" = מעקב הדרכה; פריט "חובה" מופיע בבית לכל מי שעוד לא אישר.
-import { sb, state, isManager, sheet, icon, $, $$, esc, toast, confirmBox, signedUrls, backBtn, initials, replaceHash, goUp } from '../lib/core.js';
+import { sb, state, isManager, sheet, icon, $, $$, esc, toast, confirmBox, signedUrls, backBtn, initials, replaceHash, goUp, zoom } from '../lib/core.js';
 
+// קהלי יעד: ריק = כולם. מנהלים רואים הכל תמיד
+const AUD = [['crew', 'צוות שטח'], ['crew_lead', 'ראש צוות'], ['surveyor', 'סוקר'], ['ops_manager', 'מנהלים']];
+const audTxt = r => !r?.length ? '' : r.map(x => (AUD.find(a => a[0] === x) || [, x])[1]).join(', ');
+const isImg = f => /\.(jpe?g|png|webp)$/i.test(f.name || f.path);
 const ytId = u => (u.match(/(?:youtu\.be\/|v=|shorts\/|embed\/)([\w-]{11})/) || [])[1];
 const driveId = u => (u.match(/drive\.google\.com\/(?:file\/d\/|open\?id=)([\w-]+)/) || [])[1];
 export const embedUrl = u => !u ? null : ytId(u) ? `https://www.youtube-nocookie.com/embed/${ytId(u)}` : driveId(u) ? `https://drive.google.com/file/d/${driveId(u)}/preview` : null;
@@ -11,7 +15,7 @@ const cats = async () => { try { const { data } = await sb.from('app_settings').
 export async function renderKb(el, cat = '') {
   el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1>מרכז ידע</h1></header><div class="skel"></div>`;
   const [{ data: items }, { data: views }, C] = await Promise.all([
-    sb.from('kb_items').select('id,title,category,body,video_url,files,required,sort,updated_at').order('sort').order('title'),
+    sb.from('kb_items').select('id,title,category,body,video_url,files,required,sort,updated_at,roles').order('sort').order('title'),
     sb.from('kb_views').select('item_id,confirmed_at').eq('user_id', state.user.id), cats()]);
   const seen = new Map((views || []).map(v => [v.item_id, v]));
   const all = items || [], M = isManager();
@@ -27,7 +31,7 @@ export async function renderKb(el, cat = '') {
   function row(x) {
     const v = seen.get(x.id), kind = x.video_url ? 'play' : (x.files || []).length ? 'file' : 'report';
     return `<a class="item kb" href="#/kb/${x.id}" data-q="${esc((x.title + ' ' + (x.body || '') + ' ' + x.category).toLowerCase())}"><span class="kbic ${x.video_url ? 'vid' : ''}">${kind === 'play' ? '<svg width="20" height="20" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>' : icon(kind, 20)}</span>
-      <span class="t"><b>${esc(x.title)}</b><small>${esc(x.category)}${x.video_url ? ' · סרטון' : ''}${(x.files || []).length ? ` · ${x.files.length} מסמכים` : ''}</small></span>
+      <span class="t"><b>${esc(x.title)}</b><small>${esc(x.category)}${x.video_url ? ' · סרטון' : ''}${(x.files || []).some(isImg) ? ' · עם צילומי מסך' : ''}${M && x.roles?.length ? ' · ' + esc(audTxt(x.roles)) : ''}</small></span>
       ${v?.confirmed_at ? '<span class="pill ok">✓</span>' : !v ? '<span class="pill lime">חדש</span>' : ''}</a>`;
   }
   const draw = () => {
@@ -54,14 +58,16 @@ export async function renderKbItem(el, id) {
   const emb = embedUrl(x.video_url), M = isManager();
   el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1>${esc(x.title)}</h1></header>
     <div class="stack lg">
-      <div class="row"><span class="pill">${esc(x.category)}</span>${x.required ? '<span class="pill warn">חובה</span>' : ''}<span class="grow"></span>${M ? `<button class="chip" id="kbed">עריכה</button>` : ''}</div>
+      <div class="row"><span class="pill">${esc(x.category)}</span>${x.required ? '<span class="pill warn">חובה</span>' : ''}${M && x.roles?.length ? `<span class="pill">${esc(audTxt(x.roles))}</span>` : ''}<span class="grow"></span>${M ? `<button class="chip" id="kbed">עריכה</button>` : ''}</div>
       ${emb ? `<div class="kbvid"><iframe src="${esc(emb)}" allow="autoplay; encrypted-media; fullscreen" allowfullscreen loading="lazy" title="${esc(x.title)}"></iframe></div>`
         : x.video_url ? `<a class="btn ghost block" href="${esc(x.video_url)}" target="_blank" rel="noopener">${icon('send', 18)} פתיחת הסרטון</a>` : ''}
       ${x.body ? `<div class="card kbbody">${esc(x.body).replace(/\n/g, '<br>')}</div>` : ''}
-      ${files.length ? `<section><h3 class="sh">מסמכים</h3><div class="list">${files.map(f => `<a class="lrow" href="${esc(urls[f.path] || '#')}" target="_blank" rel="noopener"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
+      ${files.some(isImg) ? `<div class="kbshots">${files.filter(isImg).map((f, i) => `<figure><img src="${esc(urls[f.path] || '')}" alt="${esc(f.name.replace(/\.\w+$/, ''))}" loading="lazy"><figcaption>${i + 1}. ${esc(f.name.replace(/^\d+[-_ ]*/, '').replace(/\.\w+$/, ''))}</figcaption></figure>`).join('')}</div>` : ''}
+      ${files.some(f => !isImg(f)) ? `<section><h3 class="sh">מסמכים</h3><div class="list">${files.filter(f => !isImg(f)).map(f => `<a class="lrow" href="${esc(urls[f.path] || '#')}" target="_blank" rel="noopener"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
       ${v?.confirmed_at ? `<div class="acked center">צפית ואישרת ✓</div>` : `<button class="btn primary block big" id="kbok">צפיתי והבנתי</button>`}
       ${M ? '<div id="kbwho"></div>' : ''}
     </div>`;
+  $$('.kbshots img', el).forEach(i => i.onclick = () => zoom(i.src, i.alt));
   const ok = $('#kbok'); if (ok) ok.onclick = async () => {
     ok.disabled = true;
     const { error } = await sb.from('kb_views').upsert({ item_id: id, user_id: state.user.id, confirmed_at: new Date().toISOString() });
@@ -82,10 +88,11 @@ export async function renderKbItem(el, id) {
 
 // יצירה / עריכה (מנהלים)
 function editKb(x, C) {
-  const f = { title: x?.title || '', category: x?.category || C[0] || 'כללי', body: x?.body || '', video_url: x?.video_url || '', required: !!x?.required, files: [...(x?.files || [])] };
+  const f = { title: x?.title || '', category: x?.category || C[0] || 'כללי', body: x?.body || '', video_url: x?.video_url || '', required: !!x?.required, files: [...(x?.files || [])], roles: [...(x?.roles || [])] };
   sheet(`<h3>${x ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
     <label class="field">כותרת<input id="kt" value="${esc(f.title)}" placeholder="למשל: הפעלת משאבת הלחץ בבוקר"></label>
     <div class="field">קטגוריה<div class="chips">${[...new Set([...C, f.category])].map(c => `<button type="button" class="chip" data-kc="${esc(c)}" aria-pressed="${c === f.category}">${esc(c)}</button>`).join('')}</div></div>
+    <div class="field">למי ההדרכה<small>בלי סימון = לכל הצוות. מנהלים רואים הכל</small><div class="chips">${AUD.map(([k, l]) => `<button type="button" class="chip" data-ka="${k}" aria-pressed="${f.roles.includes(k)}">${l}</button>`).join('')}</div></div>
     <label class="field">קישור לסרטון<small>גוגל דרייב או יוטיוב (לא רשום). בדרייב: שיתוף ← "כל מי שיש לו את הקישור" — כדי שיתנגן לכל הצוות</small><input id="kv" type="url" dir="ltr" value="${esc(f.video_url)}" placeholder="https://drive.google.com/file/d/…"></label>
     <div id="kvp" class="small muted"></div>
     <label class="field">הסבר<small>שלבים, דגשים, מה לא לעשות</small><textarea id="kb" rows="6">${esc(f.body)}</textarea></label>
@@ -97,6 +104,7 @@ function editKb(x, C) {
     drawFiles();
     const prev = () => { const u = $('#kv', s).value.trim(); $('#kvp', s).textContent = !u ? '' : embedUrl(u) ? '✓ הסרטון יתנגן בתוך האפליקציה' : 'קישור אחר — ייפתח בלשונית חדשה'; };
     $('#kv', s).oninput = prev; prev();
+    $$('[data-ka]', s).forEach(c => c.onclick = () => { const k = c.dataset.ka; f.roles = f.roles.includes(k) ? f.roles.filter(r => r !== k) : [...f.roles, k]; c.setAttribute('aria-pressed', f.roles.includes(k)); });
     $$('[data-kc]', s).forEach(c => c.onclick = () => { f.category = c.dataset.kc; $$('[data-kc]', s).forEach(y => y.setAttribute('aria-pressed', y === c)); });
     $('#kfi', s).onchange = async e => {
       for (const file of e.target.files) {
@@ -114,7 +122,7 @@ function editKb(x, C) {
       close(); toast('נמחק'); goUp('#/kb');
     };
     $('#ks', s).onclick = async () => {
-      const row = { title: $('#kt', s).value.trim(), category: f.category, body: $('#kb', s).value.trim() || null, video_url: $('#kv', s).value.trim() || null, required: $('#kr', s).checked, files: f.files };
+      const row = { title: $('#kt', s).value.trim(), category: f.category, body: $('#kb', s).value.trim() || null, video_url: $('#kv', s).value.trim() || null, required: $('#kr', s).checked, files: f.files, roles: f.roles.length ? f.roles : null };
       if (!row.title) return toast('חסרה כותרת');
       $('#ks', s).disabled = true;
       const q = x ? sb.from('kb_items').update(row).eq('id', x.id).select('id').single() : sb.from('kb_items').insert({ ...row, created_by: state.user.id }).select('id').single();
