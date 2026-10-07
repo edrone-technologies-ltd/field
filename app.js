@@ -63,6 +63,8 @@ function renderMenu() {
       ['#/hours', 'clock', 'השעות שלי', 'כניסה, יציאה ובקשות תיקון'],
       ['#/myfile', 'file', 'התיק שלי', 'תלושים ומסמכים'],
       ['#/expenses', 'receipt', 'הוצאות', 'דלק, חניה, אוכל ולינה'],
+      ['#/news', 'inbox', 'הודעות הנהלה', 'עדכונים והוקרה'],
+      !isManager() && ['#/requests', 'send', 'בקשה למשרד', 'שכר, ציוד, מסמכים'],
     ]],
     ['שטח', [
       ['#/kb', 'book', 'מרכז ידע', 'הדרכות וסרטוני תפעול'],
@@ -73,6 +75,7 @@ function renderMenu() {
     ]],
     ['ניהול', [
       isManager() && ['#/alerts', 'alert', 'לטיפול', 'מה פתוח ודורש החלטה'],
+      isManager() && ['#/requests', 'send', 'בקשות מהצוות', 'שכר, ציוד, מסמכים'],
       isManager() && ['#/attendance', 'team', 'נוכחות צוות', 'אישורים וייצוא לשכר'],
       isManager() && ['#/staff', 'users', 'עובדים', 'פרטים, שכר ומסמכים'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
@@ -154,6 +157,8 @@ async function routeInner() {
     case 'client-report': return (await import('./modules/clientreport.js')).renderClientReport(app, h[1]);
     case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
+    case 'news': return (await import('./modules/news.js')).renderNews(app);
+    case 'requests': return (await import('./modules/news.js')).renderRequests(app);
     case 'expenses': return (await import('./modules/expenses.js')).renderExpenses(app);
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
     case 'staff': case 'files': { const m = await import('./modules/staff.js'); return h[1] ? m.renderEmployee(app, h[1], h[2]) : m.renderStaff(app); }

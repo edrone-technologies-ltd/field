@@ -638,3 +638,9 @@ body.has-nav .app{padding-bottom:calc(72px + var(--safe-b))}
 .onbp{color:var(--warn);font-weight:700} .promo .x{border:0;background:none;font-size:1.3rem;color:var(--muted);padding:0 4px}
 body.onb-active #kbdue, body.onb-active .pushpromo{display:none}
 a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo small{color:var(--muted)}
+/* לוח הודעות, הוקרה, בקשות */
+.news{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:8px}
+.news h3{margin:0;font-size:1.05rem} .news p{margin:0;line-height:1.6;color:var(--ink)}
+.news.kudos{border-color:var(--lime);background:color-mix(in srgb,var(--lime) 10%,var(--card))}
+.kudo{display:flex;align-items:center;gap:10px} .kudo .avatar{width:44px;height:44px}
+.promo.kudos .mic{font-size:1.2rem;color:#B58900} .reqimg{max-width:160px;border-radius:10px;cursor:zoom-in}
