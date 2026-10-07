@@ -192,6 +192,23 @@ if ('serviceWorker' in navigator) {
 }
 // כל חץ חזרה באפליקציה = המסך הקודם בפועל; כשאין (נכנסו מקישור/התראה) — ה-href הוא מסך האב, בהחלפה
 initNav();
+// באג אייפון (אפליקציית מסך הבית): אחרי שהמקלדת נסגרת המסך נשאר מכווץ — פס מת מתחת לבר התחתון עד סגירת האפליקציה.
+// מזהים (הגובה ירד מתחת למקסימום שנמדד / לגובה המסך) ומכריחים מדידה מחדש בהסתרה והחזרה רגעית של התוכן.
+{
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  let maxVH = Math.max(innerHeight, standalone && innerWidth < innerHeight ? screen.height : 0);
+  addEventListener('resize', () => { if (innerWidth < innerHeight) maxVH = Math.max(maxVH, innerHeight); });
+  const heal = () => {
+    if (innerWidth > innerHeight || maxVH - innerHeight <= 4) return;
+    const els = [app, document.getElementById('tabbar')].filter(Boolean), st = app.scrollTop;
+    els.forEach(e => e.style.display = 'none'); void document.body.offsetHeight; els.forEach(e => e.style.display = '');
+    app.scrollTop = st;
+  };
+  document.addEventListener('focusout', e => { if (e.target.matches?.('input,textarea,select,[contenteditable]')) { setTimeout(heal, 140); setTimeout(heal, 600); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(heal, 300); });
+  addEventListener('pageshow', () => setTimeout(heal, 300));
+  setTimeout(heal, 500);
+}
 document.addEventListener('click', e => {
   const a = e.target.closest('a.back'); if (!a || e.defaultPrevented || a.dataset.hard) return;
   e.preventDefault(); goBack(a.getAttribute('href') || '#/');
