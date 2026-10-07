@@ -644,3 +644,4 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .news.kudos{border-color:var(--lime);background:color-mix(in srgb,var(--lime) 10%,var(--card))}
 .kudo{display:flex;align-items:center;gap:10px} .kudo .avatar{width:44px;height:44px}
 .promo.kudos .mic{font-size:1.2rem;color:#B58900} .reqimg{max-width:160px;border-radius:10px;cursor:zoom-in}
+.arow.gold .aic{background:#FEF3C7;color:#B58900;font-size:1.1rem} .attn .alist{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}

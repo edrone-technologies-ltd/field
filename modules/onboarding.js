@@ -27,7 +27,13 @@ export async function renderOnboarding(el) {
   const items = await status(state.user.id), d = items.filter(x => x.done).length;
   el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>הקליטה שלי</h1></header>
     <div class="stack lg"><div class="card row">${ring(d, items.length)}<div class="grow"><b>${d === items.length ? 'הכל מוכן — ברוך הבא לצוות' : 'מה עוד חסר כדי להתחיל לעבוד'}</b><div class="small muted">מסמכים מעבירים למשרד; הדרכות, חתימות והתראות — מכאן</div></div></div>
-      <div id="ol">${list(items, { mgr: false, u: state.user.id })}</div></div>`;
+      <div id="ol">${(() => {
+        // העובד רואה רק את מה שעליו; מה שבידי המשרד — שורה אחת עם הסבר איך לעזור (צילום דרך "בקשה למשרד")
+        const OFFICE = ['personal', 'id', 'form101', 'contract', 'drive', 'pilot', 'height', 'team', 'equipment'];
+        const mine = items.filter(x => !OFFICE.includes(x.key)), off = items.filter(x => OFFICE.includes(x.key)), offMiss = off.filter(x => !x.done);
+        return `${mine.length ? `<h3 class="sh">עליך</h3>${list(mine, { mgr: false, u: state.user.id })}` : ''}
+          <h3 class="sh">אצל המשרד</h3><div class="list onb"><a class="lrow" href="#/requests"><span class="tick ${offMiss.length ? '' : 'on'}">${offMiss.length ? '' : '✓'}</span><span class="grow"><b>${offMiss.length ? `חסרים ${offMiss.length} — המשרד מטפל` : 'הכל אצל המשרד'}</b>${offMiss.length ? `<small>${esc(offMiss.map(x => x.title.replace(/ \(.*\)/, '')).join(' · '))}</small><small>יש לך צילום של מסמך? שולחים ב"בקשה למשרד"</small>` : ''}</span>${offMiss.length ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</a></div>`;
+      })()}</div></div>`;
   bind(el, state.user.id, () => renderOnboarding(el));
 }
 
