@@ -50,4 +50,21 @@ export async function renderAdmin(el) {
     const q = c.checked ? sb.from('site_members').insert({ site_id, user_id }) : sb.from('site_members').delete().eq('site_id', site_id).eq('user_id', user_id);
     const { error } = await q; toast(error ? 'לא נשמר' : 'השיוך עודכן');
   });
+  usageCard(el);
+}
+
+// מד שימוש בחבילה החינמית — אחסון ומסד נתונים. התראה אוטומטית ב-80% (שגרת בוקר)
+async function usageCard(el) {
+  const { data: u, error } = await sb.rpc('usage_stats'); if (error || !u) return;
+  const mb = b => (b / 1048576).toFixed(b < 10485760 ? 1 : 0) + 'MB', pct = (a, b) => Math.min(100, Math.round(a / b * 100));
+  const ps = pct(u.storage_bytes, u.storage_limit), pd = pct(u.db_bytes, u.db_limit);
+  const months = u.last_30d > 0 ? Math.max(0, (u.storage_limit - u.storage_bytes) / u.last_30d) : null;
+  const BK = { field: 'תמונות שטח ואפיון', plans: 'תכניות ומפות', media: 'תמונות דוחות', hr: 'תיקי עובדים', kb: 'מרכז ידע' };
+  const c = document.createElement('div'); c.className = 'card stack usage'; c.style.gap = '10px';
+  c.innerHTML = `<div class="row"><b class="grow">שימוש בחבילה (חינמית)</b><span class="pill ${Math.max(ps, pd) >= 80 ? 'bad' : Math.max(ps, pd) >= 60 ? 'warn' : 'ok'}">${Math.max(ps, pd)}%</span></div>
+    <div><div class="row small"><span class="grow">אחסון קבצים</span><b>${mb(u.storage_bytes)} מתוך 1GB</b></div><div class="progress"><i style="width:${ps}%"></i></div></div>
+    <div><div class="row small"><span class="grow">מסד נתונים</span><b>${mb(u.db_bytes)} מתוך 500MB</b></div><div class="progress"><i style="width:${pd}%"></i></div></div>
+    <div class="small muted">${Object.entries(u.by_bucket || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${BK[k] || k} ${mb(v)}`).join(' · ')}</div>
+    <div class="small">${months != null ? `קצב 30 יום אחרונים: ${mb(u.last_30d)}. ${months > 24 ? 'מספיק ליותר משנתיים' : `בקצב הזה האחסון יתמלא בעוד כ-${months < 1 ? 'פחות מחודש' : Math.round(months) + ' חודשים'}`}.` : ''} ב-80% תגיע התראה. המעבר הבא: Pro, כ-₪95 לחודש (100GB).</div>`;
+  const h = el.querySelector('.phead'); if (h) h.after(c); else el.prepend(c);
 }
