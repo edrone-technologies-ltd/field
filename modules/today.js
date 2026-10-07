@@ -1,5 +1,5 @@
 // יום שטח: בוקר ← העמסה ← באתר ← בעבודה ← סיום. השלב נגזר ממה שכבר נשמר, כל פעולה נכנסת לתור ונשלחת כשיש קליטה.
-import { coverArt, icon, navButtons } from '../lib/core.js';
+import { coverArt, icon, navButtons, thumbUrls } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
 import { sb, state, cache, enqueue, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
@@ -83,7 +83,7 @@ export async function renderDay(el, id) {
   const photoUrls = {};
   async function loadUrls() {
     const paths = D.photos.filter(p => !p.url).map(p => p.storage_path);
-    if (paths.length) Object.assign(photoUrls, await signedUrls('field', paths));
+    if (paths.length) Object.assign(photoUrls, await thumbUrls('field', paths));
   }
   await loadUrls().catch(() => {});
   let coverUrl = null;
@@ -100,7 +100,7 @@ export async function renderDay(el, id) {
   function photoStrip(kind, label, min = 0) {
     const mine = D.photos.filter(p => p.kind === kind);
     return `<div class="stack" style="gap:8px"><div class="row"><b class="grow">${label}</b>${min ? `<span class="pill ${mine.length >= min ? 'ok' : 'warn'}">${mine.length}/${min}+</span>` : ''}</div>
-      <div class="photos">${mine.map(p => `<button class="ph" data-z="${esc(p.url || photoUrls[p.storage_path] || '')}"><img src="${esc(p.url || photoUrls[p.storage_path] || '')}" alt="">${p.url ? '<span class="q">בתור</span>' : ''}</button>`).join('')}
+      <div class="photos">${mine.map(p => `<button class="ph" data-z="${esc(p.url || photoUrls[p.storage_path]?.f || '')}"><img src="${esc(p.url || photoUrls[p.storage_path]?.t || '')}" data-full="${esc(p.url || photoUrls[p.storage_path]?.f || '')}" alt="">${p.url ? '<span class="q">בתור</span>' : ''}</button>`).join('')}
         <label class="addph">צילום<input type="file" accept="image/*" capture="environment" multiple data-kind="${kind}"></label></div></div>`;
   }
   function bindPhotos(root) {
@@ -248,7 +248,7 @@ export async function renderDay(el, id) {
       <div class="kpis"><div class="kpi"><b>${D.tasks.filter(t => t.status === 'done').length}/${D.tasks.length}</b><span>משימות</span></div><div class="kpi"><b>${d.gallons != null ? nf(d.gallons) : '—'}</b><span>גלונים</span></div><div class="kpi"><b>${hrs ? nf(hrs) : '—'}</b><span>שעות צוות</span></div></div>
       ${d.tomorrow ? `<div class="note"><b>למחר:</b> ${esc(d.tomorrow)}</div>` : ''}
       ${d.signoff ? `<div class="card"><div class="eyebrow">חתימת לקוח</div><b>${esc(d.signoff.name || '')}</b> ${d.signoff.role ? '· ' + esc(d.signoff.role) : ''}<div class="small muted">${d.signoff.satisfied ? 'מרוצה' : 'לא מרוצה'}${d.signoff.notes ? ' · ' + esc(d.signoff.notes) : ''}</div></div>` : ''}
-      <div class="photos">${D.photos.filter(p => ['before', 'after'].includes(p.kind)).map(p => `<button class="ph" data-z="${esc(p.url || photoUrls[p.storage_path] || '')}"><img src="${esc(p.url || photoUrls[p.storage_path] || '')}" alt=""><span class="q">${p.kind === 'before' ? 'לפני' : 'אחרי'}</span></button>`).join('')}</div>
+      <div class="photos">${D.photos.filter(p => ['before', 'after'].includes(p.kind)).map(p => `<button class="ph" data-z="${esc(p.url || photoUrls[p.storage_path]?.f || '')}"><img src="${esc(p.url || photoUrls[p.storage_path]?.t || '')}" data-full="${esc(p.url || photoUrls[p.storage_path]?.f || '')}" alt=""><span class="q">${p.kind === 'before' ? 'לפני' : 'אחרי'}</span></button>`).join('')}</div>
       <a class="btn ghost block" href="#/p/${d.project_id}">לפרויקט</a>`;
   }
   const defHours = () => { const st = D.day.departed_at || D.day.arrived_at; return st ? Math.max(0.5, Math.round((Date.now() - new Date(st)) / 18e5) / 2) : null; };

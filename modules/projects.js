@@ -1,5 +1,5 @@
 // פרויקטים: מרכז הביצוע. סקירה ממאנדי + אתר ואפיון, תכנית עבודה מהאפיון, שיבוץ ימים, צ'אט צוות, תקלות וסיכום.
-import { navButtons, replaceHash } from '../lib/core.js';
+import { navButtons, replaceHash, thumbUrls } from '../lib/core.js';
 import { facadeOrder } from '../lib/sun.js';
 import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
@@ -323,7 +323,8 @@ export async function renderProject(el, id, tab = 'o') {
     if (M) laborBlock();
     const { data: ph } = await sb.from('photos').select('kind,storage_path,work_day_id').eq('project_id', id).in('kind', ['before', 'after']).order('created_at');
     const urls = await signedUrls('field', [...(ph || []).map(x => x.storage_path), ...(sign?.signature_path ? [sign.signature_path] : [])]);
-    $('#gal').innerHTML = (ph || []).map(x => `<button class="ph" data-z="${esc(urls[x.storage_path])}"><img src="${esc(urls[x.storage_path])}" alt="" loading="lazy"><span class="q">${x.kind === 'before' ? 'לפני' : 'אחרי'}</span></button>`).join('') || '<div class="muted small">אין עדיין תמונות לפני/אחרי.</div>';
+    const tu = await thumbUrls('field', (ph || []).map(x => x.storage_path));
+    $('#gal').innerHTML = (ph || []).map(x => `<button class="ph" data-z="${esc(urls[x.storage_path])}"><img src="${esc(tu[x.storage_path].t)}" data-full="${esc(urls[x.storage_path])}" alt="" loading="lazy"><span class="q">${x.kind === 'before' ? 'לפני' : 'אחרי'}</span></button>`).join('') || '<div class="muted small">אין עדיין תמונות לפני/אחרי.</div>';
     if (sign?.signature_path && urls[sign.signature_path]) $('#sgimg').innerHTML = `<img src="${esc(urls[sign.signature_path])}" alt="חתימה" style="max-width:240px;background:#fff;border-radius:8px;margin-top:8px">`;
     $$('[data-z]', box).forEach(b => b.onclick = () => zoom(b.dataset.z, ''));
     const c = $('#cls'); if (c) c.onclick = async () => {

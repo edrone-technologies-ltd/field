@@ -1,6 +1,6 @@
 // מערכת הדוחות: כל דוח נפתח מתוך פרויקט (או מהבית ← בחירת פרויקט).
 // יומי (מסך יום השטח במצב דוח) · תקלה / אירוע בטיחות · החתמת לקוח · סיכום פרויקט פנימי · אפיון.
-import { sb, state, isManager, can, enqueue, signedUrls, addFieldPhoto, sheet, uid, icon, coverArt, $, $$, esc, nf, toast, zoom, isoDay, dayLabel, dm, confirmBox, goUp } from '../lib/core.js';
+import { sb, state, isManager, can, enqueue, signedUrls, addFieldPhoto, sheet, uid, icon, coverArt, $, $$, esc, nf, toast, zoom, isoDay, dayLabel, dm, confirmBox, goUp, thumbUrls } from '../lib/core.js';
 
 const ROLE_CAN_SIGN = () => isManager() || state.profile.role === 'crew_lead';
 export const TYPES = [
@@ -158,7 +158,7 @@ export async function reportsTab(box, D, { reload, schedule }) {
   ]);
   const pushed = new Set(D.days.map(d => d.monday_item_id).filter(Boolean));
   const thumbs = {}; (ph || []).forEach(x => { if (!thumbs[x.work_day_id]) thumbs[x.work_day_id] = x.storage_path; });
-  const urls = await signedUrls('field', Object.values(thumbs)).catch(() => ({}));
+  const urls = await thumbUrls('field', Object.values(thumbs)).then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v.t]))).catch(() => ({}));
   const mUrls = await signedUrls('media', D.reps.map(r => (r.photos || []).find(Boolean)).filter(Boolean)).catch(() => ({}));
   const upcoming = D.days.filter(d => d.status !== 'done' && d.day >= t && d.kind !== 'report');
   const feed = [

@@ -1,5 +1,5 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp } from '../lib/core.js';
+import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
@@ -323,12 +323,12 @@ export async function renderBuilding(el, slug, bid) {
     const box = $('#facs'); if (!box) return;
     let rows = [];
     try { const { data } = await sb.from('photos').select('id,storage_path').eq('spec_id', spec.id).eq('kind', 'facade').order('created_at'); rows = data || []; } catch {}
-    const urls = await signedUrls('field', rows.map(r => r.storage_path));
+    const urls = await thumbUrls('field', rows.map(r => r.storage_path));
     const pend = await pendingPhotos(m => m.spec_id === spec.id && m.kind === 'facade');
-    const cards = [...rows.map(r => ({ id: r.id, src: urls[r.storage_path] })), ...pend.map(p => ({ id: p.photoId, src: URL.createObjectURL(p.blob) }))];
+    const cards = [...rows.map(r => ({ id: r.id, src: urls[r.storage_path].t, full: urls[r.storage_path].f })), ...pend.map(p => ({ id: p.photoId, src: URL.createObjectURL(p.blob) }))];
     const comp = cards.length ? FACES.filter(f => fget(f) > 0) : FACES;
     box.innerHTML = (editable ? `<label class="fc addfc">${icon('plus', 22)}<b>צילום חזית</b><small>תמונה לכל חזית</small><input type="file" accept="image/*" capture="environment" multiple></label>` : '')
-      + cards.map(c => `<div class="fc"><button class="fcimg" type="button" data-z="${esc(c.src)}"><img src="${esc(c.src)}" alt=""></button>${dirChips(c.id)}${counter(c.id)}</div>`).join('')
+      + cards.map(c => `<div class="fc"><button class="fcimg" type="button" data-z="${esc(c.full || c.src)}"><img src="${esc(c.src)}" data-full="${esc(c.full || c.src)}" alt=""></button>${dirChips(c.id)}${counter(c.id)}</div>`).join('')
       + comp.map(f => `<div class="fc compass"><div class="cmp">${esc(f)}</div><div><b>חזית ${esc(f)}</b></div>${counter(f)}</div>`).join('');
     $$('[data-z]', box).forEach(i => i.onclick = () => zoom(i.dataset.z, b.name));
     bindFac(box);
@@ -354,9 +354,9 @@ export async function renderBuilding(el, slug, bid) {
     const box = $('#ph_' + kind); if (!box) return;
     let rows = [];
     try { const { data } = await sb.from('photos').select('id,storage_path').eq('spec_id', spec.id).eq('kind', kind).order('created_at'); rows = data || []; } catch {}
-    const urls = await signedUrls('field', rows.map(r => r.storage_path));
+    const urls = await thumbUrls('field', rows.map(r => r.storage_path));
     const pend = await pendingPhotos(m => m.spec_id === spec.id && m.kind === kind);
-    box.innerHTML = rows.map(r => `<div class="ph"><img src="${esc(urls[r.storage_path])}" alt="" data-z="${esc(urls[r.storage_path])}"></div>`).join('')
+    box.innerHTML = rows.map(r => `<div class="ph"><img src="${esc(urls[r.storage_path].t)}" alt="" data-full="${esc(urls[r.storage_path].f)}" data-z="${esc(urls[r.storage_path].f)}"></div>`).join('')
       + pend.map(p => `<div class="ph"><img src="${URL.createObjectURL(p.blob)}" alt=""><span class="q">ממתין</span></div>`).join('')
       + (editable ? `<label class="addph">+ תמונה<input type="file" accept="image/*" multiple data-k="${kind}"></label>` : '');
     $$('[data-z]', box).forEach(i => i.onclick = () => zoom(i.dataset.z, b.name));

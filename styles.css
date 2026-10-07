@@ -611,3 +611,9 @@ body{min-height:0}
 .app{height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;max-width:none;margin:0;
   padding-inline:max(16px, calc((100% - 760px) / 2 + 16px));box-sizing:border-box}
 @media print{html,body{height:auto;overflow:visible}.app{height:auto;overflow:visible}}
+/* בר תחתון צמוד: כמו באפליקציות של אייפון — המרווח מתחת לתוויות קטן מאזור פס הבית, לא נוסף עליו */
+.tabbar{padding:4px 4px max(4px, calc(var(--safe-b) - 16px))}
+.tabbar a{padding:4px 0 2px;gap:1px}
+.tabbar svg{width:22px;height:22px}
+body.has-nav .app{padding-bottom:calc(72px + var(--safe-b))}
+.toast{bottom:calc(76px + var(--safe-b))}

@@ -1,5 +1,5 @@
 // שיחה חיה: לאתר (אפיון), לפרויקט (צוות) או שיחה פנימית (אישי/קבוצה). טקסט, תמונה, סימון "חשוב". בזמן אמת.
-import { sb, state, enqueue, signedUrls, isManager, sheet, $, $$, esc, toast, zoom, initials, icon, HE_DOW } from '../lib/core.js';
+import { sb, state, enqueue, signedUrls, isManager, sheet, $, $$, esc, toast, zoom, initials, icon, HE_DOW, thumbUrls } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 let channel;
@@ -49,7 +49,7 @@ export async function renderChat(el, { site, project, conversation }) {
     for (const u of m.mentions || []) { const n = names.get(u); if (n) h = h.split('@' + esc(n)).join(`<span class="tag ${u === state.user.id ? 'me' : ''}">@${esc(n)}</span>`); }
     return h.replace(/\n/g, '<br>'); };
   async function draw() {
-    const urls = await signedUrls('field', rows.map(r => r.photo_path).filter(Boolean));
+    const urls = await thumbUrls('field', rows.map(r => r.photo_path).filter(Boolean));
     const box = $('#msgs'); if (!box) return;
     let lastDay = '', lastAuthor = '';
     box.innerHTML = rows.length ? rows.map(m => {
@@ -60,7 +60,7 @@ export async function renderChat(el, { site, project, conversation }) {
       return `${sep}<div class="msg ${me ? 'me' : ''} ${m.important ? 'imp' : ''} ${showWho ? '' : 'cont'} ${(m.mentions || []).includes(state.user.id) ? 'tagged' : ''}">
         ${showWho ? `<div class="who">${esc(m.author_label || names.get(m.author_id) || '')}${m.source === 'monday' ? ' · מהמשרד' : ''}</div>` : ''}
         ${m.important ? '<div class="impl">חשוב</div>' : ''}
-        ${m.photo_path ? `<img src="${esc(urls[m.photo_path] || '')}" alt="" data-z="${esc(urls[m.photo_path] || '')}">` : ''}
+        ${m.photo_path ? `<img src="${esc(urls[m.photo_path]?.t || '')}" alt="" data-full="${esc(urls[m.photo_path]?.f || '')}" data-z="${esc(urls[m.photo_path]?.f || '')}">` : ''}
         ${m.body ? `<div class="tx">${tagHtml(m)}</div>` : ''}
         ${ackLine(m, me)}<div class="when">${new Date(m.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div></div>`;
     }).join('') : `<div class="empty-card"><span class="ei">${icon('chat', 26)}</span><span><b>אין הודעות עדיין</b><small>${conversation ? 'כתבו את ההודעה הראשונה' : site ? `שיחת האפיון של ${esc(label)} — מנהלים וסוקרים בלבד` : `צ'אט הצוות של ${esc(label)} — רק מי ששובץ לפרויקט`}</small></span></div>`;
