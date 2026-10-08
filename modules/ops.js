@@ -12,7 +12,7 @@ export async function renderOps(el) {
   el.innerHTML = `<header class="phead"><h1 class="grow">ניהול</h1><span class="small muted">${HE_D1[new Date().getDay()]} ${dm(isoDay())}</span></header><div class="skel tall"></div>`;
   const t = isoDay(), tm = addDays(t, 1), y = addDays(t, -1);
   const q = async p => { try { const { data } = await p; return data || []; } catch { return []; } };
-  const [days, people, shifts, abs, sreq, oreq, preq, drones] = await Promise.all([
+  const [days, people, shifts, abs, sreq, oreq, preq, drones, ended] = await Promise.all([
     q(sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,projects(name,site_id),work_day_crew(user_id,role,confirmed_at)').gte('day', t).lte('day', tm).neq('status', 'cancelled').order('day').order('report_time')),
     q(sb.from('profiles').select('id,full_name,role,is_active').eq('is_active', true)),
     q(sb.from('shifts').select('id,user_id,start_at,end_at,status,start_dist_m,start_place,note').or(`status.eq.open,start_at.gte.${new Date(y + 'T00:00:00').toISOString()}`).order('start_at', { ascending: false }).limit(80)),
@@ -21,6 +21,7 @@ export async function renderOps(el) {
     q(sb.from('office_requests').select('id,user_id,category,body,status,created_at').neq('status', 'done').order('created_at')),
     can('purchase') ? q(sb.from('purchase_requests').select('id,status').in('status', ['submitted', 'pending'])) : [],
     q(sb.from('equipment').select('id,name,health').eq('kind', 'drone')),
+    q(sb.from('work_days').select('id,day,signoff,project_id,projects!inner(id,name,closed_summary,monday_group)').eq('is_last_day', true).eq('status', 'done').is('projects.closed_summary', null).gte('day', addDays(t, -30))),
   ]);
   const P = new Map(people.map(p => [p.id, p])), name = id => first(P.get(id)?.full_name) || '—';
   const open = shifts.filter(s => s.status === 'open' && !s.end_at), openBy = new Map(open.map(s => [s.user_id, s]));
@@ -76,6 +77,11 @@ export async function renderOps(el) {
       <small>${esc((r.body || '').slice(0, 160))}</small>
       <div class="row-btns"><a class="btn ghost sm" href="#/requests">פתיחה</a><button class="btn primary sm" data-or="${r.id}">טופל</button></div></div>`),
   ];
+  // יום אחרון נסגר בשטח → סגירת פרויקט בהקשה (מסכם ושולח למאנדי "הסתיים")
+  const endedP = [...new Map(ended.filter(w => w.projects?.monday_group !== 'group_mm5052gw').map(w => [w.project_id, w])).values()];
+  endedP.forEach(w => approvals.unshift(`<div class="card stack opr"><div class="row"><b class="grow">${esc(w.projects.name)}</b><small class="muted">${dm(w.day)}</small></div>
+      <small>היום האחרון נסגר בשטח${w.signoff ? ' · חתום על ידי הלקוח' : ' · בלי חתימת לקוח'}</small>
+      <div class="row-btns"><a class="btn ghost sm" href="#/p/${w.project_id}">לפרויקט</a><button class="btn primary sm" data-close-p="${w.project_id}">סגירת פרויקט</button></div></div>`));
   if (preq.length) approvals.push(`<a class="lrow card" href="#/purchase"><span class="mic">${icon('cart', 19)}</span><span class="grow"><b>${preq.length > 1 ? preq.length + ' בקשות רכש ממתינות' : 'בקשת רכש ממתינה'}</b><small>לאישור ושליחה לספק</small></span><span class="chev">${icon('chev', 18)}</span></a>`);
 
   const kpi = (n, l, tone = '') => `<div class="kpi ${tone}"><b>${n}</b><span>${l}</span></div>`;
@@ -94,6 +100,7 @@ export async function renderOps(el) {
     const { error } = await sb.rpc('decide_shift_request', { rid: b.dataset.sr, ok, reply: (reply || '').trim() }); if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); again(); });
   $$('[data-ab]', el).forEach(b => b.onclick = async () => { const ok = b.dataset.ok === '1';
     const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, decided_at: new Date().toISOString() }).eq('id', b.dataset.ab); if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); again(); });
+  $$('[data-close-p]', el).forEach(b => b.onclick = async () => { b.disabled = true; const { error } = await sb.rpc('close_project', { p: b.dataset.closeP }); if (error) { b.disabled = false; return toast(error.message); } toast('הפרויקט נסגר — עובר למאנדי'); again(); });
   $$('[data-or]', el).forEach(b => b.onclick = async () => { const r = await ask('מה נעשה?', { optional: true, ok: 'סגירה' }); if (r === null) return;
     const { error } = await sb.from('office_requests').update({ status: 'done', reply: (r || '').trim() || 'טופל', handled_by: state.user.id }).eq('id', b.dataset.or); if (error) return toast(error.message); toast('נסגר'); again(); });
 }
