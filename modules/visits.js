@@ -1,5 +1,5 @@
 // דוח ביקור / ביקורת: מנהל מבקר צוות, סיור עם לקוח או בקרת איכות. שייך לפרויקט אבל לא לשרשרת הצוות.
-// ממצא "לתיקון" הופך בלחיצה למשימה לצוות (מסתנכרן גם ללוח המשימות במאנדי).
+// ממצאי "לתיקון" עוברים בלחיצה אחת לצ'קליסט הפרויקט — הכל במקום אחד, התראה אחת.
 import { sb, state, isManager, icon, $, $$, esc, toast, backBtn, signedUrls, zoom, isoDay, dm, goUp } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
@@ -66,24 +66,28 @@ export async function renderVisit(el, id) {
   const { data: v } = await sb.from('project_visits').select('*, projects(id,name,site_id), profiles:visitor_id(full_name)').eq('id', id).maybeSingle();
   if (!v) { el.innerHTML = `<header class="phead">${backBtn('#/reports')}<h1>דוח ביקור</h1></header><div class="empty">הדוח לא נמצא.</div>`; return; }
   const F = v.findings || [], urls = await signedUrls('field', F.map(x => x.photo).filter(Boolean));
-  const fix = F.filter(x => x.sev === 'fix').length;
+  const fix = F.filter(x => x.sev === 'fix').length, open = F.filter(x => x.sev === 'fix' && !x.task_id && (x.text || '').trim());
   el.innerHTML = `<header class="phead">${backBtn(`#/p/${v.project_id}/d`)}<h1 class="grow">${KIND[v.kind]}</h1><a class="chip" href="#/visit/edit/${v.project_id}/${v.id}">עריכה</a></header>
     <div class="stack lg">
       <div class="card stack" style="gap:4px"><b>${esc(v.projects?.name || '')}</b><small class="muted">${dm(v.visit_date)} · ${esc(v.profiles?.full_name || '')}${v.participants ? ' · ' + esc(v.participants) : ''}</small>
         ${v.rating ? `<div class="stars ro">${[1, 2, 3, 4, 5].map(n => `<span class="${v.rating >= n ? 'on' : ''}">★</span>`).join('')}</div>` : ''}</div>
       ${F.length ? `<section class="stack"><div class="sh-row"><h3 class="sh">ממצאים</h3><span class="count">${F.length}</span>${fix ? `<span class="pill bad">${fix} לתיקון</span>` : ''}</div>
         ${F.map((x, i) => `<div class="finding ro"><div class="row"><span class="pill ${SEV[x.sev]?.[1] || ''}">${SEV[x.sev]?.[0] || ''}</span><span class="grow"></span>
-            ${x.sev === 'fix' ? (x.task_id ? '<span class="small muted">נפתחה משימה ✓</span>' : `<button class="btn primary sm" data-task="${i}">משימה לצוות</button>`) : ''}</div>
+            ${x.sev === 'fix' ? (x.task_id ? '<span class="small muted">בצ\'קליסט ✓</span>' : '') : ''}</div>
           <div>${esc(x.text || '')}</div>${x.photo && urls[x.photo] ? `<img class="fph big" src="${esc(urls[x.photo])}" alt="">` : ''}</div>`).join('')}</section>` : ''}
+      ${open.length ? `<button class="btn primary block" id="tochk">העברה לצ'קליסט הפרויקט (${open.length})</button>` : ''}
       ${v.client_feedback ? `<section class="stack"><h3 class="sh">מה הלקוח אמר</h3><div class="card">${esc(v.client_feedback).replace(/\n/g, '<br>')}</div></section>` : ''}
       ${v.summary ? `<section class="stack"><h3 class="sh">סיכום</h3><div class="card">${esc(v.summary).replace(/\n/g, '<br>')}</div></section>` : ''}
     </div>`;
   $$('.fph').forEach(i => i.onclick = () => zoom(i.src, ''));
-  $$('[data-task]').forEach(b => b.onclick = async () => {
-    const x = F[+b.dataset.task];
-    // משימה לצוות מהממצא — מקושרת לאתר של הפרויקט; כשנשמרת, מסמנים את הממצא
-    const { newTask } = await import('./tasks.js');
-    newTask({ site: null, title: (x.text || '').slice(0, 90), notes: `מדוח ביקור (${KIND[v.kind]}, ${dm(v.visit_date)}) — ${v.projects?.name || ''}`, project: v.project_id,
-      onDone: async taskId => { x.task_id = taskId; await sb.from('project_visits').update({ findings: F }).eq('id', v.id); renderVisit(el, id); } });
-  });
+  // כל הממצאים לתיקון בהכנסה אחת לצ'קליסט — טריגר ההתראות שולח התראה מרוכזת אחת
+  const b = $('#tochk'); if (b) b.onclick = async () => {
+    b.disabled = true;
+    const rows = open.map(x => ({ project_id: v.project_id, title: x.text.trim().slice(0, 120), instructions: `מדוח ביקור · ${KIND[v.kind]} · ${dm(v.visit_date)}`, phase: 'מעקב', status: 'todo', is_extra: true, created_by: state.user.id }));
+    const { data, error } = await sb.from('tasks').insert(rows).select('id');
+    if (error) { b.disabled = false; return toast(error.message); }
+    open.forEach((x, k) => x.task_id = data[k]?.id);
+    await sb.from('project_visits').update({ findings: F }).eq('id', v.id);
+    toast(`${rows.length} פריטים נוספו לצ'קליסט`); location.hash = `#/p/${v.project_id}/t`;
+  };
 }

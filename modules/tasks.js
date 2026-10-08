@@ -2,7 +2,7 @@
 // עם חיוג / וואטסאפ / מייל לאיש הקשר וסימון "בוצע". כל פעולה נחתמת ביומן הפעולות.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials, ask } from '../lib/core.js';
 
-const SEL = 'id,title,instructions,due,status,assignee_id,created_by,site_id,done_at,sites(name,slug,contact_name,contact_phone)';
+const SEL = 'id,title,instructions,due,status,assignee_id,created_by,site_id,project_id,done_at,sites(name,slug,contact_name,contact_phone),projects(name)';
 const emailIn = t => (String(t || '').match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [])[0];
 const tel = p => String(p || '').replace(/\D/g, '').replace(/^972/, '0');
 const wa = p => 'https://wa.me/972' + tel(p).replace(/^0/, '');
@@ -24,7 +24,7 @@ export async function myTasks(box) {
   const row = (t, mineRow) => {
     const s = t.sites, ph = s?.contact_phone, em = emailIn(t.instructions);
     return `<div class="tcard" data-id="${t.id}">
-      <div class="row"><span class="grow"><b>${esc(t.title)}</b><small>${[s?.name ? esc(s.name) : '', dueTxt(t.due), !mineRow ? 'אצל ' + esc((names.get(t.assignee_id) || '').split(' ')[0]) : ''].filter(Boolean).join(' · ')}</small></span>
+      <div class="row"><span class="grow"><b>${esc(t.title)}</b><small>${[s?.name && !t.project_id ? esc(s.name) : '', dueTxt(t.due), !mineRow ? 'אצל ' + esc((names.get(t.assignee_id) || '').split(' ')[0]) : ''].filter(Boolean).join(' · ')}</small></span>
         ${mineRow ? `<button class="btn primary sm" data-done="${t.id}">בוצע</button>` : ''}</div>
       ${t.instructions ? `<div class="small" style="white-space:pre-line">${esc(t.instructions)}</div>` : ''}
       ${mineRow && (ph || em || s) ? `<div class="tacts">${s?.contact_name ? `<span class="small muted grow">${esc(s.contact_name)}</span>` : '<span class="grow"></span>'}
@@ -32,7 +32,10 @@ export async function myTasks(box) {
         ${em ? `<a class="chip" href="mailto:${esc(em)}">מייל</a>` : ''}${s ? `<a class="chip" href="#/site/${esc(s.slug)}">לליד</a>` : ''}</div>` : ''}
     </div>`;
   };
-  box.innerHTML = `${mine.length ? `<section><div class="sh-row"><h3 class="sh">המשימות שלי</h3><span class="count">${mine.length}</span></div><div class="stack">${mine.map(t => row(t, true)).join('')}</div></section>` : ''}
+  // מקובץ לפי פרויקט: צ'קליסט אחד לכל פרויקט, עם מעבר לצ'קליסט המלא
+  const groups = new Map(); mine.forEach(t => { const k = t.project_id || t.site_id || '-'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); });
+  const head = t => t.project_id ? `<a class="tgroup" href="#/p/${t.project_id}/t"><b class="grow">${esc(t.projects?.name || 'פרויקט')}</b><span class="small muted">לצ'קליסט ›</span></a>` : t.sites ? `<div class="tgroup"><b>${esc(t.sites.name)}</b></div>` : groups.size > 1 ? '<div class="tgroup"><b>כללי</b></div>' : '';
+  box.innerHTML = `${mine.length ? `<section><div class="sh-row"><h3 class="sh">המשימות שלי</h3><span class="count">${mine.length}</span></div><div class="stack">${[...groups.values()].map(g => `<div class="stack tg">${head(g[0])}${g.map(t => row(t, true)).join('')}</div>`).join('')}</div></section>` : ''}
     ${others.length ? `<details class="fold"><summary><span class="sh">משימות שפתחתי לצוות</span><span class="count">${others.length}</span></summary><div class="stack">${others.map(t => row(t, false)).join('')}</div></details>` : ''}`;
   $$('[data-done]', box).forEach(b => b.onclick = async () => {
     const note = await ask('מה סוכם?', { multiline: true, placeholder: 'למשל: נקבעה פגישה ל-12.10 בשעה 10:00 (לא חובה)', ok: 'סימון בוצע', optional: true });

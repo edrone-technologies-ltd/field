@@ -63,7 +63,7 @@ export async function renderProject(el, id, tab = 'o') {
   if (!D) { el.innerHTML = `<div class="empty">הפרויקט לא נמצא.</div>`; return; }
   const p = D.p, M = isManager();
   // הפרויקט = תיקייה אחת: סקירה · אפיון · תכנית · דוחות · צ'אט · סיכום
-  const TABS = [['o', 'סקירה'], ...(p.site_id && (M || can('specs')) ? [['a', 'אפיון']] : []), ['t', 'תכנית'], ['d', 'דוחות'], ['c', "צ'אט"], ['s', 'סיכום']];
+  const TABS = [['o', 'סקירה'], ...(p.site_id && (M || can('specs')) ? [['a', 'אפיון']] : []), ['t', 'משימות'], ['d', 'דוחות'], ['c', "צ'אט"], ['s', 'סיכום']];
   const openIss = D.issues.filter(i => i.status === 'open').length;
 
   const coverUrl = p.cover_path ? (await signedUrls('media', [p.cover_path]).catch(() => ({})))[p.cover_path] : null;
@@ -170,11 +170,13 @@ export async function renderProject(el, id, tab = 'o') {
 
   // ----- תכנית עבודה -----
   function plan(box) {
+    const all = D.tasks; D.tasks = all.filter(t => t.phase !== 'מעקב');   // התכנית = משימות ימי העבודה; הצ'קליסט בנפרד למעלה
+    const chk = all.filter(t => t.phase === 'מעקב' && t.status !== 'dropped');
     const by = new Map(); D.tasks.forEach(t => { const k = t.day_no ?? 0; if (!by.has(k)) by.set(k, []); by.get(k).push(t); });
     const dayOf = n => D.days.find(d => D.tasks.some(t => t.day_no === n && t.work_day_id === d.id));
     const tot = D.tasks.filter(x => x.status !== 'dropped').length, done = D.tasks.filter(x => x.status === 'done').length;
     const blocked = D.tasks.filter(t => t.status === 'blocked');
-    box.innerHTML = `${tot ? `<div class="card row"><div class="ring" style="--p:${Math.round(done / tot * 100)}"><b>${Math.round(done / tot * 100)}%</b></div><div class="grow"><b>${done} מתוך ${tot} משימות</b><div class="small muted">${by.size} ימי עבודה בתכנית${blocked.length ? ` · ${blocked.length} נתקעו` : ''}</div></div></div>` : ''}
+    box.innerHTML = `${checklistHtml(chk)}<h3 class="sh" style="margin-top:6px">תכנית עבודה</h3>${tot ? `<div class="card row"><div class="ring" style="--p:${Math.round(done / tot * 100)}"><b>${Math.round(done / tot * 100)}%</b></div><div class="grow"><b>${done} מתוך ${tot} משימות</b><div class="small muted">${by.size} ימי עבודה בתכנית${blocked.length ? ` · ${blocked.length} נתקעו` : ''}</div></div></div>` : ''}
       ${!D.tasks.length ? `<div class="empty">עוד אין תכנית עבודה.${p.site_id ? '<br>התכנית נבנית מהאפיון: יום עבודה לכל יום צפוי במבנה, בקרת איכות לכל מבנה, הכנה ומסירה.' : '<br>קודם משייכים את הפרויקט לאתר (בלשונית סקירה).'}</div>` : ''}
       ${M && p.site_id ? `<button class="btn ${D.tasks.length ? 'ghost' : 'primary'} block" id="gen">${D.tasks.length ? 'בנייה מחדש מהאפיון' : 'בניית תכנית עבודה מהאפיון'}</button>` : ''}
       ${blocked.length ? `<div class="stack" style="gap:6px"><h3>נתקעו</h3>${blocked.map(taskRow).join('')}</div>` : ''}
@@ -186,7 +188,42 @@ export async function renderProject(el, id, tab = 'o') {
       g.disabled = true; const { data, error } = await sb.rpc('generate_work_plan', { p: id }); if (error) { g.disabled = false; return toast(error.message, 4000); }
       toast(`נבנתה תכנית ל-${data} ימי עבודה`); reload('t');
     };
-    bindTasks(box, () => plan(box));
+    bindTasks(box, () => { D.tasks = all; plan(box); });
+    bindChecklist(box, all, () => { D.tasks = all; plan(box); });
+    D.tasks = all;
+  }
+  // ----- צ'קליסט הפרויקט: כל המשימות הפתוחות של הפרויקט במקום אחד (מדוחות ביקור, מהמשרד, מהשטח) -----
+  function checklistHtml(chk) {
+    const open = chk.filter(t => t.status !== 'done'), done = chk.filter(t => t.status === 'done');
+    const N = u => (D.team.find(x => x.id === u)?.full_name || '').split(' ')[0];
+    const meta = t => [t.assignee_id ? N(t.assignee_id) : '', t.due ? 'עד ' + dm(t.due) : ''].filter(Boolean).join(' · ');
+    const row = t => `<div class="ck ${t.status === 'done' ? 'on' : ''}"><button class="ckbox" data-ck="${t.id}" aria-label="סימון">${t.status === 'done' ? '✓' : ''}</button>
+      <span class="grow"><b>${esc(t.title)}</b>${meta(t) ? `<small>${esc(meta(t))}</small>` : ''}</span>
+      ${M && t.status !== 'done' ? `<button class="chip sm" data-who="${t.id}">${t.assignee_id ? 'החלפה' : 'שיוך'}</button>` : ''}</div>`;
+    return `<section class="stack cksec"><div class="sh-row"><h3 class="sh">צ'קליסט</h3>${open.length ? `<span class="count">${open.length}</span>` : ''}</div>
+      <div class="cklist">${open.map(row).join('') || '<div class="small muted" style="padding:12px">אין פריטים פתוחים</div>'}
+        <form class="ckadd" id="ckadd"><input id="ckin" placeholder="+ פריט חדש" autocomplete="off"><button class="btn primary sm">הוספה</button></form></div>
+      ${done.length ? `<details class="fold"><summary><span class="sh">בוצעו</span><span class="count">${done.length}</span></summary><div class="cklist">${done.map(row).join('')}</div></details>` : ''}</section>`;
+  }
+  function bindChecklist(box, all, redraw) {
+    $$('[data-ck]', box).forEach(b => b.onclick = async () => {
+      const t = all.find(x => x.id === b.dataset.ck), on = t.status !== 'done';
+      Object.assign(t, on ? { status: 'done', done_by: state.user.id, done_at: new Date().toISOString() } : { status: 'todo' });
+      await enqueue({ kind: 'update', table: 'tasks', rowId: t.id, patch: on ? { status: 'done', done_by: state.user.id, done_at: t.done_at } : { status: 'todo' } }); redraw();
+    });
+    const f = $('#ckadd', box); if (f) f.onsubmit = async e => {
+      e.preventDefault(); const v = $('#ckin', box).value.trim(); if (!v) return;
+      const row = { id: crypto.randomUUID(), project_id: id, title: v, phase: 'מעקב', status: 'todo', is_extra: true, created_by: state.user.id };
+      all.push(row); await enqueue({ kind: 'insert', table: 'tasks', row }); redraw(); setTimeout(() => $('#ckin', box)?.focus(), 30);
+    };
+    $$('[data-who]', box).forEach(b => b.onclick = () => {
+      const t = all.find(x => x.id === b.dataset.who);
+      sheet(`<h3>למי?</h3><div class="list">${D.team.map(u => `<button class="lrow" data-u="${u.id}"><b class="grow">${esc(u.full_name)}</b>${t.assignee_id === u.id ? '<span class="pill ok">✓</span>' : ''}</button>`).join('')}</div>
+        <label class="field">עד מתי (לא חובה)<input type="date" id="ckd" value="${t.due || ''}"></label><button class="btn ghost block" data-close>סגירה</button>`, (s, close) => {
+        $$('[data-u]', s).forEach(x => x.onclick = async () => { t.assignee_id = x.dataset.u; t.due = $('#ckd', s).value || null;
+          await enqueue({ kind: 'update', table: 'tasks', rowId: t.id, patch: { assignee_id: t.assignee_id, due: t.due } }); close(); toast('שויך'); redraw(); });
+      });
+    });
   }
   // תקציר יום: סדר חזיתות לפי השמש (כשיש תאריך), חומר וכמות, לוגיסטיקה מהאפיון
   function dayBrief(wd, ts) {

@@ -691,3 +691,15 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .finding{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
 .finding textarea{min-height:56px} .fph{width:52px;height:52px;border-radius:10px;object-fit:cover;cursor:zoom-in} .fph.big{width:100%;height:auto;max-height:280px}
 .stars.ro{display:flex;gap:2px;color:var(--line);font-size:1.1rem} .stars.ro .on{color:#E0A800}
+/* צ'קליסט פרויקט */
+.cklist{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.ck{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line)} .ck:last-of-type{border-bottom:0}
+.ck b{display:block;font-weight:600} .ck small{display:block;color:var(--muted);font-size:.8rem}
+.ck.on b{text-decoration:line-through;color:var(--muted)}
+.ckbox{width:28px;height:28px;border-radius:9px;border:2px solid var(--line);background:var(--card);flex:none;font-weight:800;color:var(--lime-ink);display:grid;place-items:center}
+.ck.on .ckbox{background:var(--lime);border-color:var(--lime)}
+.ckadd{display:flex;gap:8px;padding:10px;border-top:1px solid var(--line)} .ckadd input{flex:1;padding:10px 12px!important;font-size:15px!important}
+.chip.sm{padding:5px 10px;font-size:.78rem}
+.tgroup{display:flex;align-items:center;gap:8px;padding:2px 4px;color:var(--ink);text-decoration:none;font-size:.92rem}
+.tg{gap:8px}
+.cksec{margin-top:10px}
