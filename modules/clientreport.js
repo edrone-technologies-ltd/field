@@ -15,7 +15,7 @@ export async function renderClientReport(el, pid) {
     sb.from('field_reports').select('report_date,work,photos').eq('project_id', pid).order('report_date'),
     sb.from('photos').select('kind,storage_path').eq('project_id', pid).in('kind', ['before', 'after']).order('created_at'),
     sb.from('project_signoffs').select('*').eq('project_id', pid).order('created_at', { ascending: false }).limit(1),
-    sb.from('profiles').select('full_name,phone').eq('id', state.user.id).single(),
+    sb.from('app_settings').select('value').eq('key', 'company').maybeSingle(),
   ]);
   const dates = [...new Set([...(days || []).map(d => d.day), ...(reps || []).map(r => r.report_date)])].sort();
   const works = [...new Set([...(days || []).flatMap(d => d.work_types || []), ...(reps || []).flatMap(r => (r.work || '').split(', ').filter(Boolean))])];
@@ -24,13 +24,14 @@ export async function renderClientReport(el, pid) {
   const before = (ph || []).filter(x => x.kind === 'before').map(x => fieldU[x.storage_path]).filter(Boolean);
   const after = (ph || []).filter(x => x.kind === 'after').map(x => fieldU[x.storage_path]).concat(mediaPaths.map(x => mediaU[x])).filter(Boolean);
   const hero = (p.cover_path && mediaU[p.cover_path]) || after[0] || before[0] || coverArt(p.name);
+  const co = me?.value || {}, coLine = [co.phone, co.email, co.web].filter(Boolean).map(x => `<bdi dir="ltr">${esc(x)}</bdi>`).join(' · ');
   const so = sos?.[0] || [...(days || [])].reverse().find(d => d.signoff)?.signoff;
   const sigUrl = so?.signature_path ? fieldU[so.signature_path] : null;
   const doneTasks = (tasks || []).filter(t => t.status === 'done');
   const intro = `E-Drone ביצעה ${works.length ? works.join(', ') : 'עבודות ניקוי'} ב${p.sites?.name || p.name}${dates.length ? `, בין ${fmt(dates[0])} ל-${fmt(dates.at(-1))}` : ''}. העבודה בוצעה באמצעות רחפן ייעודי ובצוות מוסמך, תוך שמירה על בטיחות האתר והפרעה מינימלית לשגרה.`;
   const rows3 = (list, tag) => list.length ? `<div class="row3">${list.slice(0, 6).map(u => `<div class="shot"><img src="${esc(u)}" alt=""><span class="tag ${tag === 'אחרי' ? 'a' : ''}">${tag}</span></div>`).join('')}</div>` : '';
   el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/p/${pid}/s" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ללקוח</b>
-      <button class="btn ghost sm" id="collage">קולאז׳ לפני/אחרי</button><button class="btn primary sm" id="print">הדפסה / PDF</button></div>
+      <button class="btn ghost sm" id="collage">קולאז׳</button><button class="btn primary sm" id="print">הדפסה / PDF</button></div>
     <div class="rep-hint">אפשר לערוך כל טקסט בדוח בלחיצה עליו לפני ההדפסה. בהדפסה בוחרים "שמירה כ-PDF".</div>
     <div class="creport" id="cr">
       <div class="pg"><div class="hero"><img src="${esc(hero)}" alt=""><div class="hero-top"><div class="wordmark"><div class="w">E-DRONE</div><div class="t">TECHNOLOGIES</div></div><div class="kicker">PROJECT REPORT</div></div>
@@ -38,18 +39,18 @@ export async function renderClientReport(el, pid) {
         <div class="stats"><div class="stat"><div class="n">${dates.length || '—'}</div><div class="c">ימי עבודה</div></div><div class="stat"><div class="n">${doneTasks.length || works.length || '—'}</div><div class="c">${doneTasks.length ? 'משימות שבוצעו' : 'סוגי עבודה'}</div></div>
           <div class="stat"><div class="n">${(before.length + after.length) || '—'}</div><div class="c">תמונות תיעוד</div></div><div class="stat"><div class="n">${so ? '✓' : '—'}</div><div class="c">אישור לקוח</div></div></div>
         <div class="intro"><p contenteditable="true">${bdi(intro)}</p></div>
-        <div class="meta"><div><div class="k">לקוח</div><div class="v" contenteditable="true">${bdi(p.client_name || '—')}</div></div><div><div class="k">אתר</div><div class="v" contenteditable="true">${bdi(p.sites?.address || p.sites?.name || '—')}</div></div><div><div class="k">מועד ביצוע</div><div class="v">${dates.length ? `${dm(dates[0])}${dates.length > 1 ? '–' + dm(dates.at(-1)) : ''}` : '—'}</div></div></div>
-        <div class="foot"><span><b>E-Drone</b> Technologies</span><span>${esc(me?.full_name || '')} · <bdi dir="ltr">${esc(me?.phone || '')}</bdi></span></div></div>
-      ${before.length || after.length ? `<div class="pg"><div class="pad"><div class="sec">DOCUMENTATION</div><h2>תיעוד העבודה</h2><div class="rule"></div>
+        <div class="meta"><div><div class="k">לקוח</div><div class="v" contenteditable="true">${bdi(p.client_name || '—')}</div></div><div><div class="k">אתר</div><div class="v" contenteditable="true">${bdi(p.sites?.address || p.sites?.name || '—')}</div></div><div><div class="k">מועד ביצוע</div><div class="v">${dates.length ? `<bdi dir="ltr">${dm(dates[0])}${dates.length > 1 ? '–' + dm(dates.at(-1)) : ''}</bdi>` : '—'}</div></div></div>
+        <div class="foot"><span><b>E-Drone</b> Technologies</span>${coLine ? `<span>${coLine}</span>` : ''}</div></div>
+      ${before.length || after.length ? `<div class="pg"><div class="pad"><div class="rsec">DOCUMENTATION</div><h2>תיעוד העבודה</h2><div class="rule"></div>
         ${before.length ? `<div class="ba"><div class="band"><span class="t">לפני</span><span class="ln"></span></div>${rows3(before, 'לפני')}</div>` : ''}
         ${after.length ? `<div class="ba"><div class="band"><span class="t">אחרי</span><span class="ln"></span></div>${rows3(after, 'אחרי')}</div>` : ''}</div></div>` : ''}
-      <div class="pg"><div class="pad"><div class="sec">SCOPE</div><h2>פירוט העבודה</h2><div class="rule"></div>
+      <div class="pg"><div class="pad"><div class="rsec">SCOPE</div><h2>פירוט העבודה</h2><div class="rule"></div>
         <table><tr><th>עבודה</th><th>באחריות</th><th>סטטוס</th></tr>
           ${(() => { const L = doneTasks.length ? doneTasks.map(t => t.title) : works; return L.slice(0, 12).map(w => `<tr><td class="el" contenteditable="true">${bdi(w)}</td><td>E-Drone</td><td class="st"><span class="pill">בוצע</span></td></tr>`).join('') + (L.length > 12 ? `<tr><td class="el">ועוד ${L.length - 12} משימות</td><td>E-Drone</td><td class="st"><span class="pill">בוצע</span></td></tr>` : '') || '<tr><td colspan="3">—</td></tr>'; })()}</table>
         ${so ? `<div class="note"><p><b>אישור הלקוח:</b> ${bdi(so.signer_name || so.name || '')}${so.signer_role || so.role ? ' · ' + esc(so.signer_role || so.role) : ''}. ${so.full_ok === false || so.satisfied === false ? 'העבודה אושרה עם הערות.' : 'העבודה בוצעה במלואה ולשביעות רצון הלקוח.'}${so.notes ? ' ' + bdi(so.notes) : ''}</p>${sigUrl ? `<img src="${esc(sigUrl)}" alt="חתימה" style="height:22mm;margin-top:3mm;background:#fff">` : ''}</div>` : ''}
-        <div class="sec" style="margin-top:12mm">SUMMARY</div><h2>סיכום</h2><div class="rule"></div>
+        <div class="rsec" style="margin-top:12mm">SUMMARY</div><h2>סיכום</h2><div class="rule"></div>
         <ul class="cl" contenteditable="true"><li>העבודה בוצעה בהתאם לתכנית ובלוח הזמנים שתואם.</li><li>הופעלו נהלי בטיחות מלאים: גידור אזור העבודה, תדריך יומי ובדיקות לפני טיסה.</li><li>מומלץ לקבוע ניקוי תקופתי כדי לשמור על מראה המבנה ועל תפקוד המעטפת.</li></ul>
-        <div class="end"><div class="l"><b>E-Drone Technologies</b><br>${esc(me?.full_name || '')} · <bdi dir="ltr">${esc(me?.phone || '')}</bdi></div><img src="logo.png" alt="E-Drone"></div></div></div>
+        <div class="end"><div class="l"><b>E-Drone Technologies</b>${coLine ? `<br>${coLine}` : ''}</div><img src="logo.png" alt="E-Drone"></div></div></div>
     </div>`;
   document.body.classList.add('printing-report');
   addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });
