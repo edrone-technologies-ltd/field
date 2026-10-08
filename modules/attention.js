@@ -15,6 +15,7 @@ async function newsRows() {
   return out;
 }
 async function onbRows() {
+  if (!['crew', 'crew_lead'].includes(state.profile.role)) return [];   // קליטה = עובדי שטח בלבד
   const { status } = await import('./onboarding.js');
   const items = await status(state.user.id);
   const mine = items.filter(x => !x.done && x.who === 'self' && !['id', 'form101', 'drive', 'height'].includes(x.key) && x.key !== 'push');
@@ -24,10 +25,11 @@ async function onbRows() {
 async function kbRows() {
   const { kbDone } = await import('./knowledge.js');
   const [{ data: req }, { data: v }] = await Promise.all([
-    sb.from('kb_items').select('id,title,quiz,sign_required,cert_months,required,cert_required').or('required.eq.true,cert_required.eq.true'),
+    sb.from('kb_items').select('id,title,quiz,sign_required,cert_months,required,cert_required,auto_done').or('required.eq.true,cert_required.eq.true'),
     sb.from('kb_views').select('item_id,confirmed_at,passed_at,signed_at').eq('user_id', state.user.id)]);
   const vm = new Map((v || []).map(x => [x.item_id, x]));
-  const due = (req || []).filter(x => !kbDone(x, vm.get(x.id)) && (x.required || ['crew', 'crew_lead'].includes(state.profile.role)));
+  const pushOn = (await pushState().catch(() => '')) === 'on';
+  const due = (req || []).filter(x => !x.auto_done && !kbDone(x, vm.get(x.id)) && (x.required || ['crew', 'crew_lead'].includes(state.profile.role)));
   return due.length ? [{ k: 'kb', tone: '', ic: icon('play', 18), title: due.length > 1 ? `${due.length} הדרכות לצפייה` : 'הדרכה לצפייה', sub: due[0].title, href: due.length > 1 ? '#/kb' : `#/kb/${due[0].id}` }] : [];
 }
 async function pushRows() {

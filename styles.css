@@ -641,3 +641,21 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .kudo{display:flex;align-items:center;gap:10px} .kudo .avatar{width:44px;height:44px}
 .promo.kudos .mic{font-size:1.2rem;color:#B58900} .reqimg{max-width:160px;border-radius:10px;cursor:zoom-in}
 .arow.gold .aic{background:#FEF3C7;color:#B58900;font-size:1.1rem} .attn .alist{background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+/* פעולות מהירות בבית */
+.quick{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:8px}
+.qa{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:84px;border-radius:18px;border:1px solid var(--line);background:var(--card);color:var(--ink);text-decoration:none;font:inherit;padding:10px 6px}
+.qa b{font-size:.88rem;text-align:center;line-height:1.2} .qa.primary{background:var(--lime);border-color:transparent;color:var(--lime-ink)}
+.qa.primary b{font-size:.98rem}
+/* הקליטה שלי — עיצוב נקי */
+.onbpage section{margin:0} .onbpage .sh{margin:4px 2px 2px}
+.onbhero{display:flex;align-items:center;gap:16px;padding:16px;border-radius:20px;background:var(--card);border:1px solid var(--line)}
+.onbhero b{display:block;font-size:1.05rem} .onbhero small{color:var(--muted)}
+.step{display:flex;align-items:center;gap:12px;padding:14px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.step b{display:block} .step small{display:block;color:var(--muted);font-size:.82rem;line-height:1.35;margin-top:2px}
+.step .sic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--lime) 18%,var(--card));color:var(--ink);flex:none}
+.step .btn{flex:none;text-decoration:none}
+.donenote{padding:14px;border-radius:16px;background:color-mix(in srgb,var(--lime) 14%,var(--card));font-weight:700}
+.offlist{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;padding:14px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.offlist div{display:flex;align-items:center;gap:8px;font-size:.88rem;color:var(--ink)} .offlist div.ok{color:var(--muted)}
+.offlist i{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:.7rem;flex:none}
+.offlist div.ok i{background:var(--lime);border-color:var(--lime);color:var(--lime-ink)}

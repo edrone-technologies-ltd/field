@@ -8,7 +8,8 @@ const AUD = [['pilot', 'מטיסים'], ['operator', 'מפעילי מערכות'
 const audTxt = r => !r?.length ? '' : r.map(x => (AUD.find(a => a[0] === x) || [, x])[1]).join(', ');
 // תוקף: אישור/מעבר/חתימה בתוך חודשי התוקף (אם הוגדרו)
 const until = (at, m) => !at ? null : m ? new Date(new Date(at).setMonth(new Date(at).getMonth() + m)) : new Date(8.64e15);
-export const kbDone = (x, v) => { if (!v) return false;
+export let PUSH_ON = false;
+export const kbDone = (x, v) => { if (x.auto_done === 'push' && PUSH_ON) return true; if (!v) return false;
   const need = [x.quiz ? v.passed_at : v.confirmed_at, x.sign_required ? v.signed_at : true];
   return need.every(a => a === true || (a && until(a, x.cert_months) > new Date())); };
 const fmtD = d => d.getFullYear() > 9000 ? 'ללא הגבלה' : d.toLocaleDateString('he-IL');
@@ -19,9 +20,10 @@ export const embedUrl = u => !u ? null : ytId(u) ? `https://www.youtube-nocookie
 const cats = async () => { try { const { data } = await sb.from('app_settings').select('value').eq('key', 'kb_categories').maybeSingle(); return data?.value || []; } catch { return []; } };
 
 export async function renderKb(el, cat = '') {
+  try { const { pushState } = await import('../lib/core.js'); PUSH_ON = (await pushState()) === 'on'; } catch { /* */ }
   el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1>מרכז ידע</h1></header><div class="skel"></div>`;
   const [{ data: items }, { data: views }, C] = await Promise.all([
-    sb.from('kb_items').select('id,title,category,body,video_url,files,required,sort,updated_at,roles,quiz,sign_required,cert_months,cert_required').order('sort').order('title'),
+    sb.from('kb_items').select('id,title,category,body,video_url,files,required,sort,updated_at,roles,quiz,sign_required,cert_months,cert_required,auto_done').order('sort').order('title'),
     sb.from('kb_views').select('item_id,confirmed_at,passed_at,signed_at').eq('user_id', state.user.id), cats()]);
   const seen = new Map((views || []).map(v => [v.item_id, v]));
   const all = items || [], M = isManager();

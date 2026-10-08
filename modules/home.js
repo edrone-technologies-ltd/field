@@ -102,7 +102,7 @@ export async function renderHome(el) {
 
   if (!M) {
     const next = (d.wdays || []).filter(w => w.day > t && mineDay(w)).slice(0, 4);
-    box.innerHTML = `<div id="attn"></div><div id="mytasks"></div>${myDay}<button class="btn primary block big" id="qnew">${icon('plus', 20)} דוח חדש</button>${myDay ? '' : empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
+    box.innerHTML = `<div id="attn"></div><div id="mytasks"></div>${myDay}${quick()}${myDay ? '' : empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
       ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId)).join('')}</div></section>` : ''}
       ${inboxPeek(d)}`;
     bindConfirm(box); extras(); return;
@@ -119,7 +119,7 @@ export async function renderHome(el) {
     .sort((a, b) => (inField.has(b.id) - inField.has(a.id)) || (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((a.planned_from || '9') < (b.planned_from || '9') ? -1 : 1)).slice(0, 8);
 
   box.innerHTML = `
-    <div id="attn"></div><div id="mytasks"></div>${myDay}<div id="yday"></div><button class="btn primary block big" id="qnew">${icon('plus', 20)} דוח חדש</button>
+    <div id="attn"></div><div id="mytasks"></div>${myDay}<div id="yday"></div>${quick()}
     <section><div class="sh-row"><h3 class="sh">היום בשטח</h3>${field.length ? `<span class="count">${field.length}</span>` : ''}</div>
       ${field.length ? `<div class="rail">${field.map(x => `<a class="pcard" href="${x.w ? '#/day/' + x.w.id : '#/p/' + x.p.id}"><span class="img" style="background-image:url('${cov[x.p.id]}')"></span>
         <span class="pc-b"><b>${esc(x.p.name)}</b><small>${x.w ? `${DAY_ST[x.w.status]}${x.w.report_time ? ' · ' + x.w.report_time.slice(0, 5) : ''} · ${esc((x.w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).join(', '))}` : esc(x.p.client_name || x.p.status_label || '')}</small></span></a>`).join('')}</div>`
@@ -202,6 +202,11 @@ export async function renderReports(el) {
       <small>${dm(r.report_date)}${r.crew ? ' · ' + esc(r.crew) : ''}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}</small>
       ${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : r.work ? `<small>${esc(r.work)}</small>` : ''}</span>${r.had_issues ? '<span class="pill warn">תקלה</span>' : ''}</a>`; }).join('') || '<div class="empty">אין דוחות.</div>';
 }
+
+// פעולות מהירות — שלוש הפעולות שעושים הכי הרבה, בשורה אחת
+const quick = () => `<div class="quick"><button class="qa primary" id="qnew">${icon('plus', 22)}<b>דוח חדש</b></button>
+  <a class="qa" href="#/requests">${icon('send', 22)}<b>${isManager() ? 'בקשות מהצוות' : 'בקשה למשרד'}</b></a>
+  <a class="qa" href="#/expenses">${icon('receipt', 22)}<b>הוצאה</b></a></div>`;
 
 // תוספות בראש המסך אחרי שהוא צויר: הודעות לאישור, הפעלת התראות
 function extras() {
