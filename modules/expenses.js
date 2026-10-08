@@ -1,5 +1,5 @@
 // הוצאות שטח: צילום קבלה → קטגוריה, סכום, פרויקט → אישור מנהל → נכנס לעלות הפרויקט (ולמאנדי) ולייצוא להנהלת החשבונות.
-import { sb, state, isManager, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, ask, dm, signedUrls, isoDay } from '../lib/core.js';
+import { sb, state, isManager, can, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, ask, dm, signedUrls, isoDay } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 export const CATS = { fuel: 'דלק', parking: 'חניה', toll: 'כביש אגרה', food: 'אוכל', lodging: 'לינה', materials: 'חומרים / ציוד קטן', other: 'אחר' };
@@ -7,7 +7,7 @@ const ST = { pending: ['ממתין לאישור', 'warn'], approved: ['אושר'
 const nis = x => '₪' + Number(x || 0).toLocaleString('he-IL', { maximumFractionDigits: 2 });
 
 export async function renderExpenses(el) {
-  const M = isManager();
+  const M = can('finance');   // הוצאות של אחרים ואישורן = כספים בלבד
   el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">הוצאות</h1>${M ? '<button class="btn ghost sm" id="xls">ייצוא</button>' : ''}</header>
     <button class="btn primary block big" id="newx">${icon('plus', 20)} הוצאה חדשה</button><div id="xb" class="stack lg"><div class="skel"></div></div>`;
   const since = isoDay(new Date(Date.now() - 60 * 864e5));

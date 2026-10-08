@@ -252,7 +252,7 @@ async function yesterday() {
     q(sb.from('field_reports').select('project_label,hours').eq('report_date', y)),
     q(sb.from('work_days').select('id,projects(name)').eq('day', y).eq('status', 'done')),
     q(sb.from('issues').select('id,severity').gte('created_at', from).lt('created_at', to)),
-    q(sb.from('expenses').select('amount').eq('day', y)),
+    can('finance') ? q(sb.from('expenses').select('amount').eq('day', y)) : Promise.resolve([]),
     q(sb.from('shifts').select('start_at,end_at').gte('start_at', from).lt('start_at', to)),
   ]);
   const hrs = shifts.reduce((t, s) => t + (s.end_at ? (new Date(s.end_at) - new Date(s.start_at)) / 36e5 : 0), 0);
@@ -261,6 +261,6 @@ async function yesterday() {
   const ex = exps.reduce((t, e) => t + Number(e.amount), 0);
   box.innerHTML = `<a class="yday" href="#/schedule"><span class="eyebrow">אתמול בשטח</span><span class="ys">
     <span><b>${projs.size}</b><small>פרויקטים</small></span><span><b>${hrs ? Math.round(hrs) : '—'}</b><small>שעות צוות</small></span>
-    <span><b>${iss.length}</b><small>תקלות</small></span><span><b>${ex ? '₪' + Math.round(ex) : '—'}</b><small>הוצאות</small></span></span>
+    <span><b>${iss.length}</b><small>תקלות</small></span>${can('finance') ? `<span><b>${ex ? '₪' + Math.round(ex) : '—'}</b><small>הוצאות</small></span>` : ''}</span>
     <small class="muted">${esc([...projs].join(' · '))}</small></a>`;
 }
