@@ -78,7 +78,8 @@ function renderMenu() {
       isManager() && ['#/requests', 'send', 'בקשות מהצוות', 'שכר, ציוד, מסמכים'],
       isManager() && ['#/attendance', 'team', 'נוכחות צוות', can('finance') ? 'אישורים וייצוא לשכר' : 'אישורים ושעות'],
       isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
-      state.profile.role === 'admin' && ['#/activity', 'chart', 'פעילות', 'מי מחובר ומה קורה'],
+      isManager() && ['#/clients', 'folder', 'לקוחות', 'תיק לקוח והיסטוריית עבודות'],
+      state.profile.role === 'admin' && ['#/activity', 'clock', 'פעילות', 'מי מחובר ומה קורה'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
     ]],
   ].map(([t, r]) => [t, r.filter(Boolean)]).filter(([, r]) => r.length);
@@ -160,6 +161,8 @@ async function routeInner() {
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
     case 'news': return (await import('./modules/news.js')).renderNews(app);
     case 'requests': return (await import('./modules/news.js')).renderRequests(app);
+    case 'clients': return (await import('./modules/clients.js')).renderClients(app);
+    case 'client': return (await import('./modules/clients.js')).renderClient(app, h[1]);
     case 'activity': return (await import('./modules/activity.js')).renderActivity(app, h[1] || '');
     case 'tour': return (await import('./modules/tour.js')).renderTour(app, h[1] || 'ops');
     case 'plan': if (guard('projects')) return (await import('./modules/plan.js')).renderPlan(app, h[1], h[2] === 'print'); return;
