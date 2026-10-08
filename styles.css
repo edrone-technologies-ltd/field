@@ -742,3 +742,5 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .pbrief .warn{color:#8A5A00;font-weight:600} .vrep .pbrief{border-radius:3mm;margin-bottom:4mm;break-inside:avoid}
 .plhead .eyebrow{color:#5E8F00!important;font-weight:700;font-size:.8rem}
 .sigline .sig{height:auto;background:none;border:0;border-radius:0;touch-action:auto;width:auto}
+.tourbar{display:flex;align-items:center;gap:10px;padding-bottom:8px} .tourbar b{font-size:1.05rem}
+.tourframe{width:calc(100% + 32px);margin:0 -16px;border:0;height:calc(100dvh - 150px - var(--safe-t, 0px));display:block;background:#EEF1E8;border-radius:0}

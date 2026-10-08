@@ -45,6 +45,12 @@ async function schedRows() {
   return need.length === 1 ? [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `לשבץ צוות · ${dm(need[0].planned_from)}`, sub: need[0].name, href: `#/p/${need[0].id}` }]
     : [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `${need.length} פרויקטים לשיבוץ צוות`, sub: need.map(p => `${dm(p.planned_from)} ${p.name.split(' — ')[0]}`).join(' · '), href: '#/projects' }];
 }
+async function tourRows() {
+  if (state.profile.role !== 'ops_manager') return [];
+  const { data: it } = await sb.from('kb_items').select('id').eq('video_url', '#/tour/ops').maybeSingle(); if (!it) return [];
+  const { data: v } = await sb.from('kb_views').select('item_id').eq('item_id', it.id).eq('user_id', state.user.id).maybeSingle();
+  return v ? [] : [{ k: 'tour', tone: '', ic: icon('play', 18), title: 'הדרכה: 5 דקות להכרת האפליקציה', sub: 'לו״ז, שיבוץ, תכניות וביקורות', href: '#/tour/ops' }];
+}
 async function pushRows() {
   const st = await pushState();
   if (st === 'off') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'התראות כבויות', sub: 'בלי זה לא תדעו על משימה או שיבוץ', btn: 'הפעלה' }];
@@ -54,7 +60,7 @@ async function pushRows() {
 
 export async function attention(box) {
   if (!box) return;
-  const parts = await Promise.all([schedRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
+  const parts = await Promise.all([tourRows(), schedRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   if (!items.length) { box.innerHTML = ''; return; }
