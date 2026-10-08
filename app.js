@@ -5,13 +5,14 @@ const app = $('#app');
 // לשוניות תחתונות — מוצגות לפי ההרשאות
 const TABS = [
   { k: '', t: 'בית', ic: 'home', ok: () => true },
-  { k: 'schedule', t: 'לו"ז', ic: 'calendar', ok: () => can('today') || isManager() },
+  { k: 'ops', t: 'ניהול', ic: 'shield', ok: () => isManager() },
+  { k: 'schedule', t: 'לו"ז', ic: 'calendar', ok: () => can('today') && !isManager() },
   { k: 'projects', t: 'פרויקטים', ic: 'folder', ok: () => can('projects') },
   { k: 'inbox', t: 'הודעות', ic: 'chat', ok: () => true },
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['', 'schedule', 'projects', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch']);
+const WITH_NAV = new Set(['', 'ops', 'schedule', 'projects', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -157,6 +158,7 @@ async function routeInner() {
   const home = () => import('./modules/home.js');
   switch (h[0]) {
     case '': return (await home()).renderHome(app);
+    case 'ops': return (await import('./modules/ops.js')).renderOps(app);
     case 'schedule': case 'today': return (await home()).renderSchedule(app);
     case 'alerts': return (await home()).renderAlerts(app);
     case 'reports': return (await home()).renderReports(app);
