@@ -120,12 +120,11 @@ export async function renderHome(el) {
 
   box.innerHTML = `
     <div id="attn"></div><div id="mytasks"></div>${myDay}<div id="yday"></div>${quick()}
-    <section><div class="sh-row"><h3 class="sh">היום בשטח</h3>${field.length ? `<span class="count">${field.length}</span>` : ''}</div>
+    <section><div class="sh-row"><h3 class="sh">היום בשטח</h3>${field.length ? `<span class="count">${field.length}</span>` : ''}<a class="more" href="#/weather">מזג אוויר וטיסה</a></div>
       ${field.length ? `<div class="rail">${field.map(x => `<a class="pcard" href="${x.w ? '#/day/' + x.w.id : '#/p/' + x.p.id}"><span class="img" style="background-image:url('${cov[x.p.id]}')"></span>
-        <span class="pc-b"><b>${esc(x.p.name)}</b><small>${x.w ? `${DAY_ST[x.w.status]}${x.w.report_time ? ' · ' + x.w.report_time.slice(0, 5) : ''} · ${esc((x.w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).join(', '))}` : esc(x.p.client_name || x.p.status_label || '')}</small></span></a>`).join('')}</div>`
+        <span class="pc-b"><b>${esc(x.p.name)}</b>${x.p.site_id ? `<span data-wx="${x.p.site_id}|${t}"></span>` : ''}<small>${x.w ? `${DAY_ST[x.w.status]}${x.w.report_time ? ' · ' + x.w.report_time.slice(0, 5) : ''} · ${esc((x.w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).join(', '))}` : esc(x.p.client_name || x.p.status_label || '')}</small></span></a>`).join('')}</div>`
       : empty('drone', 'אין עבודה בשטח היום', nextField ? `הבא: ${esc(nextField.items.find(i => i.kind !== 'v').p?.name || '')}, ${dayWord(nextField.date)}` : 'אין עבודה מתוכננת בשבועיים הקרובים')}
     </section>
-    <div id="wxsites"></div>
 
     <section><div class="sh-row"><h3 class="sh">לטיפול</h3>${A.length > 3 ? `<a class="more" href="#/alerts">הכל (${A.length})</a>` : ''}</div>
       ${A.length ? `<div class="alist">${A.slice(0, 3).map(alertRow).join('')}</div>` : empty('shield', 'הכל תחת שליטה', 'אין כרגע דברים פתוחים', 'ok')}
@@ -148,7 +147,7 @@ export async function renderHome(el) {
     $('#wkday').innerHTML = x.items.length ? x.items.map(evRow).join('') : `<div class="ev none">אין עבודה מתוכננת ${i == 0 ? 'היום' : 'ביום הזה'}</div>`; };
   $$('#wk .wd').forEach(b => b.onclick = () => pick(+b.dataset.i));
   extras();
-  import('../lib/weather.js').then(m => m.renderSiteWeather($('#wxsites'), { todayIds: field.map(x => x.p.id) })).catch(() => {});
+  import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
   pick(week[0].items.length ? 0 : Math.max(0, week.findIndex(x => x.items.length)));
 }
 const dayRow = (w, byId) => { const me = (w.work_day_crew || []).find(c => c.user_id === state.user.id);

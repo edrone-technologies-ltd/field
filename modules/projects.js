@@ -117,7 +117,9 @@ export async function renderProject(el, id, tab = 'o') {
     const appPlan = tot || D.days.length;
     const kv = (ic, label, val, act = '') => `<div class="lrow kv" ${act ? `data-act="${act}" role="button" tabindex="0"` : ''}><span class="mic">${icon(ic, 19)}</span><span class="grow"><small>${label}</small><b>${val}</b></span>${act ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</div>`;
     const tel = s?.contact_phone ? s.contact_phone.replace(/\D/g, '').replace(/^0/, '') : '';
-    box.innerHTML = `${schedCard()}
+    const wxDay = (() => { const t = isoDay(), nx = D.days.filter(d => d.day >= t && d.status !== 'done').map(d => d.day).sort()[0];
+      return nx || (p.planned_from && (p.planned_to || p.planned_from) >= t ? (p.planned_from > t ? p.planned_from : t) : null); })();
+    box.innerHTML = `${schedCard()}${p.site_id && wxDay ? `<span data-wxcard="${p.site_id}|${wxDay}|תחזית ל${dayLabel(wxDay)} בשעות העבודה · פירוט לפי שעות"></span>` : ''}
       <div class="kpis">${appPlan
         ? `<div class="kpi"><b>${tot ? Math.round(done / tot * 100) + '%' : '—'}</b><span>מהתכנית בוצע</span></div><div class="kpi"><b>${dDone}/${D.days.length}</b><span>ימי שטח</span></div><div class="kpi"><b>${open.length}</b><span>תקלות פתוחות</span></div>`
         : `${range ? `<div class="kpi"><b>${range}</b><span>לו"ז</span></div>` : ''}<div class="kpi"><b>${Math.max(Number(p.field_days_actual || 0), new Set(D.reps.map(r => r.report_date)).size)}${p.field_days_planned ? '/' + nf(p.field_days_planned) : ''}</b><span>ימי שטח</span></div><div class="kpi"><b>${D.reps.length}</b><span>דוחות שטח</span></div>`}</div>
@@ -143,6 +145,7 @@ export async function renderProject(el, id, tab = 'o') {
     $$('[data-x]', box).forEach(b => b.onclick = () => closeIssue(b.dataset.x, () => overview(box)));
     $$('[data-act]', box).forEach(r => r.onclick = () => r.dataset.act === 'site' ? siteSheet() : notesSheet());
     if (p.site_id) { const cb = document.createElement('div'); $('.menu', box)?.after(cb); import('../lib/contacts.js').then(m => m.renderContacts(cb, { siteId: p.site_id, clientId: p.client_id, org: p.client_name || p.sites?.name, title: 'אנשי קשר באתר' })); }
+    import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
     const sm = $('#schm', box); if (sm) sm.onclick = () => scheduleSheet({ start: p.planned_from < isoDay() ? isoDay() : p.planned_from, n: wdays(p.planned_from < isoDay() ? isoDay() : p.planned_from, p.planned_to || p.planned_from) });
     const sh = $('#share', box); if (sh) sh.onclick = shareSheet;
   }

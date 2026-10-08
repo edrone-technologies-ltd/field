@@ -271,6 +271,7 @@ export async function renderDay(el, id) {
     const s = stage();
     el.innerHTML = header() + `<div class="stack" id="body">${[sMorning, sLoad, sSite, sWork, sClose, sDone][s]()}</div>`;
     bindCopy(el); bindPhotos(el);
+    if ([0, 2, 3].includes(s) && D.day.kind !== 'report' && D.day.projects?.site_id) { const wb = document.createElement('div'); wb.innerHTML = `<span data-wxcard="${D.day.projects.site_id}|${D.day.day}|תחזית לאתר בשעות העבודה · לחיצה לפירוט שעות"></span>`; $('#body', el).prepend(wb); import('../lib/wx.js').then(m => m.fillWx(wb)).catch(() => {}); }
     if ([0, 2, 3].includes(s) && D.day.kind !== 'report') { const pb = document.createElement('div'); pb.id = 'dayplan'; $('#body', el).prepend(pb); import('./plan.js').then(m => m.planForDay(pb, D.day)).catch(() => {}); }   // תכנית היום: טקסט + תמונות מהאפיון
     if (isManager()) { let sg = $('#daysig', el); if (!sg) { sg = document.createElement('div'); sg.className = 'sigline'; sg.id = 'daysig'; el.appendChild(sg); }
       import('../lib/audit.js').then(m => m.signature(sg, { work_day_id: D.day.id })); }

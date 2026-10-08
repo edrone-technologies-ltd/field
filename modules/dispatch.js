@@ -16,9 +16,9 @@ export async function renderDispatch(el, start) {
   $('#wn').onclick = () => replaceHash('#/dispatch/' + addDays(start, 7));
   const [{ data: people }, { data: wds }, { data: abs }, { data: projects }] = await Promise.all([
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).order('full_name'),
-    sb.from('work_days').select('id,day,status,project_id,crew_lead_id,gust_max,weather_alerted,projects(name),work_day_crew(user_id)').gte('day', start).lte('day', end),
+    sb.from('work_days').select('id,day,status,project_id,crew_lead_id,gust_max,weather_alerted,projects(name,site_id),work_day_crew(user_id)').gte('day', start).lte('day', end),
     sb.from('absences').select('user_id,kind,date_from,date_to,status').neq('status', 'rejected').lte('date_from', end).gte('date_to', start),
-    sb.from('projects').select('id,name,status_label,monday_group,planned_from,planned_to').neq('monday_group', 'group_mm5052gw').order('name'),
+    sb.from('projects').select('id,name,status_label,monday_group,planned_from,planned_to,site_id').neq('monday_group', 'group_mm5052gw').order('name'),
   ]);
   const staff = (people || []).filter(p => ['crew', 'crew_lead', 'ops_manager'].includes(p.role) || (wds || []).some(w => w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id)));
   const cell = (p, d) => {
@@ -59,12 +59,13 @@ export async function renderDispatch(el, start) {
       const ab = (abs || []).filter(a => a.date_from <= d && a.date_to >= d);
       const busy = new Map(); wd.forEach(w => new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean)).forEach(u => busy.set(u, (busy.get(u) || 0) + 1)));   // ראש צוות שגם בצוות = פעם אחת
       return `<section class="dday ${d === isoDay() ? 'today' : ''}"><div class="ddh"><b>${HE_D1[dow]} ${dm(d)}</b>${d === isoDay() ? '<span class="pill lime">היום</span>' : ''}<span class="grow"></span>${dow < 6 ? `<button class="chip sm" data-add="${d}">+ שיבוץ</button>` : ''}</div>
-        ${need.map(x => `<a class="dline need" href="#/p/${x.id}"><span class="grow"><b>${esc(x.name)}</b><small>מתוכנן במאנדי · עוד לא שובץ צוות</small></span><span class="pill warn">לשבץ</span></a>`).join('')}
+        ${need.map(x => `<a class="dline need" href="#/p/${x.id}"><span class="grow"><b>${esc(x.name)}</b><small>מתוכנן במאנדי · עוד לא שובץ צוות</small></span>${x.site_id ? `<span data-wx="${x.site_id}|${d}"></span>` : ''}<span class="pill warn">לשבץ</span></a>`).join('')}
         ${wd.map(w => { const crew = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
-          return `<a class="dline ${w.status === 'done' ? 'done' : ''}" href="#/day/${w.id}"><span class="grow"><b>${esc(w.projects?.name || '')}</b><small>${crew.map(u => esc(NM.get(u) || '') + (u === w.crew_lead_id ? ' ★' : '') + ((busy.get(u) || 0) > 1 ? ' ⚠' : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${w.status === 'done' ? '<span class="pill ok">בוצע</span>' : ''}</a>`; }).join('')}
+          return `<a class="dline ${w.status === 'done' ? 'done' : ''}" href="#/day/${w.id}"><span class="grow"><b>${esc(w.projects?.name || '')}</b><small>${crew.map(u => esc(NM.get(u) || '') + (u === w.crew_lead_id ? ' ★' : '') + ((busy.get(u) || 0) > 1 ? ' ⚠' : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${w.status === 'done' ? '<span class="pill ok">בוצע</span>' : w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${d}"></span>` : ''}</a>`; }).join('')}
         ${ab.map(a => `<div class="dline abs"><span class="grow"><small>${esc(NM.get(a.user_id) || '')}: ${ABS[a.kind]}${a.status === 'pending' ? ' (ממתין לאישור)' : ''}</small></span></div>`).join('')}
         ${!need.length && !wd.length && !ab.length ? '<div class="small muted dempty">אין עבודה</div>' : ''}</section>`;
     }).join('') + '<div class="small muted">★ ראש צוות · ⚠ משובץ פעמיים באותו יום</div>';
+    import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
     $$('[data-add]', box).forEach(b => b.onclick = () => {
       const d = b.dataset.add;
       sheet(`<h3>שיבוץ · ${HE_D1[new Date(d + 'T12:00').getDay()]} ${dm(d)}</h3>

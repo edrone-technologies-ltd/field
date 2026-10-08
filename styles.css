@@ -776,3 +776,31 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .wxrow.today{border-color:#7FB800;box-shadow:inset 3px 0 0 #7FB800} .wxrow.bad{background:#FFF1EE;border-color:#F2B8AE}
 .wxn{display:flex;flex-direction:column;align-items:center;min-width:52px;font-variant-numeric:tabular-nums} .wxn b{font-size:.95rem} .wxn small{font-size:.62rem}
 .wxn.b b{color:#B42318}
+/* מזג אוויר וטיסה — צבעים בשקיפות: קריאים בבהיר ובכהה */
+.wxp{--ok:61,178,75;--mid:227,162,59;--bad:214,69,50}
+.wxmap{height:210px;border-radius:16px;overflow:hidden;border:1px solid var(--line);direction:ltr}
+.wxsites{flex-wrap:nowrap;overflow-x:auto;padding-bottom:2px} .wxsites .chip{white-space:nowrap}
+.wxv{border-radius:16px;padding:14px;text-align:center;border:2px solid} .wxv b{display:block;font-size:1.5rem;color:var(--ink)} .wxv small{color:var(--muted)}
+.wxv.l0,.wxt.l0,.wxd.l0{background:rgba(var(--ok),.16);border-color:rgba(var(--ok),.55)}
+.wxv.l1,.wxt.l1,.wxd.l1{background:rgba(var(--mid),.18);border-color:rgba(var(--mid),.65)}
+.wxv.l2,.wxt.l2,.wxd.l2{background:rgba(var(--bad),.16);border-color:rgba(var(--bad),.6)}
+.wxtiles{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.wxt{border:1.5px solid;border-radius:14px;padding:10px 6px;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--ink)}
+.wxt b{font-size:1.6rem;font-variant-numeric:tabular-nums;line-height:1.1} .wxt small{font-size:.74rem;color:var(--muted)}
+.wxhours{display:flex;gap:4px;overflow-x:auto;padding:4px 2px;direction:rtl}
+.wxh{flex:0 0 40px;height:120px;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:2px;border:0;border-radius:10px;background:var(--card);padding:4px 0;cursor:pointer;color:var(--ink);font:inherit}
+.wxh i{width:60%;border-radius:5px 5px 2px 2px;min-height:4px} .wxh.l0 i{background:rgb(var(--ok))} .wxh.l1 i{background:rgb(var(--mid))} .wxh.l2 i{background:rgb(var(--bad))}
+.wxh small{font-size:.68rem;color:var(--muted)} .wxh b{font-size:.74rem} .wxh.on{outline:2.5px solid var(--ink)}
+.wxdays{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.wxd{border:1.5px solid;border-radius:10px;padding:6px 0;display:flex;flex-direction:column;align-items:center;color:var(--ink);font:inherit;cursor:pointer;background:none}
+.wxd b{font-size:.78rem} .wxd small{font-size:.66rem;color:var(--muted)} .wxd.on{outline:2.5px solid var(--ink)}
+.wxhint{margin-top:-4px}
+.wxtiles{grid-template-columns:repeat(6,1fr)} .wxt:nth-child(-n+3){grid-column:span 2} .wxt:nth-child(n+4){grid-column:span 3}
+.wxproj{display:flex;flex-wrap:wrap;gap:6px} .wxproj .chip{text-decoration:none}
+/* שבב וכרטיס מזג אוויר בתוך פעולות התפעול */
+.wxchip{display:inline-flex;align-items:center;gap:4px;font-size:.74rem;font-weight:700;padding:2px 8px;border-radius:99px;text-decoration:none;color:var(--ink);border:1.5px solid;font-variant-numeric:tabular-nums}
+.wxchip i{width:8px;height:8px;border-radius:50%} .wxchip.ok{border-color:rgba(61,178,75,.6)} .wxchip.ok i{background:#3DB24B}
+.wxchip.mid{border-color:rgba(227,162,59,.7)} .wxchip.mid i{background:#E3A23B} .wxchip.bad{border-color:rgba(214,69,50,.65)} .wxchip.bad i{background:#D64532}
+.wxcard{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;border:1.5px solid;text-decoration:none;color:var(--ink)}
+.wxcard small{display:block;color:var(--muted);font-size:.74rem} .wxcard .wxn{display:flex;flex-direction:column;align-items:center;min-width:54px} .wxcard .wxn b{font-size:.92rem;font-variant-numeric:tabular-nums} .wxcard .wxn small{font-size:.62rem}
+.wxcard.ok{background:rgba(61,178,75,.12);border-color:rgba(61,178,75,.5)} .wxcard.mid{background:rgba(227,162,59,.14);border-color:rgba(227,162,59,.6)} .wxcard.bad{background:rgba(214,69,50,.12);border-color:rgba(214,69,50,.55)}

@@ -78,6 +78,7 @@ function renderMenu() {
       isManager() && ['#/requests', 'send', 'בקשות מהצוות', 'שכר, ציוד, מסמכים'],
       isManager() && ['#/attendance', 'team', 'נוכחות צוות', can('finance') ? 'אישורים וייצוא לשכר' : 'אישורים ושעות'],
       isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
+      isManager() && ['#/weather', 'sun', 'מזג אוויר וטיסה', 'רוח, משבים, גשם ו-Kp לכל אתר'],
       isManager() && ['#/clients', 'folder', 'לקוחות', 'תיק לקוח והיסטוריית עבודות'],
       state.profile.role === 'admin' && ['#/activity', 'clock', 'פעילות', 'מי מחובר ומה קורה'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
@@ -161,6 +162,7 @@ async function routeInner() {
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
     case 'news': return (await import('./modules/news.js')).renderNews(app);
     case 'requests': return (await import('./modules/news.js')).renderRequests(app);
+    case 'weather': return (await import('./modules/weather.js')).renderWeather(app, h[1] || '');
     case 'clients': return (await import('./modules/clients.js')).renderClients(app);
     case 'client': return (await import('./modules/clients.js')).renderClient(app, h[1]);
     case 'activity': return (await import('./modules/activity.js')).renderActivity(app, h[1] || '');
