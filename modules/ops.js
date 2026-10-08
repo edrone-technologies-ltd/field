@@ -47,6 +47,9 @@ export async function renderOps(el) {
     else if (h >= 12) issues.push({ tone: 'warn', ic: 'clock', t: `${name(s.user_id)} במשמרת ${Math.floor(h)} שעות`, s: `נכנס ב-${hm(s.start_at)}`, href: `#/hours/${s.user_id}` });
   }
   shifts.filter(s => isoDay(new Date(s.start_at)) === t && (s.start_dist_m || 0) > 800).forEach(s => issues.push({ tone: 'warn', ic: 'pin', t: `${name(s.user_id)} החתים ${s.start_dist_m >= 1000 ? (s.start_dist_m / 1000).toFixed(1) + ' ק״מ' : s.start_dist_m + ' מ׳'} מהאתר`, s: s.start_place || 'בדיקה', href: `#/hours/${s.user_id}` }));
+  // יום אחרון נסגר בלי חתימת לקוח — החתימה היא מה שמעביר את הפרויקט להנהלה (סיכום + חשבונית), אז חייבים להשיג אותה
+  [...new Map(ended.filter(w => !w.signoff && w.projects?.monday_group !== 'group_mm5052gw').map(w => [w.project_id, w])).values()]
+    .forEach(w => issues.push({ tone: 'bad', ic: 'report', t: `חסרה חתימת לקוח · ${(w.projects.name || '').replace(/^[^—]*—\s*/, '') || w.projects.name}`, s: `היום האחרון נסגר ב-${dm(w.day)} — בלי חתימה הפרויקט לא עובר לחשבונית`, href: `#/day/${w.id}` }));
   shifts.filter(s => /נסגרה אוטומטית/.test(s.note || '')).forEach(s => issues.push({ tone: 'warn', ic: 'clock', t: `יציאה אוטומטית · ${name(s.user_id)}`, s: `${dm(isoDay(new Date(s.start_at)))} · נרשמו 12 שעות — לוודא`, href: `#/hours/${s.user_id}` }));
   const rank = { bad: 0, warn: 1 };
   issues.sort((a, b) => rank[a.tone] - rank[b.tone]);
@@ -77,11 +80,6 @@ export async function renderOps(el) {
       <small>${esc((r.body || '').slice(0, 160))}</small>
       <div class="row-btns"><a class="btn ghost sm" href="#/requests">פתיחה</a><button class="btn primary sm" data-or="${r.id}">טופל</button></div></div>`),
   ];
-  // יום אחרון נסגר בשטח → סגירת פרויקט בהקשה (מסכם ושולח למאנדי "הסתיים")
-  const endedP = [...new Map(ended.filter(w => w.projects?.monday_group !== 'group_mm5052gw').map(w => [w.project_id, w])).values()];
-  endedP.forEach(w => approvals.unshift(`<div class="card stack opr"><div class="row"><b class="grow">${esc(w.projects.name)}</b><small class="muted">${dm(w.day)}</small></div>
-      <small>היום האחרון נסגר בשטח${w.signoff ? ' · חתום על ידי הלקוח' : ' · בלי חתימת לקוח'}</small>
-      <div class="row-btns"><a class="btn ghost sm" href="#/p/${w.project_id}">לפרויקט</a><button class="btn primary sm" data-close-p="${w.project_id}">סגירת פרויקט</button></div></div>`));
   if (preq.length) approvals.push(`<a class="lrow card" href="#/purchase"><span class="mic">${icon('cart', 19)}</span><span class="grow"><b>${preq.length > 1 ? preq.length + ' בקשות רכש ממתינות' : 'בקשת רכש ממתינה'}</b><small>לאישור ושליחה לספק</small></span><span class="chev">${icon('chev', 18)}</span></a>`);
 
   const kpi = (n, l, tone = '') => `<div class="kpi ${tone}"><b>${n}</b><span>${l}</span></div>`;
@@ -100,7 +98,6 @@ export async function renderOps(el) {
     const { error } = await sb.rpc('decide_shift_request', { rid: b.dataset.sr, ok, reply: (reply || '').trim() }); if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); again(); });
   $$('[data-ab]', el).forEach(b => b.onclick = async () => { const ok = b.dataset.ok === '1';
     const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, decided_at: new Date().toISOString() }).eq('id', b.dataset.ab); if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); again(); });
-  $$('[data-close-p]', el).forEach(b => b.onclick = async () => { b.disabled = true; const { error } = await sb.rpc('close_project', { p: b.dataset.closeP }); if (error) { b.disabled = false; return toast(error.message); } toast('הפרויקט נסגר — עובר למאנדי'); again(); });
   $$('[data-or]', el).forEach(b => b.onclick = async () => { const r = await ask('מה נעשה?', { optional: true, ok: 'סגירה' }); if (r === null) return;
     const { error } = await sb.from('office_requests').update({ status: 'done', reply: (r || '').trim() || 'טופל', handled_by: state.user.id }).eq('id', b.dataset.or); if (error) return toast(error.message); toast('נסגר'); again(); });
 }
