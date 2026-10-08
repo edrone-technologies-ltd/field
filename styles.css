@@ -723,3 +723,21 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .vrep .vp .tg{position:absolute;top:1.5mm;right:1.5mm;font-size:7pt;font-weight:700;padding:.4mm 2mm;border-radius:99px;background:#16181C;color:#fff}
 .vrep .vp .tg.a{background:#C6EA5E;color:#16181C}
 .vrep .vdone{font-size:8.6pt;color:#1E7B3A;font-weight:600;margin-top:1mm}
+/* תכנית עבודה כמסמך */
+.plan .phero h1{font-size:1.35rem;margin:2px 0} .plan .eyebrow{color:var(--lime-ink,#5E8F00);font-weight:700;letter-spacing:.04em}
+.pday{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.pdh{display:flex;align-items:center;gap:10px} .pdh small{display:block;color:var(--muted);font-size:.82rem}
+.pdn{width:34px;height:34px;border-radius:50%;background:#16181C;color:#C6EA5E;font-weight:800;display:grid;place-items:center;flex:none}
+.pbody{width:100%;min-height:80px;line-height:1.6} .ptext{line-height:1.7;white-space:normal}
+.pphotos{display:grid;grid-template-columns:repeat(2,1fr);gap:8px} .pphotos img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:12px;cursor:zoom-in}
+.pempty{display:flex;align-items:center;justify-content:center;gap:8px;border:2px dashed var(--line);border-radius:14px;padding:18px;background:transparent;color:var(--muted);font:inherit;cursor:pointer}
+.pick{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px} .pk{padding:0;border:3px solid transparent;border-radius:12px;overflow:hidden;background:none;cursor:pointer}
+.pk img{width:100%;aspect-ratio:1;object-fit:cover;display:block} .pk[aria-pressed=true]{border-color:#7FB800;box-shadow:0 0 0 2px #C6EA5E}
+.vrep .pday{border:0;border-bottom:1px solid #EDEFF2;border-radius:0;padding:5mm 0;break-inside:avoid} .vrep .pphotos{grid-template-columns:repeat(3,1fr)}
+.plancard{display:flex;align-items:center;gap:12px;padding:14px;border-radius:18px;background:#16181C;color:#fff;text-decoration:none}
+.plancard small{display:block;color:#C6EA5E;font-size:.82rem} .plancard .mic{background:#C6EA5E;color:#16181C} .plancard .chev{color:#C6EA5E}
+.plhead h1{font-size:1.35rem;margin:2px 0;line-height:1.3} .plhead small{color:var(--muted)} .plhead .eyebrow{display:block}
+.pbody{overflow:hidden;resize:none}
+.pbrief{background:#F4F9E8;border:1px solid #DDEBB8;border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:6px;line-height:1.6}
+.pbrief .warn{color:#8A5A00;font-weight:600} .vrep .pbrief{border-radius:3mm;margin-bottom:4mm;break-inside:avoid}
+.plhead .eyebrow{color:#5E8F00!important;font-weight:700;font-size:.8rem}

@@ -159,6 +159,7 @@ async function routeInner() {
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
     case 'news': return (await import('./modules/news.js')).renderNews(app);
     case 'requests': return (await import('./modules/news.js')).renderRequests(app);
+    case 'plan': if (guard('projects')) return (await import('./modules/plan.js')).renderPlan(app, h[1], h[2] === 'print'); return;
     case 'visit': { const m = await import('./modules/visits.js'); return h[1] === 'new' ? m.renderVisitForm(app, h[2]) : h[1] === 'edit' ? m.renderVisitForm(app, h[2], h[3]) : h[2] === 'report' ? m.renderVisitReport(app, h[1]) : m.renderVisit(app, h[1]); }
     case 'expenses': return (await import('./modules/expenses.js')).renderExpenses(app);
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
