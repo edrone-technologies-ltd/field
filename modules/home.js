@@ -1,6 +1,6 @@
 // בית: עונה רק על "מה קורה היום ומה צריך אותי". כל השאר בלשוניות.
 // מנהל: היום בשטח · לטיפול (3 הכי חשובים) · השבוע · פרויקטים פעילים. עובד שטח: היום שלי · הימים הקרובים · הודעות.
-import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo } from '../lib/core.js';
+import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel } from '../lib/core.js';
 
 const today = () => isoDay();
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
@@ -74,7 +74,7 @@ export function schedule(d, from, n) {
 export function evRow(it) {
   if (it.kind === 'w') { const w = it.w; const crew = (w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', ');
     return `<a class="ev ${w.status === 'done' ? 'ok' : 'lime'}" href="#/day/${w.id}"><b>${esc(it.p?.name || 'יום שטח')}</b><small>יום שטח${w.report_time ? ' · ' + w.report_time.slice(0, 5) : ''}${crew ? ' · ' + esc(crew) : ''}${w.status !== 'planned' ? ' · ' + DAY_ST[w.status] : ''}${w.gust_max != null ? ` · ${w.weather_alerted ? '⚠ ' : ''}משבים ${w.gust_max}` : ''}</small></a>`; }
-  if (it.kind === 'p') return `<a class="ev ${TONE[it.p.status_label] ?? ''}" href="#/p/${it.p.id}"><b>${esc(it.p.name)}</b><small>${esc(it.p.status_label || '')}${it.p.client_name ? ' · ' + esc(it.p.client_name) : ''}</small></a>`;
+  if (it.kind === 'p') return `<a class="ev ${TONE[it.p.status_label] ?? ''}" href="#/p/${it.p.id}"><b>${esc(it.p.name)}</b><small>${esc(stLabel(it.p.status_label))}${it.p.client_name ? ' · ' + esc(it.p.client_name) : ''}</small></a>`;
   return `<div class="ev blue"><b>סיור אפיון · ${esc(it.v.lead_name)}</b><small>${esc(it.v.owner || '')}</small></div>`;
 }
 const dayWord = s => s === addDays(today(), 1) ? 'מחר' : `יום ${HE_DOW[new Date(s + 'T12:00').getDay()]} ${dm(s)}`;
@@ -136,7 +136,7 @@ export async function renderHome(el) {
     </section>
 
     <section><div class="sh-row"><h3 class="sh">פרויקטים פעילים</h3><a class="more" href="#/projects">הכל</a></div>
-      <div class="rail">${active.map(x => `<a class="pcard sm" href="#/p/${x.id}"><span class="img" style="background-image:url('${cov[x.id]}')"><span class="pill ${TONE[x.status_label] ?? ''}">${esc(x.status_label || '')}</span></span>
+      <div class="rail">${active.map(x => `<a class="pcard sm" href="#/p/${x.id}"><span class="img" style="background-image:url('${cov[x.id]}')"><span class="pill ${TONE[x.status_label] ?? ''}">${esc(stLabel(x.status_label))}</span></span>
         <span class="pc-b"><b>${esc(x.name)}</b><small>${esc([x.client_name, x.planned_from ? dm(x.planned_from) : null].filter(Boolean).join(' · '))}</small></span></a>`).join('')}</div>
     </section>
 

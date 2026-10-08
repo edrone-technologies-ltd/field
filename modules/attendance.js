@@ -1,5 +1,5 @@
 // נוכחות: כניסה/יציאה בלחיצה (מיקום רק ברגע ההחתמה), השעות שלי, ונוכחות צוות למנהלים (תיקון עם יומן, אישור ונעילה, ייצוא לחשבת השכר).
-import { sb, state, isManager, cache, enqueue, sheet, uid, icon, $, $$, esc, toast, confirmBox, ask, HE_DOW, HE_D1, dm, replaceHash } from '../lib/core.js';
+import { sb, state, isManager, can, cache, enqueue, sheet, uid, icon, $, $$, esc, toast, confirmBox, ask, HE_DOW, HE_D1, dm, replaceHash } from '../lib/core.js';
 import { computeMonth, inShabbat, CATS, hhmm, ymd, DEFAULTS } from '../lib/labor.js';
 import { estimatePay, PAY_TYPES } from '../lib/pay.js';
 
@@ -291,7 +291,7 @@ export async function renderAttendance(el, month) {
   const S = await settings();
   const from = new Date(monthStart(prevMonth(month)) + 'T00:00:00+03:00').toISOString(), to = new Date(monthStart(nextMonth(month)) + 'T00:00:00+02:00').toISOString(); // +02 = חצות חורף; בקיץ שעה עודפת שמסוננת לפי יום מקומי
   const [{ data: people }, { data: shifts }, { data: ams }, { data: pend }] = await Promise.all([
-    sb.from('profiles').select('id,full_name,role').eq('is_active', true).order('full_name'),
+    (q => state.profile.role === 'admin' ? q : q.neq('role', 'admin'))(sb.from('profiles').select('id,full_name,role').eq('is_active', true).order('full_name')),
     sb.from('shifts').select('*').gte('start_at', from).lt('start_at', to).order('start_at'),
     sb.from('attendance_months').select('*').eq('month', monthStart(month)),
     sb.from('shift_requests').select('*').eq('status', 'pending').order('created_at'),
@@ -310,14 +310,14 @@ export async function renderAttendance(el, month) {
       <div class="list">${(pabs || []).map(a => `<div class="card stack" style="gap:6px"><b>${esc(people.find(x => x.id === a.user_id)?.full_name || '')}</b>${absLine(a)}${absBtns(a)}</div>`).join('')}${(pend || []).map(r => `<div class="card stack" style="gap:6px"><b>${esc(people.find(x => x.id === r.user_id)?.full_name || '')} · ${new Date(r.req_start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}</b>${reqLine(r, (pShifts || []).find(x => x.id === r.shift_id))}${decideBtns(r)}</div>`).join('')}</div></section>` : ''}
     <section><div class="sh-row"><h3 class="sh">במשמרת עכשיו</h3><span class="count">${nowOn.length}</span></div>
       ${nowOn.length ? `<div class="list">${nowOn.map(s => { const p = people.find(x => x.id === s.user_id); return `<a class="lrow" href="#/attendance/${s.user_id}"><span class="cl-dot"></span><span class="grow"><b>${esc(p?.full_name || '')}</b><small>מ-${tm(s.start_at)} · ${hhmm((Date.now() - new Date(s.start_at)) / 36e5)} שעות${s.start_lat != null ? ` · <span class="maplink" data-ll="${s.start_lat},${s.start_lng}">מיקום כניסה</span>` : ' · בלי מיקום'}</small></span></a>`; }).join('')}</div>` : '<div class="muted small">אף אחד לא במשמרת כרגע</div>'}</section>
-    <section><div class="sh-row"><h3 class="sh">סיכום חודשי</h3><button class="more" id="exp" style="border:0;background:none;cursor:pointer">ייצוא לחשבת השכר</button></div>
+    <section><div class="sh-row"><h3 class="sh">סיכום חודשי</h3>${can('finance') ? '<button class="more" id="exp" style="border:0;background:none;cursor:pointer">ייצוא לחשבת השכר</button>' : ''}</div>
       <div class="list">${rows.map(({ p, R, am }) => `<a class="lrow" href="#/attendance/${p.id}/${month}"><span class="avatar sm">${esc(p.full_name.split(' ').map(w => w[0]).slice(0, 2).join(''))}</span><span class="grow"><b>${esc(p.full_name)}</b>
         <small>${R.totals.days} ימים · ${hhmm(R.totals.net)} שעות${R.totals.ot125 + R.totals.ot150 ? ` · נוספות ${hhmm(R.totals.ot125 + R.totals.ot150)}` : ''}${R.flags.length ? ` · ${R.flags.length} הערות` : ''}</small></span>
         <span class="pill ${am?.locked ? 'ok' : am?.worker_ok_at ? 'lime' : ''}">${am?.locked ? 'נעול' : am?.worker_ok_at ? 'העובד אישר' : R.totals.days ? 'פתוח' : '—'}</span></a>`).join('')}</div></section>
-    <div class="small muted">החישוב מסווג שעות לפי החוק (יומי ואז שבועי, 42 שעות). הקובץ לשכר במבנה של קונקטים, עם פירוק 100/125/150. את התלוש מכינה הנהלת החשבונות.</div>`;
+    ${can('finance') ? '<div class="small muted">החישוב מסווג שעות לפי החוק (יומי ואז שבועי, 42 שעות). הקובץ לשכר במבנה של קונקטים, עם פירוק 100/125/150. את התלוש מכינה הנהלת החשבונות.</div>' : ''}`;
   bindDecide(box, () => renderAttendance(el, month)); bindAbsDecide(box, () => renderAttendance(el, month));
   $$('.maplink', box).forEach(m => m.onclick = e => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.google.com/maps?q=${m.dataset.ll}`, '_blank'); });
-  $('#exp').onclick = () => exportXlsx(month, rows, mabs || [], rates || [], S);
+  const xb = $('#exp'); if (xb) xb.onclick = () => exportXlsx(month, rows, mabs || [], rates || [], S);
 }
 
 // ---------- ייצוא לשכר (Excel, במבנה של קונקטים + פירוק לפי החוק) ----------

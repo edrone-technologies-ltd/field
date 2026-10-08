@@ -76,8 +76,8 @@ function renderMenu() {
     ['ניהול', [
       isManager() && ['#/alerts', 'alert', 'לטיפול', 'מה פתוח ודורש החלטה'],
       isManager() && ['#/requests', 'send', 'בקשות מהצוות', 'שכר, ציוד, מסמכים'],
-      isManager() && ['#/attendance', 'team', 'נוכחות צוות', 'אישורים וייצוא לשכר'],
-      isManager() && ['#/staff', 'users', 'עובדים', 'פרטים, שכר ומסמכים'],
+      isManager() && ['#/attendance', 'team', 'נוכחות צוות', can('finance') ? 'אישורים וייצוא לשכר' : 'אישורים ושעות'],
+      isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
     ]],
   ].map(([t, r]) => [t, r.filter(Boolean)]).filter(([, r]) => r.length);

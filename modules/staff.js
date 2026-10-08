@@ -22,7 +22,7 @@ export async function renderStaff(el) {
   if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
   el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">עובדים</h1>${isAdmin() ? `<button class="btn primary sm" id="bulk">${icon('plus', 18)} תלושים לחודש</button>` : ''}</header><div id="sl" class="stack lg"><div class="skel"></div></div>`;
   const [{ data: people }, { data: prof }, { data: rates }, { data: docs }] = await Promise.all([
-    sb.from('profiles').select('id,full_name,role,phone,is_active').order('full_name'),
+    (q => isAdmin() ? q : q.neq('role', 'admin'))(sb.from('profiles').select('id,full_name,role,phone,is_active').order('full_name')),   // תפעול לא מנהל את ההנהלה
     sb.from('employee_profile').select('user_id,job_title,employment_type'),
     isAdmin() ? sb.from('employee_rates').select('*') : Promise.resolve({ data: [] }),
     sb.from('employee_docs').select('user_id,title,expires_on').not('expires_on', 'is', null),

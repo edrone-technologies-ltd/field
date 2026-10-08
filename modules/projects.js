@@ -1,5 +1,5 @@
 // פרויקטים: מרכז הביצוע. סקירה ממאנדי + אתר ואפיון, תכנית עבודה מהאפיון, שיבוץ ימים, צ'אט צוות, תקלות וסיכום.
-import { navButtons, replaceHash, thumbUrls } from '../lib/core.js';
+import { navButtons, replaceHash, thumbUrls , stLabel } from '../lib/core.js';
 import { facadeOrder } from '../lib/sun.js';
 import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, folderGrid, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
@@ -32,7 +32,7 @@ export async function renderProjects(el) {
     $('#pl').innerHTML = list.length ? folderGrid(list.map(p => {
       const next = (p.work_days || []).filter(d => d.day >= t && d.status !== 'done').sort((a, b) => a.day < b.day ? -1 : 1)[0];
       return { href: `#/p/${p.id}`, img: cov[p.id], title: p.name, sub: [p.client_name, next ? `יום שטח ${dayLabel(next.day)}` : range(p)].filter(Boolean).join(' · '),
-        pill: p.status_label || '', tone: { lime: 'ok', bad: 'bad', warn: 'warn' }[TONE[p.status_label]] || '' };
+        pill: stLabel(p.status_label), tone: { lime: 'ok', bad: 'bad', warn: 'warn' }[TONE[p.status_label]] || '' };
     })) : (q ? '<div class="empty">לא נמצא פרויקט בשם הזה.</div>' : `<div class="empty-card"><span class="ei">${icon('folder', 26)}</span><span><b>אין פרויקטים להצגה</b></span></div>`);
   };
   $$('#pf button').forEach(b => b.onclick = () => { $$('#pf button').forEach(x => x.setAttribute('aria-selected', x === b)); draw(b.dataset.f); });
@@ -69,7 +69,7 @@ export async function renderProject(el, id, tab = 'o') {
   const coverUrl = p.cover_path ? (await signedUrls('media', [p.cover_path]).catch(() => ({})))[p.cover_path] : null;
   el.innerHTML = `<div class="phero"><span class="img" style="background-image:url('${coverUrl || coverArt(p.name)}')"></span>
       <a class="back glass" href="#/projects" aria-label="חזרה">${icon('back', 20)}</a>
-      <span class="ph-bottom"><span class="pill ${TONE[p.status_label] ?? ''}">${esc(p.status_label || '')}</span><b>${esc(p.name)}</b><small>${esc(p.client_name || '')}</small></span></div>
+      <span class="ph-bottom"><span class="pill ${TONE[p.status_label] ?? ''}">${esc(stLabel(p.status_label))}</span><b>${esc(p.name)}</b><small>${esc(p.client_name || '')}</small></span></div>
     <div class="tabs" id="pt">${TABS.map(([k, t]) => `<button data-t="${k}" aria-selected="${k === tab || (tab === 'i' && k === 'o')}">${t}</button>`).join('')}</div>
     <div id="pb" class="stack"></div>`;
   $$('#pt button').forEach(b => b.onclick = () => { replaceHash(`#/p/${id}/${b.dataset.t}`, false); renderTab(b.dataset.t); $$('#pt button').forEach(x => x.setAttribute('aria-selected', x === b)); });
