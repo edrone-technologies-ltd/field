@@ -617,10 +617,6 @@ body{min-height:0}
 .tabbar svg{width:22px;height:22px}
 body.has-nav .app{padding-bottom:calc(72px + var(--safe-b))}
 .toast{bottom:calc(76px + var(--safe-b))}
-/* אייפון: הורדת הסרגלים התחתונים עד קצה המסך (--vgap נמדד ב-app.js, 0 בכל מכשיר אחר) */
-.tabbar,.bar,.composer{bottom:calc(-1 * var(--vgap, 0px))}
-.fabs{bottom:calc(84px + var(--safe-b) - var(--vgap, 0px))}
-.toast{bottom:calc(76px + var(--safe-b) - var(--vgap, 0px))}
 .clock{flex-wrap:wrap} .cl-warn{flex-basis:100%;margin-top:8px;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--warn) 14%,var(--card));font-size:.85rem}
 .linkbtn{border:0;background:none;padding:0;color:var(--ink);font:700 .85rem Heebo,sans-serif;text-decoration:underline}
 .clock.hint{border-color:var(--lime);box-shadow:0 0 0 3px color-mix(in srgb,var(--lime) 35%,transparent)}
