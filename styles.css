@@ -804,3 +804,4 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .wxcard{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:14px;border:1.5px solid;text-decoration:none;color:var(--ink)}
 .wxcard small{display:block;color:var(--muted);font-size:.74rem} .wxcard .wxn{display:flex;flex-direction:column;align-items:center;min-width:54px} .wxcard .wxn b{font-size:.92rem;font-variant-numeric:tabular-nums} .wxcard .wxn small{font-size:.62rem}
 .wxcard.ok{background:rgba(61,178,75,.12);border-color:rgba(61,178,75,.5)} .wxcard.mid{background:rgba(227,162,59,.14);border-color:rgba(227,162,59,.6)} .wxcard.bad{background:rgba(214,69,50,.12);border-color:rgba(214,69,50,.55)}
+.wxfind{gap:6px} .wxfind input{min-width:0}

@@ -78,7 +78,7 @@ function renderMenu() {
       isManager() && ['#/requests', 'send', 'בקשות מהצוות', 'שכר, ציוד, מסמכים'],
       isManager() && ['#/attendance', 'team', 'נוכחות צוות', can('finance') ? 'אישורים וייצוא לשכר' : 'אישורים ושעות'],
       isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
-      isManager() && ['#/weather', 'sun', 'מזג אוויר וטיסה', 'רוח, משבים, גשם ו-Kp לכל אתר'],
+      ['#/weather', 'sun', 'מזג אוויר וטיסה', 'לכל אתר ולכל מקום — רוח, משבים, גשם, Kp'],
       isManager() && ['#/clients', 'folder', 'לקוחות', 'תיק לקוח והיסטוריית עבודות'],
       state.profile.role === 'admin' && ['#/activity', 'clock', 'פעילות', 'מי מחובר ומה קורה'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
