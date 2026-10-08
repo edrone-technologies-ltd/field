@@ -157,7 +157,7 @@ export async function reportsTab(box, D, { reload, schedule }) {
     sb.from('project_signoffs').select('*').eq('project_id', pid).order('created_at', { ascending: false }),
     M ? sb.from('project_summaries').select('*').eq('project_id', pid).maybeSingle() : Promise.resolve({ data: null }),
     sb.from('photos').select('storage_path,kind,work_day_id').eq('project_id', pid).in('kind', ['after', 'before']).order('created_at'),
-    sb.from('project_visits').select('id,kind,visit_date,findings,rating,profiles:visitor_id(full_name)').eq('project_id', pid),   // הנהלה + מי ששותף
+    M ? sb.from('project_visits').select('id,kind,visit_date,findings,rating,profiles:visitor_id(full_name)').eq('project_id', pid) : Promise.resolve({ data: [] }),
   ]);
   const VK = { crew_check: 'ביקורת צוות', client_tour: 'סיור עם לקוח', quality: 'בקרת איכות', other: 'ביקור' };
   const pushed = new Set(D.days.map(d => d.monday_item_id).filter(Boolean));

@@ -176,8 +176,8 @@ export async function renderProject(el, id, tab = 'o') {
     const dayOf = n => D.days.find(d => D.tasks.some(t => t.day_no === n && t.work_day_id === d.id));
     const tot = D.tasks.filter(x => x.status !== 'dropped').length, done = D.tasks.filter(x => x.status === 'done').length;
     const blocked = D.tasks.filter(t => t.status === 'blocked');
-    box.innerHTML = `${checklistHtml(chk)}<h3 class="sh" style="margin-top:6px">תכנית עבודה</h3>${tot ? `<div class="card row"><div class="ring" style="--p:${Math.round(done / tot * 100)}"><b>${Math.round(done / tot * 100)}%</b></div><div class="grow"><b>${done} מתוך ${tot} משימות</b><div class="small muted">${by.size} ימי עבודה בתכנית${blocked.length ? ` · ${blocked.length} נתקעו` : ''}</div></div></div>` : ''}
-      ${!D.tasks.length ? `<div class="empty">עוד אין תכנית עבודה.${p.site_id ? '<br>התכנית נבנית מהאפיון: יום עבודה לכל יום צפוי במבנה, בקרת איכות לכל מבנה, הכנה ומסירה.' : '<br>קודם משייכים את הפרויקט לאתר (בלשונית סקירה).'}</div>` : ''}
+    box.innerHTML = `${checklistHtml(chk)}${!M && !D.tasks.length ? '' : '<h3 class="sh" style="margin-top:6px">תכנית עבודה</h3>'}${tot ? `<div class="card row"><div class="ring" style="--p:${Math.round(done / tot * 100)}"><b>${Math.round(done / tot * 100)}%</b></div><div class="grow"><b>${done} מתוך ${tot} משימות</b><div class="small muted">${by.size} ימי עבודה בתכנית${blocked.length ? ` · ${blocked.length} נתקעו` : ''}</div></div></div>` : ''}
+      ${!D.tasks.length && M ? `<div class="empty">עוד אין תכנית עבודה.${p.site_id ? '<br>התכנית נבנית מהאפיון: יום עבודה לכל יום צפוי במבנה, בקרת איכות לכל מבנה, הכנה ומסירה.' : '<br>קודם משייכים את הפרויקט לאתר (בלשונית סקירה).'}</div>` : ''}
       ${M && p.site_id ? `<button class="btn ${D.tasks.length ? 'ghost' : 'primary'} block" id="gen">${D.tasks.length ? 'בנייה מחדש מהאפיון' : 'בניית תכנית עבודה מהאפיון'}</button>` : ''}
       ${blocked.length ? `<div class="stack" style="gap:6px"><h3>נתקעו</h3>${blocked.map(taskRow).join('')}</div>` : ''}
       ${[...by.entries()].map(([n, ts]) => { const wd = dayOf(n); const dn = ts.filter(t => t.status === 'done').length;
