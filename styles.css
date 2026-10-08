@@ -659,3 +659,13 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .offlist div{display:flex;align-items:center;gap:8px;font-size:.88rem;color:var(--ink)} .offlist div.ok{color:var(--muted)}
 .offlist i{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-style:normal;font-size:.7rem;flex:none}
 .offlist div.ok i{background:var(--lime);border-color:var(--lime);color:var(--lime-ink)}
+/* תיקיות — רכיב אחיד */
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.folder{display:flex;flex-direction:column;border-radius:18px;overflow:hidden;background:var(--card);border:1px solid var(--line);color:inherit;text-decoration:none;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.folder .fimg{position:relative;display:block;aspect-ratio:16/11;background:var(--card2) center/cover no-repeat}
+.folder .fb{padding:10px 12px 12px;display:flex;flex-direction:column;gap:2px}
+.folder b{font-size:.95rem;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.folder small{color:var(--muted);font-size:.78rem;line-height:1.3}
+.fpill{position:absolute;top:8px;inset-inline-start:8px;background:var(--card);color:var(--ink);font-size:.72rem;font-weight:800;padding:3px 9px;border-radius:99px}
+.fpill.warn{background:#FEF3C7;color:#92400E} .fpill.ok{background:var(--lime);color:var(--lime-ink)} .fpill.bad{background:#FEE2E2;color:#991B1B}
+.fcount{position:absolute;bottom:8px;inset-inline-end:8px;min-width:26px;height:26px;padding:0 8px;border-radius:99px;background:rgba(0,0,0,.55);color:#fff;font-size:.78rem;font-weight:800;display:grid;place-items:center}

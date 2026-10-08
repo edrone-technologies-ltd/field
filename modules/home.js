@@ -1,6 +1,6 @@
 // בית: עונה רק על "מה קורה היום ומה צריך אותי". כל השאר בלשוניות.
 // מנהל: היום בשטח · לטיפול (3 הכי חשובים) · השבוע · פרויקטים פעילים. עובד שטח: היום שלי · הימים הקרובים · הודעות.
-import { sb, state, can, isManager, cache, covers, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo } from '../lib/core.js';
+import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo } from '../lib/core.js';
 
 const today = () => isoDay();
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
@@ -193,14 +193,25 @@ export async function renderSchedule(el) {
 
 // ---------- דוחות שטח ----------
 export async function renderReports(el) {
-  el.innerHTML = `<header class="phead"><a class="back" href="#/schedule" aria-label="חזרה">${icon('back', 20)}</a><h1>דוחות שטח</h1></header><div id="rl" class="list"><div class="skel"></div></div>`;
-  const { data } = await sb.from('field_reports').select('*').order('report_date', { ascending: false }).limit(100);
-  const th = (data || []).map(r => (r.photos || []).find(Boolean)).filter(Boolean);
-  const u = th.length ? await signedUrls('media', th) : {};
-  $('#rl').innerHTML = (data || []).map(r => { const ph = (r.photos || []).find(Boolean);
-    return `<a class="rep" ${r.project_id ? `href="#/p/${r.project_id}"` : ''}>${ph ? `<img src="${esc(u[ph])}" alt="" loading="lazy">` : `<span class="rep-ph">${icon('report', 22)}</span>`}<span class="grow"><b>${esc(r.project_label || 'בלי פרויקט')}</b>
-      <small>${dm(r.report_date)}${r.crew ? ' · ' + esc(r.crew) : ''}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}</small>
-      ${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : r.work ? `<small>${esc(r.work)}</small>` : ''}</span>${r.had_issues ? '<span class="pill warn">תקלה</span>' : ''}</a>`; }).join('') || '<div class="empty">אין דוחות.</div>';
+  // דוחות שטח מסודרים בתיקיות: תיקייה לכל פרויקט (תמונה, כמה דוחות, האחרון, תקלות). לחיצה = הדוחות של אותו פרויקט
+  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1>דוחות שטח</h1></header>
+    <input type="search" class="search" id="rq" placeholder="חיפוש פרויקט"><div id="rl"><div class="skel"></div></div>`;
+  const [{ data: reps }, { data: days }, { data: projs }] = await Promise.all([
+    sb.from('field_reports').select('project_id,report_date,had_issues').limit(2000),
+    sb.from('work_days').select('project_id,day,status').eq('status', 'done').limit(2000),
+    sb.from('projects').select('id,name,client_name,cover_path,status_label')]);
+  const by = new Map();
+  for (const r of reps || []) { const k = r.project_id || '_'; const x = by.get(k) || { n: 0, last: '', iss: 0 }; x.n++; if (r.report_date > x.last) x.last = r.report_date; if (r.had_issues) x.iss++; by.set(k, x); }
+  for (const d of days || []) { const k = d.project_id || '_'; const x = by.get(k) || { n: 0, last: '', iss: 0 }; x.n++; if (d.day > x.last) x.last = d.day; by.set(k, x); }
+  const P = (projs || []).filter(p => by.has(p.id)).sort((a, b) => by.get(b.id).last.localeCompare(by.get(a.id).last));
+  const cov = await covers(P);
+  const draw = q => {
+    const list = P.filter(p => !q || (p.name + ' ' + (p.client_name || '')).includes(q));
+    $('#rl').innerHTML = list.length ? folderGrid(list.map(p => { const x = by.get(p.id);
+      return { href: `#/p/${p.id}/d`, img: cov[p.id], title: p.name, sub: `${x.n} דוחות · אחרון ${dm(x.last)}`, count: x.n, pill: x.iss ? `${x.iss} תקלות` : '', tone: 'warn' }; }))
+      : '<div class="empty-card"><span><b>לא נמצא</b><small>נסו שם אחר</small></span></div>';
+  };
+  $('#rq').oninput = e => draw(e.target.value.trim()); draw('');
 }
 
 // פעולות מהירות — שלוש הפעולות שעושים הכי הרבה, בשורה אחת

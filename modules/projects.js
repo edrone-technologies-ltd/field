@@ -1,7 +1,7 @@
 // פרויקטים: מרכז הביצוע. סקירה ממאנדי + אתר ואפיון, תכנית עבודה מהאפיון, שיבוץ ימים, צ'אט צוות, תקלות וסיכום.
 import { navButtons, replaceHash, thumbUrls } from '../lib/core.js';
 import { facadeOrder } from '../lib/sun.js';
-import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
+import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, folderGrid, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
 const ARCHIVE = 'group_mm5052gw';
 const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'קביעת מועד': 'warn', 'תואם - ממתין לביצוע': 'warn', 'אושר מול לקוח': 'warn', 'הסתיים — ממתין לתשלום': 'ok' };
@@ -29,14 +29,11 @@ export async function renderProjects(el) {
     const list = rows.filter(p => (f === 'a') === !(p.monday_group === ARCHIVE || String(p.status_label).startsWith('הסתיים')))
       .filter(p => !q || (p.name + ' ' + (p.client_name || '')).includes(q))
       .sort((a, b) => (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((b.planned_from || '') > (a.planned_from || '') ? 1 : -1));
-    $('#pl').innerHTML = list.map(p => {
+    $('#pl').innerHTML = list.length ? folderGrid(list.map(p => {
       const next = (p.work_days || []).filter(d => d.day >= t && d.status !== 'done').sort((a, b) => a.day < b.day ? -1 : 1)[0];
-      const tot = (p.tasks || []).filter(x => x.status !== 'dropped').length, done = (p.tasks || []).filter(x => x.status === 'done').length;
-      return `<a class="item prj" href="#/p/${p.id}"><img src="${cov[p.id]}" alt="" loading="lazy"><span class="t"><b>${esc(p.name)}</b>
-        <small>${esc([p.client_name, next ? `יום שטח ${dayLabel(next.day)}` : range(p)].filter(Boolean).join(' · '))}</small>
-        ${tot ? `<span class="progress" style="margin-top:6px"><i style="width:${Math.round(done / tot * 100)}%"></i></span>` : ''}</span>
-        <span class="pill ${TONE[p.status_label] ?? ''}">${esc(p.status_label || '')}</span></a>`;
-    }).join('') || (q ? '<div class="empty">לא נמצא פרויקט בשם הזה.</div>' : `<div class="empty-card"><span class="ei">${icon('folder', 26)}</span><span><b>אין פרויקטים להצגה</b><small>${isManager() ? '' : 'כאן יופיעו הפרויקטים שתשובץ אליהם'}</small></span></div>`);
+      return { href: `#/p/${p.id}`, img: cov[p.id], title: p.name, sub: [p.client_name, next ? `יום שטח ${dayLabel(next.day)}` : range(p)].filter(Boolean).join(' · '),
+        pill: p.status_label || '', tone: { lime: 'ok', bad: 'bad', warn: 'warn' }[TONE[p.status_label]] || '' };
+    })) : (q ? '<div class="empty">לא נמצא פרויקט בשם הזה.</div>' : `<div class="empty-card"><span class="ei">${icon('folder', 26)}</span><span><b>אין פרויקטים להצגה</b></span></div>`);
   };
   $$('#pf button').forEach(b => b.onclick = () => { $$('#pf button').forEach(x => x.setAttribute('aria-selected', x === b)); draw(b.dataset.f); });
   $('#pq').oninput = () => draw();
@@ -65,7 +62,8 @@ export async function renderProject(el, id, tab = 'o') {
   } catch { D = await cache.get(ck); }
   if (!D) { el.innerHTML = `<div class="empty">הפרויקט לא נמצא.</div>`; return; }
   const p = D.p, M = isManager();
-  const TABS = [['o', 'סקירה'], ['t', 'תכנית'], ['d', 'דוחות'], ['c', "צ'אט"], ['s', 'סיכום']];
+  // הפרויקט = תיקייה אחת: סקירה · אפיון · תכנית · דוחות · צ'אט · סיכום
+  const TABS = [['o', 'סקירה'], ...(p.site_id && (M || can('specs')) ? [['a', 'אפיון']] : []), ['t', 'תכנית'], ['d', 'דוחות'], ['c', "צ'אט"], ['s', 'סיכום']];
   const openIss = D.issues.filter(i => i.status === 'open').length;
 
   const coverUrl = p.cover_path ? (await signedUrls('media', [p.cover_path]).catch(() => ({})))[p.cover_path] : null;
@@ -81,8 +79,22 @@ export async function renderProject(el, id, tab = 'o') {
     document.querySelectorAll('.bar,.composer').forEach(x => x.remove());
     const box = $('#pb');
     if (t === 'd') { import('./reports.js').then(m => m.reportsTab(box, D, { reload, schedule: scheduleSheet })); return; }
-    ({ o: overview, t: plan, c: chat, s: summary }[t] || overview)(box);
+    ({ o: overview, a: specTab, t: plan, c: chat, s: summary }[t] || overview)(box);
     bindCopy(box);
+  }
+
+  // ----- אפיון האתר, בתוך הפרויקט -----
+  async function specTab(box) {
+    box.innerHTML = '<div class="skel"></div>';
+    const { data: st } = await sb.from('sites').select('slug,name,buildings(id,name,sort,facade_area_m2,specs(status,days_expected))').eq('id', p.site_id).maybeSingle();
+    if (!st) { box.innerHTML = '<div class="empty">אין גישה לאפיון.</div>'; return; }
+    const B = (st.buildings || []).sort((a, b) => a.sort - b.sort).map(b => ({ ...b, sp: Array.isArray(b.specs) ? b.specs[0] : b.specs }));
+    const done = B.filter(b => b.sp?.status === 'done'), days = done.reduce((t, b) => t + Number(b.sp.days_expected || 0), 0);
+    const ST = { done: ['ok', 'הושלם'], draft: ['warn', 'טיוטה'] };
+    box.innerHTML = `<div class="kpis"><div class="kpi"><b>${done.length}/${B.length}</b><span>מבנים אופיינו</span></div><div class="kpi"><b>${days ? nf(Math.ceil(days - 1e-3)) : '—'}</b><span>ימי עבודה</span></div></div>
+      <div class="list">${B.map(b => `<a class="lrow" href="#/b/${esc(st.slug)}/${b.id}"><span class="grow"><b>${esc(b.name)}</b><small>${[b.sp?.days_expected ? nf(b.sp.days_expected) + ' ימים' : null, b.facade_area_m2 ? nf(b.facade_area_m2) + ' מ"ר' : null].filter(Boolean).join(' · ')}</small></span>
+        ${ST[b.sp?.status] ? `<span class="pill ${ST[b.sp.status][0]}">${ST[b.sp.status][1]}</span>` : '<span class="pill">לא מולא</span>'}</a>`).join('')}</div>
+      <a class="btn ghost block" href="#/site/${esc(st.slug)}">${icon('clipboard', 18)} האפיון המלא (מפה, מחיר, צ'אט)</a>`;
   }
 
   // ----- סקירה -----
@@ -109,7 +121,6 @@ export async function renderProject(el, id, tab = 'o') {
         ${p.summary ? kv('chat', 'תמונת ביצוע', esc(p.summary)) : ''}
         ${f ? kv('shield', 'כספים', `${f.price_net ? '₪' + nf(f.price_net) + ' נטו' : '—'}${f.gross_pct ? ` · רווח ${nf(f.gross_pct)}%` : ''}${f.payment_status ? ' · ' + esc(f.payment_status) : ''}`) : ''}
         ${M ? `<button class="lrow kv" id="share" type="button"><span class="mic">${icon('send', 19)}</span><span class="grow"><b>קישור התקדמות ללקוח</b><small>עמוד עם סטטוס ותמונות — בלי מחירים, שעות או שמות</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
-        ${s && can('specs') ? `<a class="lrow kv" href="#/site/${esc(s.slug)}"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>אפיון האתר</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
       </div>
       ${s?.lat || p.lat ? navButtons(s?.lat || p.lat, s?.lng || p.lng) : ''}
       ${M ? '<div class="sigline" id="sig"></div>' : ''}

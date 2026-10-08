@@ -1,5 +1,5 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls } from '../lib/core.js';
+import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls , folderGrid, coverArt } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
@@ -34,8 +34,6 @@ async function fetchSite(slug) {
 }
 
 // ---------- רשימת אפיונים: כל ליד ממאנדי + אתרים מרובי מבנים ----------
-const ORDER = ['ממתין לסיור אפיון', 'לידים חדשים', 'בטיפול', 'בדיון / פגישה', 'אתרים מרובי מבנים', 'אפיון בוצע — ממתין להצעה', 'ממתין להצעת קבלן משנה', 'הצעה נשלחה', 'הצעה לא אושרה — פנייה חוזרת', 'הומרו לפרויקט'];
-const FOLDED = new Set(['הצעה נשלחה', 'הצעה לא אושרה — פנייה חוזרת', 'הומרו לפרויקט']);
 export async function renderSites(el) {
   el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1>אפיונים</h1></header>
     <input type="search" class="search" id="sq" placeholder="חיפוש ליד, לקוח או אתר"><div id="sl" class="stack lg"><div class="skel"></div><div class="skel"></div></div>`;
@@ -47,15 +45,22 @@ export async function renderSites(el) {
     return `<button class="item" data-s="${esc(s.slug)}" data-one="${lead && n === 1 ? s.buildings[0].id : ''}" data-q="${esc(s.name + ' ' + (s.contact_name || ''))}">${s.cover_path ? `<img src="${esc(urls[s.cover_path])}" alt="">` : ''}
       <span class="t"><b>${esc(s.name)}</b><small>${esc(sub)}</small>${!lead ? `<span class="progress" style="margin-top:7px"><i style="width:${n ? Math.round(done / n * 100) : 0}%"></i></span>` : ''}</span>
       ${lead ? (done === n && n ? '<span class="pill ok">בוצע</span>' : draft || done ? '<span class="pill warn">בתהליך</span>' : `<span class="chev">${icon('chev', 18)}</span>`) : `<span class="pill ${done === n && n ? 'ok' : done ? 'warn' : ''}">${done}/${n}</span>`}</button>`; };
-  const groups = {}; sites.forEach(s => { const g = s.kind === 'lead' ? (s.lead_group || 'לידים חדשים') : 'אתרים מרובי מבנים'; (groups[g] ||= []).push(s); });
-  const keys = [...ORDER.filter(k => groups[k]), ...Object.keys(groups).filter(k => !ORDER.includes(k))];
+  // תיקייה לכל אתר/ליד, בשלוש קבוצות ברורות במקום שלבי מאנדי: לסיור · הושלם · ארכיון (סגור)
+  const STAGE = s => { if (s.kind !== 'lead') { const { n, done } = st(s); return done === n && n ? 'done' : 'open'; }
+    const g = s.lead_group || '';
+    return /הצעה נשלחה|לא אושרה|הומרו/.test(g) ? 'arch' : /אפיון בוצע|קבלן משנה/.test(g) ? 'done' : 'open'; };
+  const GROUPS = [['open', 'לסיור ואפיון'], ['done', 'אפיון הושלם'], ['arch', 'ארכיון']];
+  const folder = s => { const { n, done, draft } = st(s), lead = s.kind === 'lead';
+    return { href: lead && n === 1 ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, img: (s.cover_path && urls[s.cover_path]) || coverArt(s.name), title: s.name,
+      sub: lead ? [s.contact_name, s.visit_date ? 'סיור ' + dm(s.visit_date) : null].filter(Boolean).join(' · ') : `${n} מבנים`,
+      pill: n > 1 ? `${done}/${n}` : done === n && n ? 'בוצע' : draft || done ? 'בתהליך' : '', tone: done === n && n ? 'ok' : done || draft ? 'warn' : '' }; };
   const draw = q => {
-    $('#sl').innerHTML = keys.map(k => { const list = groups[k].filter(s => !q || (s.name + ' ' + (s.contact_name || '')).includes(q)); if (!list.length) return '';
-      const fold = FOLDED.has(k) && !q;
-      return fold ? `<details class="fold"><summary><span class="sh">${esc(k)}</span><span class="count">${list.length}</span></summary><div class="list">${list.map(row).join('')}</div></details>`
-        : `<section><div class="sh-row"><h3 class="sh">${esc(k)}</h3><span class="count">${list.length}</span></div><div class="list">${list.map(row).join('')}</div></section>`; }).join('')
+    const list = sites.filter(s => !q || (s.name + ' ' + (s.contact_name || '')).includes(q));
+    $('#sl').innerHTML = GROUPS.map(([k, t]) => { const g = list.filter(s => STAGE(s) === k); if (!g.length) return '';
+      const body = folderGrid(g.map(folder));
+      return k === 'arch' && !q ? `<details class="fold"><summary><span class="sh">${t}</span><span class="count">${g.length}</span></summary>${body}</details>`
+        : `<section class="stack"><div class="sh-row"><h3 class="sh">${t}</h3><span class="count">${g.length}</span></div>${body}</section>`; }).join('')
       || `<div class="empty-card"><span><b>לא נמצא</b><small>לידים חדשים מופיעים כאן תוך כמה דקות</small></span></div>`;
-    $$('#sl .item').forEach(b => b.onclick = () => location.hash = b.dataset.one ? `#/b/${b.dataset.s}/${b.dataset.one}` : '#/site/' + b.dataset.s);
   };
   $('#sq').oninput = e => draw(e.target.value.trim());
   draw('');
