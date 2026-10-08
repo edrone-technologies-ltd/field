@@ -29,7 +29,7 @@ function renderLogin(msg = '') {
     try {
       await signIn($('#ph').value, $('#cd').value);
       try { localStorage.setItem('edrone-phone', $('#ph').value); } catch {}
-      await boot();
+      await boot('login');
     } catch (err) { $('#er').textContent = err.message; b.disabled = false; b.textContent = 'כניסה'; }
   };
 }
@@ -78,6 +78,7 @@ function renderMenu() {
       isManager() && ['#/requests', 'send', 'בקשות מהצוות', 'שכר, ציוד, מסמכים'],
       isManager() && ['#/attendance', 'team', 'נוכחות צוות', can('finance') ? 'אישורים וייצוא לשכר' : 'אישורים ושעות'],
       isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
+      state.profile.role === 'admin' && ['#/activity', 'chart', 'פעילות', 'מי מחובר ומה קורה'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
     ]],
   ].map(([t, r]) => [t, r.filter(Boolean)]).filter(([, r]) => r.length);
@@ -159,6 +160,7 @@ async function routeInner() {
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
     case 'news': return (await import('./modules/news.js')).renderNews(app);
     case 'requests': return (await import('./modules/news.js')).renderRequests(app);
+    case 'activity': return (await import('./modules/activity.js')).renderActivity(app, h[1] || '');
     case 'tour': return (await import('./modules/tour.js')).renderTour(app, h[1] || 'ops');
     case 'plan': if (guard('projects')) return (await import('./modules/plan.js')).renderPlan(app, h[1], h[2] === 'print'); return;
     case 'visit': { const m = await import('./modules/visits.js'); return h[1] === 'new' ? m.renderVisitForm(app, h[2]) : h[1] === 'edit' ? m.renderVisitForm(app, h[2], h[3]) : h[2] === 'report' ? m.renderVisitReport(app, h[1]) : m.renderVisit(app, h[1]); }
@@ -184,12 +186,13 @@ async function routeInner() {
   }
 }
 
-async function boot() {
+async function boot(how = 'open') {
   try { const t = localStorage.getItem('edrone-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
   if (!(await loadMe())) return renderLogin();
   if (!state.profile.is_active) { await sb.auth.signOut(); return renderLogin('הגישה שלך הושבתה. פנו למשרד.'); }
   addEventListener('hashchange', route);
   updateNet(); flush(); route();
+  import('./lib/track.js').then(m => m.startTracking(how)).catch(() => {});
   // בקשת אחסון קבוע — כדי שהטלפון לא ימחק נתונים שעוד לא נשלחו
   try { navigator.storage?.persist?.(); } catch {}
 }

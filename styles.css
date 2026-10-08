@@ -747,3 +747,14 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .tourfs{position:fixed;inset:0;z-index:2000;background:#EEF1E8}
 .tourfs iframe{width:100%;height:100%;border:0;display:block}
 .tourx{position:fixed;top:calc(env(safe-area-inset-top,0px) + 4px);left:10px;z-index:2001;width:34px;height:34px;border-radius:50%;border:0;background:#16181C;color:#fff;font-size:22px;line-height:1;cursor:pointer}
+/* פעילות */
+.act-u{text-align:right;width:100%} .act-u.sel{outline:2px solid var(--lime-ink,#5E8F00)}
+.dot{width:10px;height:10px;border-radius:50%;background:#C9CEC2;flex:none} .dot.today{background:#E3B341} .dot.on{background:#3DB24B;box-shadow:0 0 0 4px #3DB24B33}
+.act-n{display:flex;flex-direction:column;align-items:center;min-width:42px} .act-n b{font-size:1rem} .act-n small{font-size:.7rem;color:var(--muted)}
+.act-u small b.ok{color:#1E7B3A} .act-u small b.warn{color:#A35A00}
+.feed .fr{gap:10px;font-size:.9rem} .feed .fh{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.8rem;min-width:38px}
+.feed .fr.login .grow,.feed .fr.open .grow{color:var(--muted)}
+.dbars{display:flex;align-items:flex-end;gap:4px;height:120px;padding:8px 4px 0;background:var(--card);border:1px solid var(--line);border-radius:16px}
+.db{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:2px}
+.db i{width:70%;background:#7FB800;border-radius:6px 6px 2px 2px;min-height:2px} .db .n{font-size:.7rem;font-weight:700} .db small{font-size:.62rem;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}

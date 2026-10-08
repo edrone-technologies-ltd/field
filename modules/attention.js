@@ -1,6 +1,6 @@
 // "מחכה לך": כל מה שדורש את תשומת הלב של המשתמש — ברשימה אחת קומפקטית בראש הבית, במקום ערימת כרטיסים.
 // הוקרה › הודעת הנהלה › קליטה (כוללת הדרכות חובה) › הדרכה › התראות. שורה אחת לכל דבר, לחיצה = לשם.
-import { sb, state, icon, esc, toast, pushState, enablePush } from '../lib/core.js';
+import { sb, state, icon, esc, toast, pushState, enablePush, sheet } from '../lib/core.js';
 
 async function newsRows() {
   const [{ data: list }, { data: reads }] = await Promise.all([
@@ -43,7 +43,8 @@ async function schedRows() {
   if (!need.length) return [];
   const dm = d => `${+d.slice(8)}.${+d.slice(5, 7)}`;
   return need.length === 1 ? [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `לשבץ צוות · ${dm(need[0].planned_from)}`, sub: need[0].name, href: `#/p/${need[0].id}` }]
-    : [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `${need.length} פרויקטים לשיבוץ צוות`, sub: need.map(p => `${dm(p.planned_from)} ${p.name.split(' — ')[0]}`).join(' · '), href: '#/projects' }];
+    : [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `${need.length} פרויקטים לשיבוץ צוות`, sub: need.map(p => `${dm(p.planned_from)} ${p.name.split(' — ')[0]}`).join(' · '),
+        list: need.map(p => ({ href: `#/p/${p.id}`, t: p.name, s: dm(p.planned_from) + (p.planned_to && p.planned_to !== p.planned_from ? '–' + dm(p.planned_to) : '') })) }];
 }
 async function tourRows() {
   if (state.profile.role !== 'ops_manager') return [];
@@ -67,4 +68,7 @@ export async function attention(box) {
   box.innerHTML = `<section class="attn"><div class="sh-row"><h3 class="sh">מחכה לך</h3>${items.length > 1 ? `<span class="count">${items.length}</span>` : ''}</div>
     <div class="alist">${items.slice(0, 5).map((x, i) => `<a class="arow ${x.tone}" ${x.href ? `href="${x.href}"` : 'role="button" tabindex="0"'} data-i="${i}"><span class="aic">${x.ic}</span><span class="grow"><b>${esc(x.title)}</b><small>${esc(x.sub)}</small></span>${x.btn ? `<span class="btn primary sm">${x.btn}</span>` : `<span class="chev">${icon('chev', 18)}</span>`}</a>`).join('')}</div></section>`;
   box.querySelectorAll('[data-i]').forEach(a => { const x = items[+a.dataset.i]; if (x.k === 'push' && x.btn) a.onclick = async e => { e.preventDefault(); try { await enablePush(); toast('ההתראות הופעלו'); attention(box); } catch (err) { toast(err.message); } }; });
+  // כמה פרויקטים ממתינים — רשימה קצרה של בדיוק אותם פרויקטים (לא כל הפרויקטים)
+  box.querySelectorAll('[data-i]').forEach(a => { const x = items[+a.dataset.i]; if (!x.list) return;
+    a.onclick = e => { e.preventDefault(); sheet(`<h3>${esc(x.title)}</h3><div class="list">${x.list.map(l => `<a class="lrow" href="${l.href}" data-close><span class="grow"><b>${esc(l.t)}</b><small>${esc(l.s)}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div><button class="btn ghost block" data-close>סגירה</button>`); }; });
 }
