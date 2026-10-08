@@ -808,3 +808,5 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .wxair{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:14px;border:1px solid rgba(47,111,235,.35);background:rgba(47,111,235,.10);color:inherit;text-decoration:none}
 .wxair b{display:block}.wxair small{display:block;opacity:.75;font-size:12px}.wxair .chev{font-size:22px;opacity:.6}
 .wxair.sm{margin-top:6px;padding:8px 12px}
+.tabplus{flex:0 0 auto;align-self:center;width:46px;height:46px;margin:0 4px;border-radius:50%;border:0;background:var(--lime);color:#14200F;display:grid;place-items:center;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.18)}
+.tabplus:active{transform:scale(.94)}

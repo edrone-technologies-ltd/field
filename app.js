@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet } from './lib/core.js';
 
 const app = $('#app');
 // לשוניות תחתונות — מוצגות לפי ההרשאות
@@ -40,8 +40,18 @@ function nav(show, active = '') {
   if (!show) { n?.remove(); document.body.classList.remove('has-nav'); return; }
   if (!n) { n = document.createElement('nav'); n.id = 'tabbar'; n.className = 'tabbar'; n.setAttribute('aria-label', 'ניווט ראשי'); document.body.appendChild(n); }
   document.body.classList.add('has-nav');
-  n.innerHTML = TABS.filter(t => t.ok()).map(t => `<a href="#/${t.k}" class="${t.k === active ? 'on' : ''}" ${t.k === active ? 'aria-current="page"' : ''}>${icon(t.ic, 23)}<span>${t.t}</span>${t.k === 'inbox' ? '<i class="nb" id="nb" hidden></i>' : ''}</a>`).join('');
+  const T = TABS.filter(t => t.ok()).map(t => `<a href="#/${t.k}" class="${t.k === active ? 'on' : ''}" ${t.k === active ? 'aria-current="page"' : ''}>${icon(t.ic, 23)}<span>${t.t}</span>${t.k === 'inbox' ? '<i class="nb" id="nb" hidden></i>' : ''}</a>`);
+  T.splice(Math.floor(T.length / 2), 0, '<button class="tabplus" id="tplus" aria-label="חדש">' + icon('plus', 24) + '</button>');
+  n.innerHTML = T.join('');
+  $('#tplus').onclick = quickAdd;
   unread();
+}
+// כפתור + : פעולה חדשה לפי הרשאות — הוצאה ובקשה/בעיה למשרד לכולם, רכש למנהל תפעול ומעלה
+function quickAdd() {
+  const O = [['#/expenses/new', 'receipt', 'הוצאה', 'דלק, חניה, אוכל, לינה — צילום קבלה'],
+    ['#/requests/new', 'send', 'בקשה או בעיה למשרד', 'שכר, ציוד, מסמכים, כל דבר אחר'],
+    can('purchase') && ['#/purchase/new', 'cart', 'בקשת רכש', 'חומרים וציוד מספקים']].filter(Boolean);
+  sheet(`<h3>חדש</h3><div class="list">${O.map(([h, ic, t, d]) => `<a class="lrow" href="${h}" data-close><span class="mic">${icon(ic, 19)}</span><span class="grow"><b>${t}</b><small>${d}</small></span></a>`).join('')}</div>`, () => {});
 }
 async function unread() {
   try {
@@ -155,13 +165,13 @@ async function routeInner() {
     case 'menu': case 'me': return renderMenu();
     case 'hours': return (await import('./modules/attendance.js')).renderHours(app, null, h[1]);
     case 'attendance': { const m = await import('./modules/attendance.js'); if (h[1] === 'm' || !h[1]) return m.renderAttendance(app, h[2]); return m.renderHours(app, h[1], h[2]); }
-    case 'purchase': if (guard('purchase')) return (await import('./modules/purchase.js')).renderPurchase(app); return;
+    case 'purchase': if (guard('purchase')) { await (await import('./modules/purchase.js')).renderPurchase(app); if (h[1] === 'new') $('#newreq')?.click(); } return;
     case 'dispatch': return (await import('./modules/dispatch.js')).renderDispatch(app, h[1]);
     case 'client-report': return (await import('./modules/clientreport.js')).renderClientReport(app, h[1]);
     case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
     case 'news': return (await import('./modules/news.js')).renderNews(app);
-    case 'requests': return (await import('./modules/news.js')).renderRequests(app);
+    case 'requests': await (await import('./modules/news.js')).renderRequests(app); if (h[1] === 'new') $('#rn')?.click(); return;
     case 'weather': return (await import('./modules/weather.js')).renderWeather(app, h[1] || '');
     case 'clients': return (await import('./modules/clients.js')).renderClients(app);
     case 'client': return (await import('./modules/clients.js')).renderClient(app, h[1]);
@@ -169,7 +179,7 @@ async function routeInner() {
     case 'tour': return (await import('./modules/tour.js')).renderTour(app, h[1] || 'ops');
     case 'plan': if (guard('projects')) return (await import('./modules/plan.js')).renderPlan(app, h[1], h[2] === 'print'); return;
     case 'visit': { const m = await import('./modules/visits.js'); return h[1] === 'new' ? m.renderVisitForm(app, h[2]) : h[1] === 'edit' ? m.renderVisitForm(app, h[2], h[3]) : h[2] === 'report' ? m.renderVisitReport(app, h[1]) : m.renderVisit(app, h[1]); }
-    case 'expenses': return (await import('./modules/expenses.js')).renderExpenses(app);
+    case 'expenses': await (await import('./modules/expenses.js')).renderExpenses(app); if (h[1] === 'new') $('#newx')?.click(); return;
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
     case 'staff': case 'files': { const m = await import('./modules/staff.js'); return h[1] ? m.renderEmployee(app, h[1], h[2]) : m.renderStaff(app); }
     case 'signoff': return (await import('./modules/reports.js')).renderSignoff(app, h[1]);
