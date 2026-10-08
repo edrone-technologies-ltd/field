@@ -41,13 +41,12 @@ export async function renderClient(el, id) {
   const prow = p => `<a class="lrow" href="#/p/${p.id}"><span class="grow"><b>${esc(p.name)}</b><small>${[range(p), days(p) ? `${days(p)} ימי שטח` : ''].filter(Boolean).join(' · ')}</small></span><span class="pill ${p.monday_group === ARCH ? '' : String(p.status_label || '').startsWith('הסתיים') || p.status_label === 'שולם ✓' ? 'ok' : 'lime'}">${p.monday_group === ARCH ? 'ארכיון' : esc(stLabel(p.status_label))}</span></a>`;
   const active = P.filter(p => p.monday_group !== ARCH && !String(p.status_label || '').startsWith('הסתיים') && p.status_label !== 'שולם ✓');
   const years = [...new Set(P.map(yr).filter(Boolean))];
-  const contacts = (c.contacts || []).filter(x => x.active !== false);
   el.innerHTML = `<header class="phead">${backBtn('#/clients')}<h1 class="grow">${esc(c.name)}</h1></header>
     <div class="stack lg">
       <div class="card stack" style="gap:4px">${c.grp ? `<small class="muted">קבוצת ${esc(c.grp)}</small>` : ''}${c.hp ? `<small>ח.פ <bdi dir="ltr">${esc(c.hp)}</bdi></small>` : ''}
         ${c.notes ? `<small class="muted">${esc(c.notes)}</small>` : ''}</div>
       <div class="kpis"><div class="kpi"><b>${P.length}</b><span>עבודות</span></div><div class="kpi"><b>${S.size}</b><span>אתרים</span></div><div class="kpi"><b>${active.length}</b><span>פעילות עכשיו</span></div></div>
-      ${contacts.length ? `<section class="stack"><h3 class="sh">אנשי קשר</h3><div class="list">${contacts.map(x => `<div class="lrow"><span class="grow"><b>${esc(x.name)}</b><small>${esc([x.role, x.email].filter(Boolean).join(' · '))}</small></span>${x.phone ? `<a class="chip" href="tel:${tel(x.phone)}">חיוג</a>` : ''}</div>`).join('')}</div></section>` : ''}
+      <div id="cctc"></div>
       ${[...S.values()].map(s => `<section class="stack"><div class="sh-row"><h3 class="sh">${esc(s.name)}</h3>${s.slug ? `<a class="more" href="#/site/${esc(s.slug)}">לאתר</a>` : ''}</div>
         ${s.address || s.contact_name ? `<div class="small muted">${esc([s.address, s.contact_name].filter(Boolean).join(' · '))}</div>` : ''}
         <div class="list">${s.projects.map(prow).join('') || '<div class="small muted" style="padding:12px">עוד אין עבודות באתר</div>'}</div></section>`).join('')}
@@ -55,4 +54,5 @@ export async function renderClient(el, id) {
       ${years.length > 1 ? `<div class="small muted">עבודות לפי שנה: ${years.map(y => `${y} — ${P.filter(p => yr(p) === y).length}`).join(' · ')}</div>` : ''}
       ${(sib || []).length ? `<section class="stack"><h3 class="sh">נכסים נוספים בקבוצת ${esc(c.grp)}</h3><div class="list">${sib.map(x => `<a class="lrow" href="#/client/${x.id}"><span class="grow">${esc(x.name)}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
     </div>`;
+  import('../lib/contacts.js').then(m => m.renderContacts($('#cctc'), { clientId: c.id, org: c.name }));
 }

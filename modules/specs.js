@@ -198,7 +198,7 @@ export async function renderSite(el, slug, tab = 'b') {
   el.innerHTML = `<div class="top"><a class="back" href="#/specs" aria-label="חזרה"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M9 18l6-6-6-6"/></svg></a><span class="grow"></span>
       ${s.classification === 'restricted' ? '<span class="pill warn">אתר מוגבל</span>' : ''}</div>
     <div><div class="eyebrow">סיור אפיון</div><h1>${esc(s.name)}</h1></div>
-    ${contactCard(s.contact_name, s.contact_phone)}
+    <div id="sctc"></div>
     ${siteTools(s, { price: true, days: Math.ceil(days - 1e-3) })}
     <div class="kpis"><div class="kpi"><b>${done}/${n}</b><span>מבנים הושלמו</span></div><div class="kpi"><b>${days ? nf(Math.ceil(days - 1e-3)) : '—'}</b><span>ימי עבודה${days % 1 ? ` (${nf(days)} עוגל)` : ''}</span></div>
       ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ"ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
@@ -206,6 +206,7 @@ export async function renderSite(el, slug, tab = 'b') {
     <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
     <div id="tabbody"></div>`;
   bindCopy(el); bindSiteTools(s, { days: Math.ceil(days - 1e-3) });
+  import('../lib/contacts.js').then(m => m.renderContacts($('#sctc'), { siteId: s.id, clientId: s.client_id, org: s.name }));
   import('../lib/audit.js').then(m => m.signature($('#sig'), { site_id: s.id }));
   $$('.tabs button', el).forEach(b => b.onclick = () => replaceHash(`#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`));
   const body = $('#tabbody');

@@ -766,3 +766,4 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .dline small{display:block;color:var(--muted);font-size:.8rem} .dline.need{background:#FFF6E5} .dline.done{opacity:.7}
 .dempty{padding:2px 2px 4px}
 .dgrid thead th:first-child{position:sticky;right:0;background:var(--bg);z-index:2}
+.ctc a.chip{text-decoration:none} .ctc.off{opacity:.55}
