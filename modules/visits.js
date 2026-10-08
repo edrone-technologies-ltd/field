@@ -4,6 +4,7 @@ import { sb, state, isManager, icon, $, $$, esc, toast, backBtn, signedUrls, zoo
 import { shrink } from '../lib/store.js';
 
 export const KIND = { crew_check: 'ביקורת צוות בשטח', client_tour: 'סיור עם לקוח', quality: 'בקרת איכות', other: 'ביקור אחר' };
+const PH = x => x.photos || (x.photo ? [x.photo] : []);   // תמונות לממצא (תאימות לדוחות עם תמונה אחת)
 const SEV = { ok: ['תקין', 'ok'], note: ['הערה', 'warn'], fix: ['לתיקון', 'bad'] };
 
 // טופס חדש / עריכה
@@ -13,7 +14,7 @@ export async function renderVisitForm(el, pid, vid) {
     sb.from('projects').select('id,name,client_name').eq('id', pid).single(),
     vid ? sb.from('project_visits').select('*').eq('id', vid).single() : Promise.resolve({ data: null })]);
   const f = v ? { ...v, findings: [...(v.findings || [])], todo: [...(v.todo || [])] } : { todo: [], kind: 'crew_check', visit_date: isoDay(), participants: '', findings: [], client_feedback: '', rating: 0, summary: '' };
-  const urls = await signedUrls('field', f.findings.map(x => x.photo).filter(Boolean));
+  const urls = await signedUrls('field', [...f.findings, ...f.todo].flatMap(PH));
   const draw = () => {
     el.innerHTML = `<header class="phead">${backBtn(`#/p/${pid}/d`)}<h1 class="grow">דוח ביקור</h1></header>
       <div class="stack lg">
@@ -21,15 +22,15 @@ export async function renderVisitForm(el, pid, vid) {
         <div class="field">סוג הביקור<div class="chips">${Object.entries(KIND).map(([k, t]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${f.kind === k}">${t}</button>`).join('')}</div></div>
         <div class="row"><label class="field grow">תאריך<input type="date" id="vd" value="${f.visit_date}"></label></div>
         <label class="field">${f.kind === 'client_tour' ? 'מי מהלקוח השתתף' : 'משתתפים'}<input id="vp" value="${esc(f.participants || '')}" placeholder="${f.kind === 'client_tour' ? 'למשל: רון — מנהל אחזקה' : 'למשל: צוות 1'}"></label>
-        <section class="stack"><div class="row"><h3 class="grow">ממצאים</h3><button class="chip" id="vadd">+ ממצא</button></div>
+        <section class="stack"><h3 class="sh">ממצאים</h3>
+          <div class="row-btns"><label class="btn primary">${icon('photo', 18)} צילום ממצא<input type="file" accept="image/*" multiple id="vcam" hidden></label><button type="button" class="btn ghost" id="vadd">+ ממצא בכתב</button></div>
           ${f.findings.length ? f.findings.map((x, i) => `<div class="finding">
             <textarea data-ft="${i}" rows="2" placeholder="מה ראית">${esc(x.text || '')}</textarea>
             <div class="row"><div class="chips">${Object.entries(SEV).map(([k, [t]]) => `<button type="button" class="chip" data-fs="${i}" data-v="${k}" aria-pressed="${x.sev === k}">${t}</button>`).join('')}</div><span class="grow"></span>
-              ${x.photo && urls[x.photo] ? `<img class="fph" src="${esc(urls[x.photo])}" alt="">` : `<label class="chip">${icon('photo', 16)} תמונה<input type="file" accept="image/*" capture="environment" data-fp="${i}" hidden></label>`}
-              <button type="button" class="chip" data-fr="${i}" aria-label="הסרה">×</button></div></div>`).join('')
-          : '<div class="small muted">כל דבר שראית — שורה. "לתיקון" הופך אחר כך למשימה לצוות.</div>'}
+              <button type="button" class="chip" data-fr="${i}" aria-label="הסרה">×</button></div>
+            <div class="fphs">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}<label class="fph add" aria-label="הוספת תמונה">${icon('photo', 18)}<input type="file" accept="image/*" multiple data-fp="${i}" hidden></label></div></div>`).join('') : ''}
         </section>
-        ${todoHtml(f)}
+        ${todoHtml(f, urls)}
         ${f.kind === 'client_tour' ? `<label class="field">מה הלקוח אמר<textarea id="vc" rows="3" placeholder="טענות, בקשות, שביעות רצון">${esc(f.client_feedback || '')}</textarea></label>` : ''}
         <div class="field">ציון כללי<div class="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-r="${n}" aria-pressed="${f.rating >= n}">★</button>`).join('')}</div></div>
         <label class="field">סיכום<textarea id="vs" rows="3">${esc(f.summary || '')}</textarea></label>
@@ -45,16 +46,26 @@ export async function renderVisitForm(el, pid, vid) {
     $$('[data-tr]').forEach(b => b.onclick = () => { keep(); f.todo.splice(+b.dataset.tr, 1); draw(); });
     $$('[data-r]').forEach(b => b.onclick = () => { keep(); f.rating = +b.dataset.r; draw(); });
     $$('.fph').forEach(i => i.onclick = () => zoom(i.src, ''));
-    $$('[data-fp]').forEach(inp => inp.onchange = async () => {
-      keep(); const file = inp.files[0]; if (!file) return;
-      try { const blob = await shrink(file), path = `${state.user.id}/visits/${crypto.randomUUID()}.jpg`;
-        const { error } = await sb.storage.from('field').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
-        await sb.from('photos').insert({ storage_path: path, project_id: pid, kind: 'visit', uploaded_by: state.user.id, caption: 'דוח ביקור' });
-        f.findings[+inp.dataset.fp].photo = path; Object.assign(urls, await signedUrls('field', [path])); draw();
+    // העלאה: כמה תמונות בבת אחת; "צילום ממצא" פותח ממצא חדש עם התמונות
+    const upload = async (files, x) => {
+      keep(); toast('מעלה תמונות…');
+      try {
+        for (const file of files) {
+          const blob = await shrink(file), path = `${state.user.id}/visits/${crypto.randomUUID()}.jpg`;
+          const { error } = await sb.storage.from('field').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
+          await sb.from('photos').insert({ storage_path: path, project_id: pid, kind: 'visit', uploaded_by: state.user.id, caption: 'דוח ביקור' });
+          x.photos = [...PH(x), path]; delete x.photo;
+        }
+        Object.assign(urls, await signedUrls('field', PH(x)));
       } catch (e) { toast(e.message || 'התמונה לא עלתה'); }
-    });
+      draw();
+    };
+    $$('[data-fp]').forEach(inp => inp.onchange = () => inp.files.length && upload([...inp.files], f.findings[+inp.dataset.fp]));
+    $$('[data-tp]').forEach(inp => inp.onchange = () => inp.files.length && upload([...inp.files], f.todo[+inp.dataset.tp]));
+    $('#vcam').onchange = async e => { const fl = [...e.target.files]; if (!fl.length) return; keep(); const x = { text: '', sev: 'note' }; f.findings.push(x);
+      await upload(fl, x); setTimeout(() => $$('[data-ft]').pop()?.focus(), 50); };
     $('#vsave').onclick = async () => {
-      keep(); f.findings = f.findings.filter(x => (x.text || '').trim() || x.photo);
+      keep(); f.findings = f.findings.filter(x => (x.text || '').trim() || PH(x).length);
       const row = { project_id: pid, todo: f.todo, kind: f.kind, visit_date: f.visit_date, participants: f.participants || null, findings: f.findings,
         client_feedback: f.client_feedback || null, rating: f.rating || null, summary: f.summary || null };
       $('#vsave').disabled = true;
@@ -71,17 +82,17 @@ export async function renderVisitForm(el, pid, vid) {
 export async function renderVisit(el, id) {
   const { data: v } = await sb.from('project_visits').select('*, projects(id,name,site_id), profiles:visitor_id(full_name)').eq('id', id).maybeSingle();
   if (!v) { el.innerHTML = `<header class="phead">${backBtn('#/reports')}<h1>דוח ביקור</h1></header><div class="empty">הדוח לא נמצא.</div>`; return; }
-  const F = v.findings || [], urls = await signedUrls('field', F.map(x => x.photo).filter(Boolean));
+  const F = v.findings || [], urls = await signedUrls('field', [...F, ...(v.todo || [])].flatMap(PH));
   const fix = F.filter(x => x.sev === 'fix').length, T = v.todo || [], open = pending({ findings: F, todo: T });
-  el.innerHTML = `<header class="phead">${backBtn(`#/p/${v.project_id}/d`)}<h1 class="grow">${KIND[v.kind]}</h1><a class="chip" href="#/visit/edit/${v.project_id}/${v.id}">עריכה</a></header>
+  el.innerHTML = `<header class="phead">${backBtn(`#/p/${v.project_id}/d`)}<h1 class="grow">${KIND[v.kind]}</h1><a class="chip" href="#/visit/edit/${v.project_id}/${v.id}">עריכה</a><a class="chip" href="#/visit/${v.id}/report">דוח</a></header>
     <div class="stack lg">
       <div class="card stack" style="gap:4px"><b>${esc(v.projects?.name || '')}</b><small class="muted">${dm(v.visit_date)} · ${esc(v.profiles?.full_name || '')}${v.participants ? ' · ' + esc(v.participants) : ''}</small>
         ${v.rating ? `<div class="stars ro">${[1, 2, 3, 4, 5].map(n => `<span class="${v.rating >= n ? 'on' : ''}">★</span>`).join('')}</div>` : ''}</div>
       ${F.length ? `<section class="stack"><div class="sh-row"><h3 class="sh">ממצאים</h3><span class="count">${F.length}</span>${fix ? `<span class="pill bad">${fix} לתיקון</span>` : ''}</div>
         ${F.map((x, i) => `<div class="finding ro"><div class="row"><span class="pill ${SEV[x.sev]?.[1] || ''}">${SEV[x.sev]?.[0] || ''}</span><span class="grow"></span>
             ${x.sev === 'fix' ? (x.task_id ? '<span class="small muted">בצ\'קליסט ✓</span>' : '') : ''}</div>
-          <div>${esc(x.text || '')}</div>${x.photo && urls[x.photo] ? `<img class="fph big" src="${esc(urls[x.photo])}" alt="">` : ''}</div>`).join('')}</section>` : ''}
-      ${T.length ? `<section class="stack"><h3 class="sh">צ'קליסט לצוות</h3><div class="cklist">${T.map(x => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b></span>${x.task_id ? '<span class="small muted">בצ\'קליסט ✓</span>' : ''}</div>`).join('')}</div></section>` : ''}
+          <div>${esc(x.text || '')}</div>${PH(x).length ? `<div class="fphs big">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : ''}</div>`).join('')}</section>` : ''}
+      ${T.length ? `<section class="stack"><h3 class="sh">צ'קליסט לצוות</h3><div class="cklist">${T.map(x => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b>${PH(x).length ? `<span class="fphs sm">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</span>` : ''}</span>${x.task_id ? '<span class="small muted">בצ\'קליסט ✓</span>' : ''}</div>`).join('')}</div></section>` : ''}
       ${open.length ? `<button class="btn primary block" id="tochk">העברה לצ'קליסט הפרויקט (${open.length})</button>` : ''}
       ${v.client_feedback ? `<section class="stack"><h3 class="sh">מה הלקוח אמר</h3><div class="card">${esc(v.client_feedback).replace(/\n/g, '<br>')}</div></section>` : ''}
       ${v.summary ? `<section class="stack"><h3 class="sh">סיכום</h3><div class="card">${esc(v.summary).replace(/\n/g, '<br>')}</div></section>` : ''}
@@ -110,10 +121,44 @@ async function toChecklist(vid, pid, f) {
   return P.length;
 }
 
-function todoHtml(f) {
+function todoHtml(f, urls = {}) {
   const fx = f.findings.filter(x => x.sev === 'fix' && (x.text || '').trim());
   return `<section class="stack"><div class="sh-row"><h3 class="sh">צ'קליסט לצוות</h3>${fx.length + f.todo.length ? `<span class="count">${fx.length + f.todo.length}</span>` : ''}</div>
     <div class="cklist">${fx.map(x => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b></span>${x.task_id ? '<span class="small muted">✓</span>' : '<span class="pill bad">לתיקון</span>'}</div>`).join('')}
-      ${f.todo.map((x, i) => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b></span>${x.task_id ? '<span class="small muted">✓</span>' : `<button type="button" class="chip sm" data-tr="${i}" aria-label="הסרה">×</button>`}</div>`).join('')}
+      ${f.todo.map((x, i) => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b>${PH(x).length ? `<span class="fphs sm">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</span>` : ''}</span>
+        <label class="chip sm" aria-label="תמונה">${icon('photo', 16)}<input type="file" accept="image/*" multiple data-tp="${i}" hidden></label>${x.task_id ? '<span class="small muted">✓</span>' : `<button type="button" class="chip sm" data-tr="${i}" aria-label="הסרה">×</button>`}</div>`).join('')}
       <div class="ckadd"><input id="vtin" placeholder="+ פריט לצוות" autocomplete="off"><button type="button" class="btn primary sm" id="vtadd">הוספה</button></div></div></section>`;
+}
+
+// ----- הפקת דוח: כל שורה = ממצא + תמונות, בתבנית הדוחות של E-Drone. מטעם החברה, בלי שמות אישיים -----
+export async function renderVisitReport(el, id) {
+  if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
+  el.innerHTML = '<div class="skel tall"></div>';
+  const [{ data: v }, { data: co }] = await Promise.all([
+    sb.from('project_visits').select('*, projects(name,client_name,sites(name,address))').eq('id', id).maybeSingle(),
+    sb.from('app_settings').select('value').eq('key', 'company').maybeSingle()]);
+  if (!v) { el.innerHTML = '<div class="empty">הדוח לא נמצא.</div>'; return; }
+  const F = v.findings || [], T = v.todo || [], urls = await signedUrls('field', [...F, ...T].flatMap(PH));
+  const c = co?.value || {}, coLine = [c.phone, c.email, c.web].filter(Boolean).map(x => `<bdi dir="ltr">${esc(x)}</bdi>`).join(' · ');
+  const date = new Date(v.visit_date + 'T12:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' });
+  const pics = x => PH(x).length ? `<div class="vpics">${PH(x).map(ph => urls[ph] ? `<img src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : '';
+  const SC = { ok: 'ok', note: 'warn', fix: 'bad' };
+  el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/visit/${id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ${esc(KIND[v.kind] || 'ביקור')}</b><button class="btn primary sm" id="print">הדפסה / PDF</button></div>
+    <div class="creport vrep"><div class="pg flow"><div class="pad">
+      <div class="vhead"><img src="logo.png" alt="E-Drone"></div>
+      <div class="rsec">SITE VISIT REPORT</div><h2>${esc(KIND[v.kind] || 'דוח ביקור')}</h2><div class="rule"></div>
+      <div class="meta"><div><div class="k">פרויקט</div><div class="v">${esc(v.projects?.name || '')}</div></div><div><div class="k">תאריך</div><div class="v">${date}</div></div>
+        ${v.participants ? `<div><div class="k">${v.kind === 'client_tour' ? 'מטעם הלקוח' : 'משתתפים'}</div><div class="v">${esc(v.participants)}</div></div>` : ''}
+        ${v.rating ? `<div><div class="k">ציון כללי</div><div class="v">${'★'.repeat(v.rating)}<span style="color:#D5D8DD">${'★'.repeat(5 - v.rating)}</span></div></div>` : ''}</div>
+      ${F.length ? `<div class="rsec" style="margin-top:9mm">FINDINGS</div><h3 class="vh">ממצאים</h3>
+        ${F.map((x, i) => `<div class="vrow"><div class="vn">${i + 1}</div><div class="grow"><div class="vt"><span>${esc(x.text || '')}</span><span class="vs ${SC[x.sev] || ''}">${SEV[x.sev]?.[0] || ''}</span></div>${pics(x)}</div></div>`).join('')}` : ''}
+      ${T.length ? `<div class="rsec" style="margin-top:9mm">ACTION ITEMS</div><h3 class="vh">פעולות להמשך</h3>
+        ${T.map((x, i) => `<div class="vrow"><div class="vn">${i + 1}</div><div class="grow"><div class="vt"><span>${esc(x.text)}</span><span class="vs">E-Drone</span></div>${pics(x)}</div></div>`).join('')}` : ''}
+      ${v.client_feedback ? `<div class="rsec" style="margin-top:9mm">CLIENT FEEDBACK</div><h3 class="vh">התייחסות הלקוח</h3><p>${esc(v.client_feedback).replace(/\n/g, '<br>')}</p>` : ''}
+      ${v.summary ? `<div class="rsec" style="margin-top:9mm">SUMMARY</div><h3 class="vh">סיכום</h3><p>${esc(v.summary).replace(/\n/g, '<br>')}</p>` : ''}
+      <div class="end"><div class="l"><b>E-Drone Technologies</b>${coLine ? `<br>${coLine}` : ''}</div><img src="logo.png" alt="E-Drone"></div>
+    </div></div></div>`;
+  document.body.classList.add('printing-report');
+  addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });
+  $('#print').onclick = () => window.print();
 }

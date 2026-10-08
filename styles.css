@@ -703,3 +703,19 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .tgroup{display:flex;align-items:center;gap:8px;padding:2px 4px;color:var(--ink);text-decoration:none;font-size:.92rem}
 .tg{gap:8px}
 .cksec{margin-top:10px}
+.fphs{display:flex;flex-wrap:wrap;gap:8px} .fphs .fph{width:72px;height:72px}
+.fph.add{display:grid;place-items:center;border:2px dashed var(--line);color:var(--muted);cursor:pointer;background:transparent}
+.fphs.big{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr))} .fphs.big .fph{width:100%;height:110px}
+.fphs.sm{margin-top:6px} .fphs.sm .fph{width:44px;height:44px}
+/* דוח ביקור להדפסה */
+.creport .pg.flow{min-height:auto;overflow:visible}
+.vrep .vhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:12mm} .vrep .vhead img{height:9mm}
+.vrep .wordmark.dark .w{color:#16181C} .vrep .wordmark.dark .t{color:#8A9099}
+.vrep .meta{display:grid;grid-template-columns:repeat(2,1fr);gap:5mm 8mm} .vrep .meta .k{font-size:7.6pt;color:#8A9099;letter-spacing:.06em} .vrep .meta .v{font-weight:700;color:#16181C}
+.vrep .vh{font-size:13pt;font-weight:800;margin:1mm 0 4mm;color:#16181C}
+.vrep .vrow{display:flex;gap:4mm;padding:4mm 0;border-bottom:1px solid #EDEFF2;break-inside:avoid}
+.vrep .vn{width:7mm;height:7mm;border-radius:50%;background:#16181C;color:#C6EA5E;font-weight:800;font-size:8.5pt;display:grid;place-items:center;flex:none}
+.vrep .vt{display:flex;justify-content:space-between;gap:4mm;font-weight:600;color:#16181C}
+.vrep .vs{font-size:8pt;font-weight:700;padding:.6mm 2.6mm;border-radius:99px;background:#EDEFF2;color:#4B5563;white-space:nowrap;height:fit-content}
+.vrep .vs.ok{background:#E8F6EC;color:#1E7B3A} .vrep .vs.warn{background:#FFF4D6;color:#8A5A00} .vrep .vs.bad{background:#FDE7E7;color:#B42318}
+.vrep .vpics{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5mm;margin-top:3mm} .vrep .vpics img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:2mm}
