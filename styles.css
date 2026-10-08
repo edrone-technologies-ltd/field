@@ -719,3 +719,7 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .vrep .vs{font-size:8pt;font-weight:700;padding:.6mm 2.6mm;border-radius:99px;background:#EDEFF2;color:#4B5563;white-space:nowrap;height:fit-content}
 .vrep .vs.ok{background:#E8F6EC;color:#1E7B3A} .vrep .vs.warn{background:#FFF4D6;color:#8A5A00} .vrep .vs.bad{background:#FDE7E7;color:#B42318}
 .vrep .vpics{display:grid;grid-template-columns:repeat(3,1fr);gap:2.5mm;margin-top:3mm} .vrep .vpics img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:2mm}
+.vrep .vp{position:relative} .vrep .vp img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:2mm;display:block}
+.vrep .vp .tg{position:absolute;top:1.5mm;right:1.5mm;font-size:7pt;font-weight:700;padding:.4mm 2mm;border-radius:99px;background:#16181C;color:#fff}
+.vrep .vp .tg.a{background:#C6EA5E;color:#16181C}
+.vrep .vdone{font-size:8.6pt;color:#1E7B3A;font-weight:600;margin-top:1mm}

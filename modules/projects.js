@@ -198,7 +198,7 @@ export async function renderProject(el, id, tab = 'o') {
     const N = u => (D.team.find(x => x.id === u)?.full_name || '').split(' ')[0];
     const meta = t => [t.assignee_id ? N(t.assignee_id) : '', t.due ? 'עד ' + dm(t.due) : ''].filter(Boolean).join(' · ');
     const row = t => `<div class="ck ${t.status === 'done' ? 'on' : ''}"><button class="ckbox" data-ck="${t.id}" aria-label="סימון">${t.status === 'done' ? '✓' : ''}</button>
-      <span class="grow"><b>${esc(t.title)}</b>${meta(t) ? `<small>${esc(meta(t))}</small>` : ''}</span>
+      <span class="grow"><b>${esc(t.title)}</b>${meta(t) ? `<small>${esc(meta(t))}</small>` : ''}${t.done_note && t.status === 'done' ? `<small>${esc(t.done_note)}</small>` : ''}</span>${(t.photos?.after?.length || t.photos?.before?.length) ? `<span class="pill">${icon('photo', 14)} ${(t.photos.before?.length || 0) + (t.photos.after?.length || 0)}</span>` : ''}
       ${M && t.status !== 'done' ? `<button class="chip sm" data-who="${t.id}">${t.assignee_id ? 'החלפה' : 'שיוך'}</button>` : ''}</div>`;
     return `<section class="stack cksec"><div class="sh-row"><h3 class="sh">צ'קליסט</h3>${open.length ? `<span class="count">${open.length}</span>` : ''}</div>
       <div class="cklist">${open.map(row).join('') || '<div class="small muted" style="padding:12px">אין פריטים פתוחים</div>'}
@@ -208,6 +208,7 @@ export async function renderProject(el, id, tab = 'o') {
   function bindChecklist(box, all, redraw) {
     $$('[data-ck]', box).forEach(b => b.onclick = async () => {
       const t = all.find(x => x.id === b.dataset.ck), on = t.status !== 'done';
+      if (on && t.project_id && (t.photos?.before?.length || !M)) return (await import('./tasks.js')).completeTask(t, redraw);   // תיעוד בשטח
       Object.assign(t, on ? { status: 'done', done_by: state.user.id, done_at: new Date().toISOString() } : { status: 'todo' });
       await enqueue({ kind: 'update', table: 'tasks', rowId: t.id, patch: on ? { status: 'done', done_by: state.user.id, done_at: t.done_at } : { status: 'todo' } }); redraw();
     });
