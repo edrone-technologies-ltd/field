@@ -98,6 +98,16 @@ export async function renderProject(el, id, tab = 'o') {
   }
 
   // ----- סקירה -----
+  // לו"ז דו-כיווני: מה שמתוכנן במאנדי מול מה ששובץ באפליקציה
+  const wdays = (a, b) => { let n = 0; for (let d = new Date(a + 'T12:00'); isoDay(d) <= b; d.setDate(d.getDate() + 1)) if (d.getDay() < 5) n++; return n || 1; };
+  function schedCard() {
+    if (!M || !p.planned_from || (p.planned_to || p.planned_from) < isoDay()) return '';
+    const fut = D.days.filter(d => d.day >= isoDay() && d.status !== 'done').map(d => d.day).sort();
+    const mr = p.planned_to && p.planned_to !== p.planned_from ? `${dm(p.planned_from)}–${dm(p.planned_to)}` : dayLabel(p.planned_from);
+    if (!fut.length) return `<div class="arow card-like warn"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>מתוכנן ${mr} · עוד לא שובץ צוות</b><small>מהלו"ז במאנדי</small></span><button class="btn primary sm" id="schm">שיבוץ</button></div>`;
+    if (fut[0] !== p.planned_from && p.planned_from >= isoDay()) return `<div class="arow card-like warn"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>במאנדי התאריך השתנה ל-${mr}</b><small>בשיבוץ: ${dm(fut[0])}${fut.length > 1 ? '–' + dm(fut.at(-1)) : ''}</small></span><button class="btn primary sm" id="schm">עדכון שיבוץ</button></div>`;
+    return '';
+  }
   function overview(box) {
     const tot = D.tasks.filter(x => x.status !== 'dropped').length, done = D.tasks.filter(x => x.status === 'done').length;
     const dDone = D.days.filter(d => d.status === 'done').length, f = D.fin, s = p.sites;
@@ -107,7 +117,7 @@ export async function renderProject(el, id, tab = 'o') {
     const appPlan = tot || D.days.length;
     const kv = (ic, label, val, act = '') => `<div class="lrow kv" ${act ? `data-act="${act}" role="button" tabindex="0"` : ''}><span class="mic">${icon(ic, 19)}</span><span class="grow"><small>${label}</small><b>${val}</b></span>${act ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</div>`;
     const tel = s?.contact_phone ? s.contact_phone.replace(/\D/g, '').replace(/^0/, '') : '';
-    box.innerHTML = `
+    box.innerHTML = `${schedCard()}
       <div class="kpis">${appPlan
         ? `<div class="kpi"><b>${tot ? Math.round(done / tot * 100) + '%' : '—'}</b><span>מהתכנית בוצע</span></div><div class="kpi"><b>${dDone}/${D.days.length}</b><span>ימי שטח</span></div><div class="kpi"><b>${open.length}</b><span>תקלות פתוחות</span></div>`
         : `${range ? `<div class="kpi"><b>${range}</b><span>לו"ז</span></div>` : ''}<div class="kpi"><b>${Math.max(Number(p.field_days_actual || 0), new Set(D.reps.map(r => r.report_date)).size)}${p.field_days_planned ? '/' + nf(p.field_days_planned) : ''}</b><span>ימי שטח</span></div><div class="kpi"><b>${D.reps.length}</b><span>דוחות שטח</span></div>`}</div>
@@ -132,6 +142,7 @@ export async function renderProject(el, id, tab = 'o') {
     if (phs.length) signedUrls('media', phs.map(o => o.x)).then(u => { const g = $('#gal'); if (g) { g.innerHTML = `<section><h3 class="sh">מהשטח</h3><div class="gallery">${phs.slice(0, 9).map(o => `<button data-z="${esc(u[o.x])}"><img src="${esc(u[o.x])}" alt="" loading="lazy"><span>${dm(o.d)}</span></button>`).join('')}</div></section>`; $$('[data-z]', g).forEach(b => b.onclick = () => zoom(b.dataset.z, '')); } });
     $$('[data-x]', box).forEach(b => b.onclick = () => closeIssue(b.dataset.x, () => overview(box)));
     $$('[data-act]', box).forEach(r => r.onclick = () => r.dataset.act === 'site' ? siteSheet() : notesSheet());
+    const sm = $('#schm', box); if (sm) sm.onclick = () => scheduleSheet({ start: p.planned_from < isoDay() ? isoDay() : p.planned_from, n: wdays(p.planned_from < isoDay() ? isoDay() : p.planned_from, p.planned_to || p.planned_from) });
     const sh = $('#share', box); if (sh) sh.onclick = shareSheet;
   }
   async function shareSheet() {
@@ -262,14 +273,14 @@ export async function renderProject(el, id, tab = 'o') {
         || '<div class="empty">אין ימי שטח משובצים.</div>'}`;
     const b = $('#sch'); if (b) b.onclick = scheduleSheet;
   }
-  async function scheduleSheet() {
+  async function scheduleSheet(pre = {}) {
     const { data: teams } = await sb.from('teams').select('id,name,pilot_id,operator_id,lead_id').eq('active', true).order('sort');
     const maxDay = Math.max(0, ...D.tasks.map(t => t.day_no || 0)) || Number(p.field_days_planned) || 1;
-    let start = (() => { const d = new Date(Date.now() + 864e5); while ([5, 6].includes(d.getDay())) d.setDate(d.getDate() + 1); return isoDay(d); })();
+    let start = pre.start || (() => { const d = new Date(Date.now() + 864e5); while ([5, 6].includes(d.getDay())) d.setDate(d.getDate() + 1); return isoDay(d); })();
     const leads = D.team.filter(x => ['crew_lead', 'ops_manager', 'admin'].includes(x.role));
     sheet(`<h3>שיבוץ ימי עבודה</h3>
       <label class="field">מתחילים ב-<input type="date" id="sd" value="${start}"></label>
-      <label class="field">מספר ימים<small>${D.tasks.length ? 'לפי התכנית' : 'אין תכנית — לפי ימי השטח המתוכננים'}. שבת מדולגת, שישי רק כשמסמנים</small><input type="number" id="sn" min="1" value="${maxDay}"></label>
+      <label class="field">מספר ימים<small>${D.tasks.length ? 'לפי התכנית' : 'אין תכנית — לפי ימי השטח המתוכננים'}. שבת מדולגת, שישי רק כשמסמנים</small><input type="number" id="sn" min="1" value="${pre.n || maxDay}"></label>
       ${(teams || []).length ? `<div class="field">צוות<small>בחירת צוות ממלאת ראש צוות וצוות — אפשר לשנות</small><div class="chips">${teams.map(t => `<button type="button" class="chip" data-team="${t.id}" aria-pressed="false">${esc(t.name)}</button>`).join('')}</div></div>` : ''}
       <label class="field">ראש צוות<select id="sl">${leads.map(x => `<option value="${x.id}">${esc(x.full_name)}</option>`).join('')}</select></label>
       <div class="field">צוות<div class="chips">${D.team.map(x => `<button class="chip" data-u="${x.id}" aria-pressed="false">${esc(x.full_name)}</button>`).join('')}</div></div>

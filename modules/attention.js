@@ -32,6 +32,19 @@ async function kbRows() {
   const due = (req || []).filter(x => !x.auto_done && !kbDone(x, vm.get(x.id)) && (x.required || ['crew', 'crew_lead'].includes(state.profile.role)));
   return due.length ? [{ k: 'kb', tone: '', ic: icon('play', 18), title: due.length > 1 ? `${due.length} הדרכות לצפייה` : 'הדרכה לצפייה', sub: due[0].title, href: due.length > 1 ? '#/kb' : `#/kb/${due[0].id}` }] : [];
 }
+// הנהלה: פרויקט שמתוכנן במאנדי ל-10 הימים הקרובים ועוד לא שובץ לו צוות באפליקציה
+async function schedRows() {
+  if (!['admin', 'ops_manager'].includes(state.profile.role)) return [];
+  const t = new Date(), iso = d => d.toISOString().slice(0, 10), today = iso(t), lim = iso(new Date(Date.now() + 10 * 864e5));
+  const { data } = await sb.from('projects').select('id,name,planned_from,planned_to,work_days(day,status)').neq('monday_group', 'group_mm5052gw')
+    .not('planned_from', 'is', null).lte('planned_from', lim).gte('planned_to', today);
+  const need = (data || []).filter(p => !(p.work_days || []).some(d => d.day >= today && d.status !== 'done'))
+    .sort((a, b) => a.planned_from < b.planned_from ? -1 : 1);
+  if (!need.length) return [];
+  const dm = d => `${+d.slice(8)}.${+d.slice(5, 7)}`;
+  return need.length === 1 ? [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `לשבץ צוות · ${dm(need[0].planned_from)}`, sub: need[0].name, href: `#/p/${need[0].id}` }]
+    : [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `${need.length} פרויקטים לשיבוץ צוות`, sub: need.map(p => `${dm(p.planned_from)} ${p.name.split(' — ')[0]}`).join(' · '), href: '#/projects' }];
+}
 async function pushRows() {
   const st = await pushState();
   if (st === 'off') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'התראות כבויות', sub: 'בלי זה לא תדעו על משימה או שיבוץ', btn: 'הפעלה' }];
@@ -41,7 +54,7 @@ async function pushRows() {
 
 export async function attention(box) {
   if (!box) return;
-  const parts = await Promise.all([newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
+  const parts = await Promise.all([schedRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   if (!items.length) { box.innerHTML = ''; return; }
