@@ -78,6 +78,7 @@ export async function renderVisitForm(el, pid, vid) {
       const { data, error } = vid ? await sb.from('project_visits').update(row).eq('id', vid).select('id').single() : await sb.from('project_visits').insert(row).select('id').single();
       if (error) { $('#vsave').disabled = false; return toast(error.message); }
       const n = await toChecklist(data.id, pid, f, who.id, who.due);
+      if (n && who.id) await share(data.id, [who.id]);
       toast(n ? `דוח הביקור נשמר · ${n} פריטים בצ'קליסט` : 'דוח הביקור נשמר'); location.replace(`#/visit/${data.id}`);
     };
   };
@@ -85,46 +86,67 @@ export async function renderVisitForm(el, pid, vid) {
 }
 
 // צפייה
+// הוספת צופים לדוח (מי ששויך לטפל רואה את הדוח)
+async function share(vid, users) {
+  const { data } = await sb.from('project_visits').select('viewers').eq('id', vid).single();
+  const all = [...new Set([...(data?.viewers || []), ...users])];
+  await sb.from('project_visits').update({ viewers: all }).eq('id', vid);
+}
+
 export async function renderVisit(el, id) {
+  const M = isManager();
   const { data: v } = await sb.from('project_visits').select('*, projects(id,name,site_id), profiles:visitor_id(full_name)').eq('id', id).maybeSingle();
   if (!v) { el.innerHTML = `<header class="phead">${backBtn('#/reports')}<h1>דוח ביקור</h1></header><div class="empty">הדוח לא נמצא.</div>`; return; }
   const F = v.findings || [], urls = await signedUrls('field', [...F, ...(v.todo || [])].flatMap(PH));
   const T = v.todo || [], open = pending({ findings: F, todo: T });
   // מצב הטיפול בשטח — מהמשימות עצמן (העובד מסמן "טופל" עם תמונת אחרי)
   const ids = [...F, ...T].map(x => x.task_id).filter(Boolean);
-  const { data: tk } = ids.length ? await sb.from('tasks').select('id,status,assignee_id,due,done_at,done_note,photos,profiles:assignee_id(full_name)').in('id', ids) : { data: [] };
+  const [{ data: tk }, { data: VW0 }] = await Promise.all([ids.length ? sb.from('tasks').select('id,title,project_id,status,assignee_id,due,done_at,done_note,photos,profiles:assignee_id(full_name)').in('id', ids) : { data: [] },
+    M && (v.viewers || []).length ? sb.from('profiles').select('id,full_name').in('id', v.viewers) : { data: [] }]);
+  const VW = VW0 || [];
   const TK = new Map((tk || []).map(t => [t.id, t]));
   Object.assign(urls, await signedUrls('field', (tk || []).flatMap(t => t.photos?.after || [])).catch(() => ({})));
   const live = [...TK.values()].filter(t => t.status !== 'dropped'), tot = live.length, dn = live.filter(t => t.status === 'done').length;
   const unas = live.filter(t => t.status !== 'done' && !t.assignee_id);
   const first = n => (n || '').split(' ')[0];
   const st = x => { const t = TK.get(x.task_id); if (!t) return '';
+    if (t.status !== 'done' && (t.assignee_id === state.user.id || !M)) return `<button class="btn primary sm" data-fix="${t.id}">טיפול</button>`;
     return t.status === 'done' ? `<span class="pill ok">טופל · ${dm(t.done_at.slice(0, 10))}</span>` : t.assignee_id ? `<span class="pill warn">אצל ${esc(first(t.profiles?.full_name))}${t.due ? ' · עד ' + dm(t.due) : ''}</span>` : '<span class="pill">ממתין לשיוך</span>'; };
   const row = (lbl, list) => list.length ? `<div class="small muted">${lbl}</div><div class="fphs">${list.map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : '';
   const shots = x => { const t = TK.get(x.task_id), aft = t?.photos?.after || [];
     return aft.length || t?.done_note ? `${row('לפני', PH(x))}${row('אחרי', aft)}${t?.done_note ? `<div class="small">${esc(t.done_note)}</div>` : ''}` : PH(x).length ? `<div class="fphs">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : ''; };
   const ring = (d, n) => `<div class="ring" style="--p:${Math.round(d / n * 100)}"><b>${d}/${n}</b></div>`;
-  el.innerHTML = `<header class="phead">${backBtn(`#/p/${v.project_id}/d`)}<h1 class="grow">${KIND[v.kind]}</h1><a class="chip" href="#/visit/edit/${v.project_id}/${v.id}">עריכה</a><a class="chip" href="#/visit/${v.id}/report">דוח</a></header>
+  el.innerHTML = `<header class="phead">${backBtn(`#/p/${v.project_id}/d`)}<h1 class="grow">${KIND[v.kind]}</h1>${M ? `<a class="chip" href="#/visit/edit/${v.project_id}/${v.id}">עריכה</a><a class="chip" href="#/visit/${v.id}/report">דוח</a>` : ''}</header>
     <div class="stack lg">
       <div class="card stack" style="gap:4px"><b>${esc(v.projects?.name || '')}</b><small class="muted">${dm(v.visit_date)} · ${esc(v.profiles?.full_name || '')}${v.participants ? ' · ' + esc(v.participants) : ''}</small>
-        ${v.rating ? `<div class="stars ro">${[1, 2, 3, 4, 5].map(n => `<span class="${v.rating >= n ? 'on' : ''}">★</span>`).join('')}</div>` : ''}</div>
-      ${tot ? `<div class="card row">${ring(dn, tot)}<div class="grow"><b>${dn === tot ? 'הכל טופל' : `טיפול בשטח · ${dn}/${tot}`}</b><div class="small muted">${unas.length ? `${unas.length} ממתינים לשיוך` : dn === tot ? '' : 'מתעדכן מהשטח'}</div></div>${unas.length ? `<button class="btn primary sm" id="vassign">שיוך לצוות</button>` : ''}</div>` : ''}
+        ${M ? `<button class="lrow vshare" id="vshare"><span class="grow small">${(v.viewers || []).length ? 'גלוי גם ל: ' + esc(VW.map(u => first(u.full_name)).join(', ')) : 'גלוי להנהלה בלבד'}</span><span class="chip sm">שיתוף</span></button>` : ''}
+        ${M && v.rating ? `<div class="stars ro">${[1, 2, 3, 4, 5].map(n => `<span class="${v.rating >= n ? 'on' : ''}">★</span>`).join('')}</div>` : ''}</div>
+      ${tot ? `<div class="card row">${ring(dn, tot)}<div class="grow"><b>${dn === tot ? 'הכל טופל' : `טיפול בשטח · ${dn}/${tot}`}</b><div class="small muted">${unas.length ? `${unas.length} ממתינים לשיוך` : dn === tot ? '' : 'מתעדכן מהשטח'}</div></div>${M && unas.length ? `<button class="btn primary sm" id="vassign">שיוך לצוות</button>` : ''}</div>` : ''}
       ${F.length ? `<section class="stack"><div class="sh-row"><h3 class="sh">ממצאים</h3><span class="count">${F.length}</span></div>
         ${F.map(x => `<div class="finding ro"><div class="row"><span class="pill ${SEV[x.sev]?.[1] || ''}">${SEV[x.sev]?.[0] || ''}</span><span class="grow"></span>${st(x)}</div>
           <div>${esc(x.text || '')}</div>${shots(x)}</div>`).join('')}</section>` : ''}
       ${T.length ? `<section class="stack"><h3 class="sh">צ'קליסט לצוות</h3>${T.map(x => `<div class="finding ro"><div class="row"><b class="grow">${esc(x.text)}</b>${st(x)}</div>${shots(x)}</div>`).join('')}</section>` : ''}
-      ${open.length ? `<button class="btn primary block" id="tochk">העברה לצ'קליסט הפרויקט (${open.length})</button>` : ''}
+      ${M && open.length ? `<button class="btn primary block" id="tochk">העברה לצ'קליסט הפרויקט (${open.length})</button>` : ''}
       ${v.client_feedback ? `<section class="stack"><h3 class="sh">מה הלקוח אמר</h3><div class="card">${esc(v.client_feedback).replace(/\n/g, '<br>')}</div></section>` : ''}
       ${v.summary ? `<section class="stack"><h3 class="sh">סיכום</h3><div class="card">${esc(v.summary).replace(/\n/g, '<br>')}</div></section>` : ''}
     </div>`;
   $$('.fph').forEach(i => i.onclick = () => zoom(i.src, ''));
+  $$('[data-fix]').forEach(b => b.onclick = async () => (await import('./tasks.js')).completeTask(TK.get(b.dataset.fix), () => renderVisit(el, id)));
+  const vs = $('#vshare'); if (vs) vs.onclick = async () => {
+    const U = await team(), on = new Set(v.viewers || []);
+    sheet(`<h3>מי עוד רואה את הדוח?</h3><div class="small muted">ההנהלה רואה תמיד. הציון נשאר להנהלה.</div><div class="chips">${U.filter(u => !['admin', 'ops_manager'].includes(u.role)).map(u => `<button type="button" class="chip" data-v="${u.id}" aria-pressed="${on.has(u.id)}">${esc(u.full_name)}</button>`).join('')}</div>
+      <button class="btn primary block" id="vsok">שמירה</button>`, (s2, close) => {
+      $$('[data-v]', s2).forEach(c => c.onclick = () => { on.has(c.dataset.v) ? on.delete(c.dataset.v) : on.add(c.dataset.v); c.setAttribute('aria-pressed', on.has(c.dataset.v)); });
+      $('#vsok', s2).onclick = async () => { const { error } = await sb.from('project_visits').update({ viewers: [...on] }).eq('id', v.id); if (error) return toast(error.message); close(); toast('נשמר'); renderVisit(el, id); };
+    });
+  };
   const va = $('#vassign'); if (va) va.onclick = async () => {
     const U = await team();
     sheet(`<h3>למי לטפל?</h3><div class="small muted">${unas.length} פריטים</div><div class="list">${U.map(u => `<button class="lrow" data-u="${u.id}"><b class="grow">${esc(u.full_name)}</b></button>`).join('')}</div>
       <label class="field">עד מתי (לא חובה)<input type="date" id="adue"></label><button class="btn ghost block" data-close>ביטול</button>`, (s2, close) => {
       $$('[data-u]', s2).forEach(x => x.onclick = async () => {
         const { error } = await sb.from('tasks').update({ assignee_id: x.dataset.u, due: $('#adue', s2).value || null }).in('id', unas.map(t => t.id));
-        if (error) return toast(error.message); close(); toast('שויך — נשלחה התראה אחת'); renderVisit(el, id);
+        if (error) return toast(error.message); await share(v.id, [x.dataset.u]); close(); toast('שויך — נשלחה התראה אחת'); renderVisit(el, id);
       });
     });
   };
