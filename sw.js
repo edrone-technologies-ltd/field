@@ -1,7 +1,6 @@
 // Service worker: האפליקציה נפתחת גם בלי קליטה, ותמונות שכבר נצפו זמינות מהטלפון.
-const VERSION = 'edrone-field-v83';
-const SHELL = ['./', 'index.html', 'tour/ops.html', 'styles.css', 'app.js', 'config.js', 'lib/core.js', 'lib/store.js', 'lib/track.js', 'lib/contacts.js', 'modules/weather.js', 'lib/wx.js',
-  'modules/specs.js', 'modules/chat.js', 'modules/admin.js', 'modules/home.js', 'modules/today.js', 'modules/projects.js', 'modules/equipment.js', 'modules/inbox.js', 'modules/reports.js', 'modules/attendance.js', 'lib/labor.js', 'lib/pay.js', 'modules/files.js', 'modules/staff.js', 'modules/purchase.js', 'modules/expenses.js', 'modules/clientreport.js', 'modules/dispatch.js', 'lib/sun.js', 'lib/viewer.js', 'lib/audit.js', 'modules/tasks.js', 'modules/knowledge.js', 'modules/onboarding.js', 'modules/news.js', 'modules/attention.js', 'modules/visits.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png'];
+const VERSION = 'edrone-field-v84';
+const SHELL = ['./', 'index.html', 'tour/ops.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png', 'lib/audit.js', 'lib/contacts.js', 'lib/core.js', 'lib/labor.js', 'lib/pay.js', 'lib/store.js', 'lib/sun.js', 'lib/track.js', 'lib/viewer.js', 'lib/wx.js', 'modules/activity.js', 'modules/admin.js', 'modules/attendance.js', 'modules/attention.js', 'modules/chat.js', 'modules/clientreport.js', 'modules/clients.js', 'modules/dispatch.js', 'modules/equipment.js', 'modules/expenses.js', 'modules/files.js', 'modules/home.js', 'modules/inbox.js', 'modules/knowledge.js', 'modules/news.js', 'modules/onboarding.js', 'modules/plan.js', 'modules/projects.js', 'modules/purchase.js', 'modules/reports.js', 'modules/specs.js', 'modules/staff.js', 'modules/tasks.js', 'modules/today.js', 'modules/tour.js', 'modules/visits.js', 'modules/weather.js'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => {
@@ -23,9 +22,12 @@ self.addEventListener('fetch', e => {
   // קבצי האפליקציה: רשת קודם (לעדכונים), מטמון כשאין קליטה
   if (u.origin === location.origin || u.hostname.endsWith('jsdelivr.net') || u.hostname.includes('fonts.')) {
     // תמיד בודקים מול השרת (no-cache) — כדי שקבצי גרסה ישנה וחדשה לא יתערבבו אחרי עדכון
-    const fresh = e.request.mode === 'navigate' ? fetch(e.request.url, { cache: 'no-cache' }) : fetch(new Request(e.request, { cache: 'no-cache' }));
-    e.respondWith(fresh.then(r => { if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); } return r; })
-      .catch(() => caches.match(e.request).then(h => h || caches.match('index.html'))));
+    // קליטה חלשה: אם השרת לא עונה תוך 3 שניות ויש עותק בטלפון — מגישים אותו (הרשת ממשיכה ברקע ומעדכנת את המטמון)
+    const fresh = (e.request.mode === 'navigate' ? fetch(e.request.url, { cache: 'no-cache' }) : fetch(new Request(e.request, { cache: 'no-cache' })))
+      .then(r => { if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); } return r; });
+    const cached = () => caches.match(e.request).then(h => h || (e.request.mode === 'navigate' ? caches.match('index.html') : undefined));
+    const slow = new Promise(ok => setTimeout(ok, 3000)).then(cached).then(h => h || fresh);
+    e.respondWith(Promise.race([fresh, slow]).catch(() => cached().then(h => h || Response.error())));
   }
 });
 
