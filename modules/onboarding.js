@@ -31,22 +31,13 @@ const STEP = {
 };
 const short = t => t.replace(/ \(.*\)/, '');
 export async function renderOnboarding(el) {
-  el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>הקליטה שלי</h1></header><div class="skel"></div>`;
-  const items = await status(state.user.id), d = items.filter(x => x.done).length;
-  const mine = items.filter(x => !OFFICE.includes(x.key) && !x.done), off = items.filter(x => OFFICE.includes(x.key));
-  el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>הקליטה שלי</h1></header>
-    <div class="stack lg onbpage">
-      <div class="onbhero">${ring(d, items.length)}<div class="grow"><b>${d === items.length ? 'הכל מוכן — ברוך הבא לצוות' : mine.length ? `עוד ${mine.length} ${mine.length === 1 ? 'צעד' : 'צעדים'} ממך` : 'סיימת את החלק שלך'}</b><small>${d === items.length ? 'אפשר להתחיל לעבוד' : 'מה שנשאר — אצל המשרד'}</small></div></div>
-      <section class="stack"><h3 class="sh">מה עליך לעשות</h3>
-        ${mine.length ? mine.map(x => { const t = STEP[x.key] || { ic: 'clipboard', help: () => '', btn: '' };
-          return `<div class="step"><span class="sic">${icon(t.ic, 20)}</span><span class="grow"><b>${esc(x.title)}</b><small>${esc(t.help(x))}</small></span>${t.push ? `<button class="btn primary sm" data-push>${t.btn}</button>` : t.href ? `<a class="btn primary sm" href="${t.href}">${t.btn}</a>` : ''}</div>`; }).join('')
-          : '<div class="donenote">✓ סיימת את כל מה שעליך</div>'}
-      </section>
-      <section class="stack"><h3 class="sh">מה המשרד משלים</h3>
-        <div class="offlist">${off.map(x => `<div class="${x.done ? 'ok' : ''}"><i>${x.done ? '✓' : ''}</i><span>${esc(short(x.title))}</span></div>`).join('')}</div>
-        <div class="small muted">לידיעה — אין צורך לעשות כלום. זה מתעדכן כאן כשהמשרד משלים.</div>
-      </section>
-    </div>`;
+  el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>לפני שמתחילים</h1></header><div class="skel"></div>`;
+  const items = await status(state.user.id);
+  const mine = items.filter(x => ['training', 'sign', 'push'].includes(x.key) && !x.done);
+  el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>לפני שמתחילים</h1></header>
+    <div class="stack onbpage">${mine.length ? mine.map(x => { const t = STEP[x.key] || { ic: 'clipboard', help: () => '', btn: '' };
+      return `<div class="step"><span class="sic">${icon(t.ic, 20)}</span><span class="grow"><b>${esc(x.title)}</b>${x.missing?.length ? `<small>${esc(x.missing.join(' · '))}</small>` : ''}</span>${t.push ? `<button class="btn primary sm" data-push>${t.btn}</button>` : t.href ? `<a class="btn primary sm" href="${t.href}">${t.btn}</a>` : ''}</div>`; }).join('')
+      : '<div class="donenote">✓ הכל מוכן</div>'}</div>`;
   bind(el, state.user.id, () => renderOnboarding(el));
 }
 

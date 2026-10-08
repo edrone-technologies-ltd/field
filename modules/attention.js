@@ -18,9 +18,9 @@ async function onbRows() {
   if (!['crew', 'crew_lead'].includes(state.profile.role)) return [];   // קליטה = עובדי שטח בלבד
   const { status } = await import('./onboarding.js');
   const items = await status(state.user.id);
-  const mine = items.filter(x => !x.done && x.who === 'self' && !['id', 'form101', 'drive', 'height'].includes(x.key) && x.key !== 'push');
+  const mine = items.filter(x => !x.done && ['training', 'sign'].includes(x.key));   // רק צעדים שהעובד עושה בעצמו (התראות — שורה משלה)
   if (!mine.length) return [];
-  return [{ k: 'onb', tone: '', ic: icon('clipboard', 18), title: `השלמת קליטה · ${items.filter(x => x.done).length}/${items.length}`, sub: 'הבא: ' + mine[0].title, href: '#/onboarding' }];
+  return [{ k: 'onb', tone: '', ic: icon('clipboard', 18), title: 'לפני שמתחילים', sub: mine.length > 1 ? `${mine.length} צעדים קצרים` : mine[0].title, href: '#/onboarding' }];
 }
 async function kbRows() {
   const { kbDone } = await import('./knowledge.js');
