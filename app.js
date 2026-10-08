@@ -173,7 +173,12 @@ async function routeInner() {
     case 'site': if (guard('specs')) return (await import('./modules/specs.js')).renderSite(app, h[1], h[2] === 'chat' ? 'c' : 'b'); return;
     case 'b': if (guard('specs')) return (await import('./modules/specs.js')).renderBuilding(app, h[1], h[2]); return;
     case 'admin': if (guard('admin')) return (await import('./modules/admin.js')).renderAdmin(app); return;
-    default: location.hash = '#/';
+    default: {
+      // מסך שהגרסה הטעונה לא מכירה = גרסה חדשה כבר באוויר. טוענים מחדש פעם אחת באותו מסך, ולא זורקים לבית
+      const k = 'rr:' + h[0]; let tried = false; try { tried = sessionStorage.getItem(k) === '1'; sessionStorage.setItem(k, '1'); } catch { /* */ }
+      if (!tried) { location.reload(); return; }
+      location.hash = '#/';
+    }
   }
 }
 
