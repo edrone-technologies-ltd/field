@@ -11,7 +11,13 @@ export async function renderTour(el, name = 'ops') {
     signedUrls('kb', SHOTS.map(s => `tours/${name}/${s}.jpg`))]);
   const U = Object.fromEntries(SHOTS.map(s => [s + '.jpg', urls[`tours/${name}/${s}.jpg`]]));
   const doc = `<!doctype html><html lang="he"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="${location.href.split('#')[0].replace(/[^/]*$/, '')}"><style>:root{padding:0}body{margin:0}</style><script>window.__U=${JSON.stringify(U)}<\/script></head><body>${html}</body></html>`;
-  el.innerHTML = `<div class="tourbar"><a class="back" href="#/kb" aria-label="חזרה">${icon('back', 20)}</a><b>הדרכת מנהל תפעול</b></div><iframe class="tourframe" title="הדרכה" sandbox="allow-scripts allow-same-origin"></iframe>`;
-  el.querySelector('iframe').srcdoc = doc;
+  // מסך מלא מעל האפליקציה (בלי כותרת ובלי הסרגל התחתון) + כפתור סגירה
+  document.querySelector('.tourfs')?.remove();
+  const fs = document.createElement('div'); fs.className = 'tourfs';
+  fs.innerHTML = `<iframe title="הדרכה" sandbox="allow-scripts allow-same-origin"></iframe><button type="button" class="tourx" aria-label="סגירה">×</button>`;
+  document.body.appendChild(fs); el.innerHTML = '';
+  fs.querySelector('iframe').srcdoc = doc;
+  fs.querySelector('.tourx').onclick = () => { fs.remove(); location.hash = '#/'; };
+  addEventListener('hashchange', () => fs.remove(), { once: true });
   sb.from('kb_items').select('id').eq('video_url', `#/tour/${name}`).maybeSingle().then(({ data }) => data && sb.from('kb_views').insert({ item_id: data.id, user_id: state.user.id }).then(() => {}));
 }

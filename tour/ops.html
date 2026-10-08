@@ -105,8 +105,32 @@ h1{font-family:var(--display);font-weight:400;font-size:clamp(1.6rem,3.4vw,2.3re
   .wrap{grid-template-columns:minmax(0,1fr);gap:18px}
   .stage{order:1;position:static}
   .panel{order:2}
-  .phone{width:min(70vw,300px,calc((100svh - 330px) * .462));min-width:190px}
   .say{min-height:0}
+}
+/* טלפון: מסך אחד בלי גלילה — פס התקדמות למעלה, המסך באמצע (מותאם לגובה שנשאר), הסבר ובקרות למטה */
+@media (max-width:600px){
+  html,body{height:100%;overflow:hidden}
+  .wrap{display:flex;flex-direction:column;height:100dvh;max-width:none;padding:calc(env(safe-area-inset-top,0px) + 10px) 12px calc(env(safe-area-inset-bottom,0px) + 10px);gap:8px}
+  header.top,.chapters,.hint,.tag{display:none}
+  .panel{display:contents}
+  .bar{order:1;flex:none;height:4px;margin-inline:0 56px;margin-top:14px}
+  .stage{order:2;flex:1 1 auto;min-height:0;position:static;display:flex;justify-content:center;align-items:center}
+  .phone{height:100%;width:auto;max-width:100%;aspect-ratio:390/844;padding:5px;border-radius:24px;margin-inline:auto}
+  .screen{inset:5px;border-radius:19px}
+  .notch{display:none}
+  .say{order:3;flex:none;min-height:0;max-height:42dvh;overflow:auto;padding:12px 14px;border-radius:18px;gap:6px}
+  .say .who{display:none}
+  .say .eyebrow{font-size:.72rem}
+  .say h2{font-size:1.08rem}
+  .say p{font-size:.9rem;line-height:1.5}
+  .choice{gap:6px} .choice .q{font-size:.92rem} .choice button{padding:8px 10px;font-size:.86rem;border-radius:12px}
+  .react{font-size:.86rem;padding:9px 11px}
+  .go{padding:10px 18px;font-size:.95rem}
+  .ctrl{order:4;flex:none;gap:8px;flex-wrap:nowrap}
+  .ctrl button{padding:9px 12px;border-radius:12px;font-size:.88rem}
+  .ctrl button.main{min-width:0;flex:1}
+  .ctrl .count{font-size:.78rem}
+  .push{top:10px}
 }
 @media (prefers-reduced-motion: reduce){
   .finger,.screen img.sc,.push,.hl,.toast,.splash{transition:none}
