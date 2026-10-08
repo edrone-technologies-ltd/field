@@ -17,7 +17,7 @@ export async function renderExpenses(el) {
   const row = (r, decide) => { const [t, c] = ST[r.status];
     return `<div class="lrow xrow">${r.receipt_path && urls[r.receipt_path] ? `<img src="${esc(urls[r.receipt_path])}" alt="קבלה" data-z="${esc(urls[r.receipt_path])}">` : `<span class="rep-ph">${icon('report', 20)}</span>`}
       <span class="grow"><b>${nis(r.amount)} · ${CATS[r.category]}</b><small>${dm(r.day)}${r.vendor ? ' · ' + esc(r.vendor) : ''}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}${decide ? ' · ' + esc(r.profiles?.full_name || '') : ''}</small>
-      ${r.note ? `<small>${esc(r.note)}</small>` : ''}${r.manager_reply ? `<small class="mreply">תגובה: ${esc(r.manager_reply)}</small>` : ''}</span>
+      ${r.note ? `<small>${esc(r.note)}</small>` : ''}${r.manager_reply ? `<small class="mreply">תגובה: ${esc(r.manager_reply)}</small>` : ''}${M && r.morning_status === 'sent' ? '<small class="ok">במורנינג ✓</small>' : M && r.morning_error && r.morning_tries >= 5 ? '<small class="err">לא נשלח למורנינג</small>' : ''}</span>
       ${decide ? `<span class="stack" style="gap:4px"><button class="chip" data-ok="${r.id}">אישור</button><button class="chip" data-no="${r.id}">דחייה</button></span>` : `<span class="pill ${c}">${t}</span>`}</div>`; };
   const monthTot = mine.filter(r => r.day.slice(0, 7) === isoDay().slice(0, 7) && r.status !== 'rejected').reduce((t, r) => t + Number(r.amount), 0);
   $('#xb').innerHTML = `${pend.length ? `<section><div class="sh-row"><h3 class="sh">לאישור</h3><span class="count">${pend.length}</span></div><div class="list">${pend.map(r => row(r, true)).join('')}</div></section>` : ''}
