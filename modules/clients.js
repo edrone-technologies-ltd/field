@@ -52,7 +52,7 @@ export async function renderClient(el, id) {
         <div class="list">${s.projects.map(prow).join('') || '<div class="small muted" style="padding:12px">עוד אין עבודות באתר</div>'}</div></section>`).join('')}
       ${noSite.length ? `<section class="stack"><h3 class="sh">עבודות בלי אתר</h3><div class="list">${noSite.map(prow).join('')}</div></section>` : ''}
       ${years.length > 1 ? `<div class="small muted">עבודות לפי שנה: ${years.map(y => `${y} — ${P.filter(p => yr(p) === y).length}`).join(' · ')}</div>` : ''}
-      ${(sib || []).length ? `<section class="stack"><h3 class="sh">נכסים נוספים בקבוצת ${esc(c.grp)}</h3><div class="list">${sib.map(x => `<a class="lrow" href="#/client/${x.id}"><span class="grow">${esc(x.name)}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
+      ${(sib || []).length ? `<section class="stack"><h3 class="sh">עוד בקבוצת ${esc(c.grp)}</h3><div class="list">${sib.map(x => `<a class="lrow" href="#/client/${x.id}"><span class="grow">${esc(x.name)}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
     </div>`;
   import('../lib/contacts.js').then(m => m.renderContacts($('#cctc'), { clientId: c.id, org: c.name }));
 }
