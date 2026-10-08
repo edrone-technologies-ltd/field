@@ -1,6 +1,7 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
 import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls , folderGrid, coverArt } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
+import { airBtn } from '../lib/wx.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
 const DENS = ['נמוכה', 'בינונית', 'גבוהה'];
@@ -119,7 +120,7 @@ function bindSiteTools(s, opts = {}) {
 function siteLocHtml(s) {
   return `<div class="card siteloc" id="siteloc">${s.lat ? `<div class="row"><span class="mic ok">${icon('pin', 19)}</span><span class="grow"><b>מיקום האתר נשמר</b><small class="muted">${s.geo_source === 'manual' ? 'נשמר בשטח' : s.geo_source === 'map' ? 'ננעץ במפה' : 'משוער'}${s.geo_at ? ' · ' + new Date(s.geo_at).toLocaleDateString('he-IL') : ''} · <a href="https://www.google.com/maps?q=${s.lat},${s.lng}" target="_blank" rel="noopener">מפה</a></small></span><button class="chip" id="locset">עדכון</button></div>${navButtons(s.lat, s.lng)}<div id="wx3" class="wx3"></div>`
     : `<div class="row"><span class="mic">${icon('pin', 19)}</span><span class="grow"><b>שמירת מיקום האתר</b><small class="muted">הכי מדויק: עומדים באתר ולוחצים. אפשר גם לנעוץ במפה</small></span></div>
-      <div class="row-btns"><button class="btn primary" id="locset">אני באתר</button><button class="btn ghost" id="locmap">${icon('pin', 16)} מהמפה</button></div>`}${s.lat ? '<button class="more" id="locmap" style="border:0;background:none;cursor:pointer;padding:6px 0 0">תיקון במפה</button>' : ''}</div>`;
+      <div class="row-btns"><button class="btn primary" id="locset">אני באתר</button><button class="btn ghost" id="locmap">${icon('pin', 16)} מהמפה</button></div>`}${s.lat ? '<button class="more" id="locmap" style="border:0;background:none;cursor:pointer;padding:6px 0 0">תיקון במפה</button>' : ''}${airBtn('sm')}</div>`;
 }
 function bindSiteLoc(s) {
   const redraw = () => { const c = $('#siteloc'); if (c) { c.outerHTML = siteLocHtml(s); bindSiteLoc(s); } };
