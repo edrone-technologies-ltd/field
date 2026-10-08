@@ -767,3 +767,5 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .dempty{padding:2px 2px 4px}
 .dgrid thead th:first-child{position:sticky;right:0;background:var(--bg);z-index:2}
 .ctc a.chip{text-decoration:none} .ctc.off{opacity:.55}
+.mapbox{height:52vh;min-height:260px;border-radius:14px;overflow:hidden;border:1px solid var(--line);margin:8px 0;direction:ltr}
+.siteloc .row-btns{margin-top:8px}

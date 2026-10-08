@@ -117,12 +117,14 @@ function bindSiteTools(s, opts = {}) {
 }
 
 function siteLocHtml(s) {
-  return `<div class="card siteloc" id="siteloc">${s.lat ? `<div class="row"><span class="mic ok">${icon('pin', 19)}</span><span class="grow"><b>מיקום האתר נשמר</b><small class="muted">${s.geo_source === 'manual' ? 'נשמר בשטח' : 'משוער'}${s.geo_at ? ' · ' + new Date(s.geo_at).toLocaleDateString('he-IL') : ''} · <a href="https://www.google.com/maps?q=${s.lat},${s.lng}" target="_blank" rel="noopener">מפה</a></small></span><button class="chip" id="locset">עדכון</button></div>${navButtons(s.lat, s.lng)}<div id="wx3" class="wx3"></div>`
-    : `<div class="row"><span class="mic">${icon('pin', 19)}</span><span class="grow"><b>שמירת מיקום האתר</b><small class="muted">עומדים באתר ולוחצים — לתחזית רוח ולתכנון שמש בביצוע</small></span><button class="btn primary sm" id="locset">שמירה</button></div>`}</div>`;
+  return `<div class="card siteloc" id="siteloc">${s.lat ? `<div class="row"><span class="mic ok">${icon('pin', 19)}</span><span class="grow"><b>מיקום האתר נשמר</b><small class="muted">${s.geo_source === 'manual' ? 'נשמר בשטח' : s.geo_source === 'map' ? 'ננעץ במפה' : 'משוער'}${s.geo_at ? ' · ' + new Date(s.geo_at).toLocaleDateString('he-IL') : ''} · <a href="https://www.google.com/maps?q=${s.lat},${s.lng}" target="_blank" rel="noopener">מפה</a></small></span><button class="chip" id="locset">עדכון</button></div>${navButtons(s.lat, s.lng)}<div id="wx3" class="wx3"></div>`
+    : `<div class="row"><span class="mic">${icon('pin', 19)}</span><span class="grow"><b>שמירת מיקום האתר</b><small class="muted">הכי מדויק: עומדים באתר ולוחצים. אפשר גם לנעוץ במפה</small></span></div>
+      <div class="row-btns"><button class="btn primary" id="locset">אני באתר</button><button class="btn ghost" id="locmap">${icon('pin', 16)} מהמפה</button></div>`}${s.lat ? '<button class="more" id="locmap" style="border:0;background:none;cursor:pointer;padding:6px 0 0">תיקון במפה</button>' : ''}</div>`;
 }
 function bindSiteLoc(s) {
   const redraw = () => { const c = $('#siteloc'); if (c) { c.outerHTML = siteLocHtml(s); bindSiteLoc(s); } };
-  const b = $('#locset'); if (!b) return;
+  const mb = $('#locmap'); if (mb) mb.onclick = () => pickOnMap(s, redraw);
+  const b = $('#locset'); if (!b) { if (s.lat) wx3(s); return; }
   b.onclick = () => {
     if (!navigator.geolocation) return toast('הטלפון לא תומך במיקום');
     b.disabled = true; b.textContent = 'מאתר…';
@@ -135,6 +137,49 @@ function bindSiteLoc(s) {
     }, () => { b.disabled = false; b.textContent = 'שמירה'; toast('לא התקבלה הרשאת מיקום'); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   };
   if (s.lat) wx3(s);
+}
+// נעיצת מיקום במפה: חיפוש כתובת, מפה/לוויין, לחיצה או גרירה של הסיכה
+async function loadLeaflet() {
+  if (window.L) return window.L;
+  const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
+  await new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); });
+  return window.L;
+}
+async function pickOnMap(s, done) {
+  if (!navigator.onLine) return toast('המפה דורשת קליטה');
+  let L; try { L = await loadLeaflet(); } catch { return toast('המפה לא נטענה'); }
+  sheet(`<h3>מיקום ${esc(s.name)}</h3>
+    <div class="row"><input type="search" id="mq" class="grow" placeholder="חיפוש כתובת או מקום" value="${esc(s.address || '')}"><button class="btn ghost sm" id="mqs">חיפוש</button></div>
+    <div id="mres" class="list"></div>
+    <div id="mapbox" class="mapbox"></div>
+    <div class="row"><small class="grow muted" id="mhint">לחיצה על המפה = נעיצה. אפשר לגרור את הסיכה</small><button class="chip sm" id="msat">לוויין</button></div>
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="msave" disabled>שמירת המיקום</button></div>`, (sh, close) => {
+    const start = s.lat ? [s.lat, s.lng] : [31.6, 34.9];
+    const map = L.map($('#mapbox', sh), { zoomControl: true }).setView(start, s.lat ? 17 : 8);
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: '© Esri' });
+    let mk = null, pos = null;
+    const put = ll => { pos = ll; if (mk) mk.setLatLng(ll); else { mk = L.marker(ll, { draggable: true }).addTo(map); mk.on('dragend', () => { pos = mk.getLatLng(); }); } $('#msave', sh).disabled = false; };
+    if (s.lat) put(L.latLng(s.lat, s.lng));
+    map.on('click', e => put(e.latlng));
+    setTimeout(() => map.invalidateSize(), 250);
+    $('#msat', sh).onclick = () => { if (map.hasLayer(sat)) { map.removeLayer(sat); osm.addTo(map); $('#msat', sh).textContent = 'לוויין'; } else { map.removeLayer(osm); sat.addTo(map); $('#msat', sh).textContent = 'מפה'; } };
+    const find = async () => {
+      const q = $('#mq', sh).value.trim(); if (!q) return;
+      try {
+        const r = await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=il&accept-language=he&q=${encodeURIComponent(q)}`)).json();
+        $('#mres', sh).innerHTML = r.length ? r.map((x, i) => `<button class="lrow" data-r="${i}"><span class="grow small">${esc(x.display_name)}</span></button>`).join('') : '<div class="small muted">לא נמצא — נסו ניסוח אחר או נעצו ידנית</div>';
+        $$('[data-r]', sh).forEach(b => b.onclick = () => { const x = r[+b.dataset.r]; const ll = L.latLng(+x.lat, +x.lon); map.setView(ll, 18); put(ll); $('#mres', sh).innerHTML = ''; });
+      } catch { toast('החיפוש לא זמין כרגע — נעצו ידנית'); }
+    };
+    $('#mqs', sh).onclick = find; $('#mq', sh).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); find(); } };
+    $('#msave', sh).onclick = async () => {
+      if (!pos) return;
+      const { error } = await sb.rpc('set_site_location', { s: s.id, la: pos.lat, ln: pos.lng, acc: null, src: 'map' });
+      if (error) return toast(error.message);
+      Object.assign(s, { lat: pos.lat, lng: pos.lng, geo_source: 'map', geo_at: new Date().toISOString() }); close(); toast('מיקום האתר נשמר'); done();
+    };
+  });
 }
 // תחזית 3 ימים לאתר (רוח ומשבים בשעות העבודה)
 async function wx3(s) {
