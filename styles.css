@@ -758,3 +758,11 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .db{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:2px}
 .db i{width:70%;background:#7FB800;border-radius:6px 6px 2px 2px;min-height:2px} .db .n{font-size:.7rem;font-weight:700} .db small{font-size:.62rem;color:var(--muted)}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+/* לוח שיבוץ בטלפון: יום אחרי יום */
+.dday{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.dday.today{box-shadow:inset 0 0 0 2px var(--lime)}
+.ddh{display:flex;align-items:center;gap:8px}
+.dline{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:var(--bg);text-decoration:none;color:inherit}
+.dline small{display:block;color:var(--muted);font-size:.8rem} .dline.need{background:#FFF6E5} .dline.done{opacity:.7}
+.dempty{padding:2px 2px 4px}
+.dgrid thead th:first-child{position:sticky;right:0;background:var(--bg);z-index:2}
