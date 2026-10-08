@@ -2,7 +2,7 @@
 // וציר שעות לניתוח היום. בהשראת UAV Forecast. ספים כמו בשיבוץ. הצבעים מבוססי שקיפות — קריאים גם בבהיר וגם בכהה.
 import { sb, $, $$, esc, icon, backBtn, dm, HE_D1, replaceHash } from '../lib/core.js';
 
-import { ARCH, T, VERDICT, kpSeries, forecast, hourData, dayLevel } from '../lib/wx.js';
+import { ARCH, T, VERDICT, kpSeries, forecast, hourData, dayLevel, airBtn } from '../lib/wx.js';
 
 async function sitesList() {
   const { data } = await sb.from('projects').select('id,name,status_label,monday_group,planned_from,site_id,sites(id,slug,name,lat,lng,address)').not('site_id', 'is', null);
@@ -81,6 +81,7 @@ export async function renderWeather(el, siteId = '') {
     $('#wxbody', el).innerHTML = `
       <div class="wxv l${d.L}"><b>${VERDICT[d.L]}</b><small>${esc(s.name)} · ${HE_D1[new Date(day + 'T12:00').getDay()]} ${dm(day)} · ${d.t.slice(11, 16)}</small></div>
       ${(s.projects || []).length ? `<div class="wxproj">${s.projects.map(p => `<a class="chip sm" href="#/p/${p.id}">${esc(p.name.replace(/^[^—]*—\s*/, '').slice(0, 34) || p.name)}${p.from ? ' · ' + dm(p.from) : ''}</a>`).join('')}</div>` : ''}
+      ${airBtn()}
       <div class="wxtiles">${tile('w', 'רוח', Math.round(d.w), 'קמ״ש')}${tile('g', 'משבים', Math.round(d.g), 'קמ״ש')}${tile('r', 'גשם', d.r == null ? null : d.r.toFixed(1), 'מ״מ')}${tile('p', 'סבירות לגשם', d.p, '%')}${tile('kp', 'Kp', d.kp, d.kp >= 5 ? 'סערה' : d.kp >= 4 ? 'מוגבר' : 'שקט')}</div>
       <div class="wxhours" id="wxh">${idx.map(i => { const h = hourData(F, K, i); return `<button class="wxh l${h.L} ${i === hi ? 'on' : ''}" data-h="${i}"><small>${h.t.slice(11, 13)}</small><i style="height:${Math.min(100, Math.round(h.g / 50 * 100))}%"></i><b>${Math.round(h.g)}</b></button>`; }).join('')}</div>
       <div class="small muted wxhint">גובה העמודה = משבים · הצבע = המצב הכולל באותה שעה · הקשה על שעה מציגה אותה</div>
