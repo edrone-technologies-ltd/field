@@ -9,6 +9,7 @@ export const TYPES = [
   { k: 'issue', ic: 'alert', t: 'תקלה / אירוע בטיחות', s: 'רחפן, ציוד, אתר, כמעט תאונה', ok: () => true },
   { k: 'expense', ic: 'report', t: 'הוצאה', s: 'דלק, חניה, אגרה, אוכל, לינה — עם צילום קבלה', ok: () => true },
   { k: 'signoff', ic: 'clipboard', t: 'החתמת לקוח — אישור ביצוע', s: 'הלקוח מאשר וחותם באצבע', ok: ROLE_CAN_SIGN },
+  { k: 'visit', ic: 'users', t: 'דוח ביקור / ביקורת', s: 'ביקורת צוות, סיור עם לקוח, בקרת איכות', ok: isManager },
   { k: 'summary', ic: 'shield', t: 'סיכום פרויקט פנימי', s: 'איכות, תקלות, פתרונות ולקחים', ok: isManager },
 ];
 
@@ -44,6 +45,7 @@ export function open(k, pid, back) {
   if (k === 'expense') return import('./expenses.js').then(m => m.newExpense(pid, null, back));
   if (k === 'signoff') location.hash = '#/signoff/' + pid;
   if (k === 'summary') location.hash = '#/summary/' + pid;
+  if (k === 'visit') location.hash = '#/visit/new/' + pid;
 }
 function dailyDate(pid, back) {
   const t = isoDay(), y = isoDay(new Date(Date.now() - 864e5));
@@ -151,11 +153,13 @@ export async function reportsTab(box, D, { reload, schedule }) {
   const M = isManager(), pid = D.p.id, t = isoDay();
   box.innerHTML = `<button class="btn primary block big" id="nr">${icon('plus', 20)} דוח חדש</button><div id="rlist" class="stack"><div class="skel"></div></div>`;
   $('#nr').onclick = () => pickType(pid);
-  const [{ data: sos }, { data: sum }, { data: ph }] = await Promise.all([
+  const [{ data: sos }, { data: sum }, { data: ph }, { data: vis }] = await Promise.all([
     sb.from('project_signoffs').select('*').eq('project_id', pid).order('created_at', { ascending: false }),
     M ? sb.from('project_summaries').select('*').eq('project_id', pid).maybeSingle() : Promise.resolve({ data: null }),
     sb.from('photos').select('storage_path,kind,work_day_id').eq('project_id', pid).in('kind', ['after', 'before']).order('created_at'),
+    M ? sb.from('project_visits').select('id,kind,visit_date,findings,rating,profiles:visitor_id(full_name)').eq('project_id', pid) : Promise.resolve({ data: [] }),
   ]);
+  const VK = { crew_check: 'ביקורת צוות', client_tour: 'סיור עם לקוח', quality: 'בקרת איכות', other: 'ביקור' };
   const pushed = new Set(D.days.map(d => d.monday_item_id).filter(Boolean));
   const thumbs = {}; (ph || []).forEach(x => { if (!thumbs[x.work_day_id]) thumbs[x.work_day_id] = x.storage_path; });
   const urls = await thumbUrls('field', Object.values(thumbs)).then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v.t]))).catch(() => ({}));
@@ -166,6 +170,8 @@ export async function reportsTab(box, D, { reload, schedule }) {
     ...D.reps.filter(r => !pushed.has(r.monday_item_id)).map(r => { const p1 = (r.photos || []).find(Boolean); return { at: r.report_date, html: `<button class="rep" data-mr="${r.monday_item_id}">${p1 && mUrls[p1] ? `<img src="${esc(mUrls[p1])}" alt="">` : `<span class="rep-ph">${icon('report', 22)}</span>`}<span class="grow"><b>דוח יומי · ${dm(r.report_date)}</b><small>${esc([r.crew, r.work].filter(Boolean).join(' · '))}</small>${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}</span></button>` }; }),
     ...D.issues.map(i => ({ at: i.created_at.slice(0, 10), html: `<button class="rep" data-is="${i.id}"><span class="rep-ph ${i.status === 'open' ? 'warnbg' : ''}">${icon('alert', 22)}</span><span class="grow"><b>תקלה · ${dm(i.created_at.slice(0, 10))}</b><small>${esc(i.body)}</small></span><span class="pill ${i.status === 'open' ? (i.severity === 'critical' ? 'bad' : 'warn') : 'ok'}">${i.status === 'open' ? 'פתוחה' : 'טופלה'}</span></button>` })),
     ...(sos || []).map(s => ({ at: s.created_at.slice(0, 10), html: `<button class="rep" data-so="${s.id}"><span class="rep-ph okbg">${icon('clipboard', 22)}</span><span class="grow"><b>החתמת לקוח · ${dm(s.created_at.slice(0, 10))}</b><small>${esc(s.signer_name)}${s.signer_role ? ' · ' + esc(s.signer_role) : ''}${s.rating ? ' · ' + '★'.repeat(s.rating) : ''}</small></span><span class="pill ${s.full_ok ? 'ok' : 'warn'}">${s.full_ok ? 'אושר' : 'עם הערות'}</span></button>` })),
+    ...(vis || []).map(v => { const fx = (v.findings || []).filter(x => x.sev === 'fix').length;
+      return { at: v.visit_date, html: `<a class="rep" href="#/visit/${v.id}"><span class="rep-ph">${icon('users', 22)}</span><span class="grow"><b>דוח ביקור · ${VK[v.kind] || ''}</b><small>${dm(v.visit_date)} · ${esc(v.profiles?.full_name || '')} · ${(v.findings || []).length} ממצאים</small></span>${fx ? `<span class="pill bad">${fx} לתיקון</span>` : ''}</a>` }; }),
     ...(sum ? [{ at: sum.updated_at.slice(0, 10), html: `<a class="rep" href="#/summary/${pid}"><span class="rep-ph">${icon('shield', 22)}</span><span class="grow"><b>סיכום פרויקט פנימי</b><small>${sum.quality ? '★'.repeat(sum.quality) + ' · ' : ''}עודכן ${dm(sum.updated_at.slice(0, 10))}</small></span><span class="pill">נשמר</span></a>` }] : []),
   ].sort((a, b) => a.at < b.at ? 1 : -1);
   $('#rlist').innerHTML = `

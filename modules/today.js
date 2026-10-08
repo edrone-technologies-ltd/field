@@ -57,7 +57,10 @@ export async function renderDay(el, id) {
       const { data: open } = await sb.from('tasks').select('*').eq('project_id', day.project_id).in('status', ['todo', 'in_progress', 'blocked']).order('day_no', { nullsFirst: false }).order('seq');
       allTasks = allTasks.concat((open || []).filter(t => !allTasks.some(x => x.id === t.id)));
     }
-    D = { day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
+    // תמונות האפיון של האתר = ה"לפני" המקורי. מוצגות כרפרנס לזווית הצילום (שרשרת אפיון → ביצוע → דוח)
+    let specPh = [];
+    if (day.projects?.site_id) { const { data: sp } = await sb.from('photos').select('storage_path').eq('site_id', day.projects.site_id).in('kind', ['facade', 'site']).order('created_at').limit(12); specPh = sp || []; }
+    D = { specPh, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
     await cache.set(ck, D);
   } catch { D = await cache.get(ck); }
   if (!D) { el.innerHTML = `<div class="empty">היום לא נמצא, או שאין קליטה ועוד לא נפתח בטלפון הזה.</div>`; return; }
@@ -84,6 +87,8 @@ export async function renderDay(el, id) {
   async function loadUrls() {
     const paths = D.photos.filter(p => !p.url).map(p => p.storage_path);
     if (paths.length) Object.assign(photoUrls, await thumbUrls('field', paths));
+    const sp = (D.specPh || []).map(p => p.storage_path);
+    if (sp.length) { const u = await thumbUrls('field', sp); sp.forEach(x => photoUrls['spec:' + x] = u[x]); }
   }
   await loadUrls().catch(() => {});
   let coverUrl = null;
@@ -102,6 +107,13 @@ export async function renderDay(el, id) {
     return `<div class="stack" style="gap:8px"><div class="row"><b class="grow">${label}</b>${min ? `<span class="pill ${mine.length >= min ? 'ok' : 'warn'}">${mine.length}/${min}+</span>` : ''}</div>
       <div class="photos">${mine.map(p => `<button class="ph" data-z="${esc(p.url || photoUrls[p.storage_path]?.f || '')}"><img src="${esc(p.url || photoUrls[p.storage_path]?.t || '')}" data-full="${esc(p.url || photoUrls[p.storage_path]?.f || '')}" alt="">${p.url ? '<span class="q">בתור</span>' : ''}</button>`).join('')}
         <label class="addph">צילום<input type="file" accept="image/*" capture="environment" multiple data-kind="${kind}"></label></div></div>`;
+  }
+  // תיעוד לפני / אחרי — אותו בלוק בכל מקום: שורת לפני, שורת אחרי, ורפרנס מהאפיון
+  function baBlock({ after = true, need = 1 } = {}) {
+    const ref = (D.specPh || []).map(p => photoUrls['spec:' + p.storage_path]).filter(Boolean);
+    return `<div class="sec ba2"><h3>תיעוד לפני / אחרי</h3><div class="small muted">מצלמים מאותה זווית — זו ההוכחה ללקוח לביצוע ולאיכות</div>
+      ${ref.length ? `<div class="stack" style="gap:6px"><b class="small">מהאפיון — הזוויות לצילום</b><div class="photos ref">${ref.map(u => `<button class="ph" data-z="${esc(u.f)}"><img src="${esc(u.t)}" data-full="${esc(u.f)}" alt=""></button>`).join('')}</div></div>` : ''}
+      ${photoStrip('before', 'לפני', need)}${after ? photoStrip('after', 'אחרי', need) : ''}</div>`;
   }
   function bindPhotos(root) {
     $$('input[data-kind]', root).forEach(inp => inp.onchange = async () => {
@@ -176,7 +188,7 @@ export async function renderDay(el, id) {
     const before = D.photos.filter(p => p.kind === 'before').length;
     return `${!D.day.arrived_at ? `<button class="btn primary block" id="arrive">הגענו לאתר</button>` : `<div class="small muted">הגעתם ב-${new Date(D.day.arrived_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div>`}
       <div class="sec"><h3>בדיקות בטיחות</h3>${items.map((t, i) => `<label class="tog"><span>${esc(t)}</span><span class="sw"><input type="checkbox" data-chk="${i}" ${D.local.checks[i] || D.checks.some(c => c.item === t && c.ok) ? 'checked' : ''}><i></i></span></label>`).join('')}</div>
-      <div class="sec">${photoStrip('before', 'תמונות "לפני"', 1)}</div>
+      ${baBlock({ after: false })}
       ${contactCard(site.contact_name, site.contact_phone)}
       <div class="small muted" id="why">${!before ? 'חסרה לפחות תמונת "לפני" אחת' : ''}</div>`;
   }
@@ -213,13 +225,13 @@ export async function renderDay(el, id) {
         <div class="row"><label class="field grow">התחלה<input type="time" id="rs" value="${C.start}"></label><label class="field grow">סיום<input type="time" id="re" value="${C.end}"></label></div>
         <b>מי עבד</b><div class="chips">${D.team.filter(u => ['crew_lead', 'crew', 'ops_manager', 'admin'].includes(u.role)).map(u => `<button class="chip" data-crew="${u.id}" aria-pressed="${C.crew.includes(u.id)}" ${u.id === D.day.crew_lead_id ? 'disabled' : ''}>${esc(u.full_name)}</button>`).join('')}</div></div>
       ${D.tasks.length ? `<div class="sec"><h3>מה בוצע מהתכנית</h3><div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-rt="${t.id}"><span class="tick">${t.status === 'done' ? '✓' : ''}</span><span class="t"><b>${esc(t.title)}</b><small>${esc(t.phase || '')}</small></span></button>`).join('')}</div></div>` : ''}
-      <div class="sec">${photoStrip('before', 'תמונות "לפני"')}</div>`;
+      ${baBlock()}`;
     return reportTop + (REPORT ? '' : `<div class="card row"><div class="ring" style="--p:${tot ? Math.round(done / tot * 100) : 0}"><b>${done}/${tot}</b></div><div class="grow"><b>משימות שבוצעו היום</b><div class="small muted">${tot - done ? `${tot - done} עוברות למחר` : 'הכל בוצע'}</div></div></div>`) + `
       <div class="sec"><b>חומר</b>${chips('material', D.S.materials || ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'])}
         <b>גלונים</b><div class="stepper"><button type="button" data-g="-0.5">−</button><input class="days grow" id="gal" type="number" inputmode="decimal" step="0.5" min="0" value="${C.gallons}"><button type="button" data-g="0.5">+</button></div>
         ${D.day.gallons_planned ? `<div class="small muted">מתוכנן: ${nf(D.day.gallons_planned)}</div>` : ''}
         <b>סוג העבודה</b>${chips('work', D.S.work_types || [], true)}</div>
-      <div class="sec">${photoStrip('after', 'תמונות "אחרי"', 1)}</div>
+      ${REPORT ? '' : baBlock()}
       <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => `<div class="row"><span class="grow">${esc(c.profiles?.full_name || '')}</span><input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${C.hours[c.user_id] ?? ''}" style="width:96px;text-align:center"></div>`).join('')}</div>
       <div class="sec">
         ${D.day.drone_id || D.day.method === 'רחפן' ? `<div class="row"><label class="field grow">מספר טיסות<input type="number" inputmode="numeric" min="0" id="fl" value="${C.flights ?? ''}"></label><label class="field grow">דקות אוויר<input type="number" inputmode="numeric" min="0" id="am" value="${C.air ?? ''}"></label></div>` : ''}

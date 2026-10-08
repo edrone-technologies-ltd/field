@@ -45,7 +45,7 @@ export async function myTasks(box) {
 }
 
 // פתיחת משימה לעובד (מנהלים). site = ליד/אתר לקישור (לא חובה)
-export async function newTask({ site, title = '', notes = '' } = {}) {
+export async function newTask({ site, title = '', notes = '', project = null, onDone = null } = {}) {
   if (!isManager()) return;
   const { data: team } = await sb.from('profiles').select('id,full_name,role').eq('is_active', true).neq('role', 'partner').order('full_name');
   const tomorrow = (() => { const d = new Date(Date.now() + 864e5); return isoDay(d); })();
@@ -60,10 +60,10 @@ export async function newTask({ site, title = '', notes = '' } = {}) {
     $('#nts', s).onclick = async () => {
       const t = $('#ntt', s).value.trim(); if (!t) return toast('מה המשימה?'); if (!who) return toast('למי המשימה?');
       $('#nts', s).disabled = true;
-      const { error } = await sb.from('tasks').insert({ title: t, instructions: $('#ntn', s).value.trim() || null, due: $('#ntd', s).value || null, assignee_id: who,
-        site_id: site?.id || null, phase: 'מעקב', status: 'todo', created_by: state.user.id, is_extra: true });
+      const { data: ins, error } = await sb.from('tasks').insert({ title: t, instructions: $('#ntn', s).value.trim() || null, due: $('#ntd', s).value || null, assignee_id: who,
+        site_id: site?.id || null, project_id: project, phase: 'מעקב', status: 'todo', created_by: state.user.id, is_extra: true }).select('id').single();
       if (error) { $('#nts', s).disabled = false; return toast(error.message); }
-      close(); toast('המשימה נפתחה — נשלחה התראה'); const h = $('#mytasks'); if (h) myTasks(h);
+      close(); toast('המשימה נפתחה — נשלחה התראה'); const h = $('#mytasks'); if (h) myTasks(h); if (onDone) onDone(ins.id);
     };
   });
 }

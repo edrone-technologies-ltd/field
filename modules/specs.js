@@ -278,7 +278,7 @@ export async function renderBuilding(el, slug, bid) {
       </div>
     </div>
     <div class="sec"><h3>תמונות והערות</h3>
-      <div class="field">תמונות מהאתר<small>אפשר לבחור כמה תמונות יחד</small><div class="photos" id="ph_site"></div></div>
+      <div class="field">תמונות מהאתר<small>חשוב: תמונות שממחישות את המצב לפני — ישמשו בהמשך להוכחת ביצוע ובקרת איכות</small><div class="photos" id="ph_site"></div></div>
       <label class="field" for="notes">הערות מיוחדות<textarea id="notes">${esc(form.notes || '')}</textarea></label>
       <label class="field" for="highlights">דגשים להצעה<small>הגבלות גישה, שעות עבודה, אזורים בעייתיים</small><textarea id="highlights">${esc(form.highlights || '')}</textarea></label>
     </div></fieldset>

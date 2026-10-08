@@ -50,7 +50,7 @@ button{font:inherit;color:inherit}
 .login .brand img{width:76px;height:76px;border-radius:20px}
 .field{display:flex;flex-direction:column;gap:6px;font-weight:500}
 .field small{color:var(--muted);font-weight:400}
-input[type=tel],input[type=password],input[type=text],input[type=number],textarea,select{
+input[type=tel],input[type=password],input[type=text],input[type=number],input:not([type]),input[type=email],input[type=url],input[type=search]:not(.search),textarea,select{
   font:inherit;font-size:17px;padding:13px 14px;border-radius:var(--r2);border:1px solid var(--line);background:var(--bg2);color:var(--ink);width:100%}
 textarea{min-height:90px;resize:vertical}
 .code{letter-spacing:.5em;text-align:center;font-family:var(--f-display);font-size:1.5rem!important;direction:ltr}
@@ -687,3 +687,7 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .rep-toolbar{margin:calc(-10px - var(--safe-t)) -16px 0;padding:calc(10px + var(--safe-t)) 16px 10px;box-shadow:0 1px 0 var(--line)}
 .creport .hero{border:0;border-radius:0;margin:0;box-shadow:none;padding:0}
 .rep-toolbar b{white-space:nowrap}
+/* דוח ביקור */
+.finding{display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:16px;background:var(--card);border:1px solid var(--line)}
+.finding textarea{min-height:56px} .fph{width:52px;height:52px;border-radius:10px;object-fit:cover;cursor:zoom-in} .fph.big{width:100%;height:auto;max-height:280px}
+.stars.ro{display:flex;gap:2px;color:var(--line);font-size:1.1rem} .stars.ro .on{color:#E0A800}

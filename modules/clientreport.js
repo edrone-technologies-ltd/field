@@ -21,7 +21,13 @@ export async function renderClientReport(el, pid) {
   const works = [...new Set([...(days || []).flatMap(d => d.work_types || []), ...(reps || []).flatMap(r => (r.work || '').split(', ').filter(Boolean))])];
   const fieldU = await signedUrls('field', (ph || []).map(x => x.storage_path).concat(sos?.[0]?.signature_path ? [sos[0].signature_path] : [])).catch(() => ({}));
   const mediaPaths = (reps || []).flatMap(r => (r.photos || []).filter(Boolean)); const mediaU = await signedUrls('media', mediaPaths.concat(p.cover_path ? [p.cover_path] : [])).catch(() => ({}));
-  const before = (ph || []).filter(x => x.kind === 'before').map(x => fieldU[x.storage_path]).filter(Boolean);
+  // שרשרת: תמונות "לפני" מימי העבודה, ואם אין — תמונות האפיון של האתר (המצב שתועד בסיור)
+  let before = (ph || []).filter(x => x.kind === 'before').map(x => fieldU[x.storage_path]).filter(Boolean);
+  if (before.length < 3 && p.site_id) {
+    const { data: sp } = await sb.from('photos').select('storage_path').eq('site_id', p.site_id).in('kind', ['facade', 'site']).order('created_at').limit(6 - before.length);
+    const su = await signedUrls('field', (sp || []).map(x => x.storage_path)).catch(() => ({}));
+    before = before.concat((sp || []).map(x => su[x.storage_path]).filter(Boolean));
+  }
   const after = (ph || []).filter(x => x.kind === 'after').map(x => fieldU[x.storage_path]).concat(mediaPaths.map(x => mediaU[x])).filter(Boolean);
   const hero = (p.cover_path && mediaU[p.cover_path]) || after[0] || before[0] || coverArt(p.name);
   const co = me?.value || {}, coLine = [co.phone, co.email, co.web].filter(Boolean).map(x => `<bdi dir="ltr">${esc(x)}</bdi>`).join(' · ');
