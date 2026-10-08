@@ -15,7 +15,7 @@ export async function renderOps(el) {
   const [days, people, shifts, abs, sreq, oreq, preq, drones] = await Promise.all([
     q(sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,projects(name,site_id),work_day_crew(user_id,role,confirmed_at)').gte('day', t).lte('day', tm).neq('status', 'cancelled').order('day').order('report_time')),
     q(sb.from('profiles').select('id,full_name,role,is_active').eq('is_active', true)),
-    q(sb.from('shifts').select('id,user_id,start_at,end_at,status,start_dist_m,start_place').or(`status.eq.open,start_at.gte.${new Date(y + 'T00:00:00').toISOString()}`).order('start_at', { ascending: false }).limit(80)),
+    q(sb.from('shifts').select('id,user_id,start_at,end_at,status,start_dist_m,start_place,note').or(`status.eq.open,start_at.gte.${new Date(y + 'T00:00:00').toISOString()}`).order('start_at', { ascending: false }).limit(80)),
     q(sb.from('absences').select('id,user_id,kind,date_from,date_to,note,status').in('status', ['pending', 'approved']).gte('date_to', y)),
     q(sb.from('shift_requests').select('id,user_id,shift_id,req_start,req_end,reason,created_at').eq('status', 'pending').order('created_at')),
     q(sb.from('office_requests').select('id,user_id,category,body,status,created_at').neq('status', 'done').order('created_at')),
@@ -46,6 +46,7 @@ export async function renderOps(el) {
     else if (h >= 12) issues.push({ tone: 'warn', ic: 'clock', t: `${name(s.user_id)} במשמרת ${Math.floor(h)} שעות`, s: `נכנס ב-${hm(s.start_at)}`, href: `#/hours/${s.user_id}` });
   }
   shifts.filter(s => isoDay(new Date(s.start_at)) === t && (s.start_dist_m || 0) > 800).forEach(s => issues.push({ tone: 'warn', ic: 'pin', t: `${name(s.user_id)} החתים ${s.start_dist_m >= 1000 ? (s.start_dist_m / 1000).toFixed(1) + ' ק״מ' : s.start_dist_m + ' מ׳'} מהאתר`, s: s.start_place || 'בדיקה', href: `#/hours/${s.user_id}` }));
+  shifts.filter(s => /נסגרה אוטומטית/.test(s.note || '')).forEach(s => issues.push({ tone: 'warn', ic: 'clock', t: `יציאה אוטומטית · ${name(s.user_id)}`, s: `${dm(isoDay(new Date(s.start_at)))} · נרשמו 12 שעות — לוודא`, href: `#/hours/${s.user_id}` }));
   const rank = { bad: 0, warn: 1 };
   issues.sort((a, b) => rank[a.tone] - rank[b.tone]);
 

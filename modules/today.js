@@ -6,7 +6,7 @@ import { sb, state, cache, enqueue, pendingPhotos, signedUrls, addFieldPhoto, sh
 const STEPS = ['בוקר', 'העמסה', 'באתר', 'בעבודה', 'סיום'];
 const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיחות': 'safety', 'כמעט תאונה': 'near_miss', 'אתר': 'site', 'לקוח': 'site', 'אחר': 'other' };
 const T_STATUS = { todo: ['לביצוע', ''], in_progress: ['בעבודה', 'lime'], done: ['בוצע', 'ok'], blocked: ['נתקע', 'bad'], dropped: ['בוטל', ''] };
-const NEXT = { todo: 'in_progress', in_progress: 'done', done: 'todo', blocked: 'in_progress', dropped: 'todo' };
+const NEXT = { todo: 'done', in_progress: 'done', done: 'todo', blocked: 'done', dropped: 'todo' };   // הקשה אחת = בוצע (ושוב = ביטול)
 const hhmm = t => (t || '').slice(0, 5);
 const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,lat,lng,map_path)), work_day_crew(user_id,role,hours,clock_in,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
 
@@ -60,7 +60,9 @@ export async function renderDay(el, id) {
     // תמונות האפיון של האתר = ה"לפני" המקורי. מוצגות כרפרנס לזווית הצילום (שרשרת אפיון → ביצוע → דוח)
     let specPh = [];
     if (day.projects?.site_id) { const { data: sp } = await sb.from('photos').select('storage_path').eq('site_id', day.projects.site_id).in('kind', ['facade', 'site']).order('created_at').limit(12); specPh = sp || []; }
-    D = { specPh, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
+    // שעות מהשעון — מילוי מראש של סגירת היום (ראש צוות/מנהל בלבד; לאחרים מחזיר ריק)
+    let clockH = {}; try { const { data: ch } = await sb.rpc('day_shift_hours', { d: id }); clockH = Object.fromEntries((ch || []).map(r => [r.user_id, Number(r.hours)])); } catch {}
+    D = { clockH, specPh, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
     await cache.set(ck, D);
   } catch { D = await cache.get(ck); }
   if (!D) { el.innerHTML = `<div class="empty">היום לא נמצא, או שאין קליטה ועוד לא נפתח בטלפון הזה.</div>`; return; }
@@ -203,7 +205,7 @@ export async function renderDay(el, id) {
       <div class="progress"><i style="width:${tot ? Math.round(done / tot * 100) : 0}%"></i></div>
       <div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-t="${t.id}"><span class="tick">${t.status === 'done' ? '✓' : t.status === 'blocked' ? '!' : ''}</span>
         <span class="t"><b>${esc(t.title)}</b><small>${esc(T_STATUS[t.status]?.[0] || '')}${t.status === 'done' && t.done_by ? ' · ' + esc((D.team.find(u => u.id === t.done_by)?.full_name || '').split(' ')[0]) + (t.done_at ? ' ' + new Date(t.done_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '') : ''}${t.status_note ? ' · ' + esc(t.status_note) : ''}${t.risk && t.status !== 'done' ? ' · ' + esc(t.risk) : ''}</small></span></button>`).join('') || '<div class="empty">אין משימות משובצות להיום.</div>'}</div>
-      <div class="small muted">הקשה = הסטטוס הבא. לחיצה ארוכה = נתקע (עם הערה).</div>
+      <div class="small muted">הקשה = בוצע · לחיצה ארוכה = נתקע</div>
       <button class="btn ghost block" id="addtask">+ משימה שהלקוח ביקש בשטח</button>
       ${D.issues.length ? `<div class="stack" style="gap:6px"><h3>תקלות היום</h3>${D.issues.map(i => `<div class="feed"><span class="pill ${i.severity === 'critical' ? 'bad' : 'warn'}">${esc(kindHe(i.kind))}</span><span class="grow"><b>${esc(i.body)}</b></span></div>`).join('')}</div>` : ''}
       ${D.missing.length ? `<div class="stack" style="gap:6px"><h3>חסר בשטח</h3>${D.missing.map(m => `<div class="feed"><span class="pill warn">חסר</span><span class="grow"><b>${esc(m.item)}${m.qty > 1 ? ' ×' + m.qty : ''}</b></span></div>`).join('')}</div>` : ''}
@@ -213,7 +215,7 @@ export async function renderDay(el, id) {
     D.local.close ||= {
       material: D.day.material_used || D.day.material_planned || 'Assert Lemon', gallons: D.day.gallons ?? D.day.gallons_planned ?? 0,
       work: D.day.work_types?.length ? D.day.work_types : ['ניקוי חזיתות'], equipment_ok: D.day.equipment_ok ?? true, quality: D.day.quality || 0,
-      notes: D.day.notes || '', weather: D.day.weather_stop, hours: Object.fromEntries(D.day.work_day_crew.map(c => [c.user_id, c.hours ?? defHours()])),
+      notes: D.day.notes || '', weather: D.day.weather_stop, hours: Object.fromEntries(D.day.work_day_crew.map(c => [c.user_id, c.hours ?? D.clockH?.[c.user_id] ?? defHours()])),
       tomorrow: D.day.tomorrow ?? D.tasks.filter(t => !['done', 'dropped'].includes(t.status)).map(t => t.title).join(' · '),
       sign: { name: site.contact_name || '', role: '', satisfied: true, notes: '' },
       start: D.day.arrived_at ? hm(D.day.arrived_at) : '07:00', end: D.day.finished_at ? hm(D.day.finished_at) : (D.day.day === isoDay() ? hm(new Date().toISOString()) : '15:00'),
@@ -232,7 +234,7 @@ export async function renderDay(el, id) {
         ${D.day.gallons_planned ? `<div class="small muted">מתוכנן: ${nf(D.day.gallons_planned)}</div>` : ''}
         <b>סוג העבודה</b>${chips('work', D.S.work_types || [], true)}</div>
       ${REPORT ? '' : baBlock()}
-      <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => `<div class="row"><span class="grow">${esc(c.profiles?.full_name || '')}</span><input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${C.hours[c.user_id] ?? ''}" style="width:96px;text-align:center"></div>`).join('')}</div>
+      <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => `<div class="row"><span class="grow">${esc(c.profiles?.full_name || '')}${D.clockH?.[c.user_id] != null ? ` <small class="muted">· מהשעון ${nf(D.clockH[c.user_id])}</small>` : ''}</span><input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${C.hours[c.user_id] ?? ''}" style="width:96px;text-align:center"></div>`).join('')}</div>
       <div class="sec">
         ${D.day.drone_id || D.day.method === 'רחפן' ? `<div class="row"><label class="field grow">מספר טיסות<input type="number" inputmode="numeric" min="0" id="fl" value="${C.flights ?? ''}"></label><label class="field grow">דקות אוויר<input type="number" inputmode="numeric" min="0" id="am" value="${C.air ?? ''}"></label></div>` : ''}
         <label class="tog"><span>הציוד חזר תקין</span><span class="sw"><input type="checkbox" id="eqok" ${C.equipment_ok ? 'checked' : ''}><i></i></span></label>
