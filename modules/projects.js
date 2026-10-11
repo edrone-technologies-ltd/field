@@ -17,12 +17,12 @@ export async function renderProjects(el) {
   el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>פרויקטים</h1></header><input type="search" id="pq" class="search" placeholder="חיפוש פרויקט או לקוח"><div class="tabs" id="pf"><button aria-selected="true" data-f="a">פתוחים</button><button aria-selected="false" data-f="d">הסתיימו</button></div><div id="pl" class="list"><div class="skel"></div></div>`;
   let rows;
   try {
-    const { data, error } = await sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,monday_group,site_id,cover_path,closed_summary,lat,lng,sites(lat,lng),work_days(id,day,status),tasks(status)').order('planned_from', { nullsFirst: false });
+    const { data, error } = await sb.from('projects').select('id,name,client_name,status_label,engagement,service,planned_from,planned_to,monday_group,site_id,cover_path,closed_summary,lat,lng,sites(lat,lng),work_days(id,day,status),tasks(status)').order('planned_from', { nullsFirst: false });
     if (error) throw error; rows = data || []; await cache.set('projects', rows);
   } catch { rows = (await cache.get('projects')) || []; }
   const t = isoDay();
   const cov = await covers(rows);
-  const RANK = { 'בביצוע': 0, 'תואם - ממתין לביצוע': 1, 'אושר מול לקוח': 2, 'קביעת מועד': 3, 'תקוע': 4, 'פיילוט': 6 };
+  const RANK = { 'בביצוע': 0, 'תואם - ממתין לביצוע': 1, 'אושר מול לקוח': 2, 'קביעת מועד': 3, 'תקוע': 4 };
   const range = p => p.planned_from ? (p.planned_to && p.planned_to !== p.planned_from ? `${dm(p.planned_from)}–${dm(p.planned_to)}` : dm(p.planned_from)) : null;
   let F = 'a';
   const draw = (f = F) => {
@@ -32,7 +32,7 @@ export async function renderProjects(el) {
       .sort((a, b) => (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((b.planned_from || '') > (a.planned_from || '') ? 1 : -1));
     $('#pl').innerHTML = list.length ? folderGrid(list.map(p => {
       const next = (p.work_days || []).filter(d => d.day >= t && d.status !== 'done').sort((a, b) => a.day < b.day ? -1 : 1)[0];
-      return { href: `#/p/${p.id}`, img: cov[p.id], title: p.name, sub: [p.client_name, next ? `יום שטח ${dayLabel(next.day)}` : range(p)].filter(Boolean).join(' · '),
+      return { href: `#/p/${p.id}`, img: cov[p.id], title: p.name, sub: [p.engagement === 'פיילוט' ? 'פיילוט' : null, p.service, p.client_name, next ? `יום שטח ${dayLabel(next.day)}` : range(p)].filter(Boolean).join(' · '),
         pill: stLabel(p.status_label), tone: { lime: 'ok', bad: 'bad', warn: 'warn' }[TONE[p.status_label]] || '' };
     })) : `<div class="empty-line">${q ? 'לא נמצא פרויקט' : 'אין פרויקטים'}</div>`;
   };
@@ -70,7 +70,7 @@ export async function renderProject(el, id, tab = 'o') {
   const coverUrl = p.cover_path ? (await signedUrls('media', [p.cover_path]).catch(() => ({})))[p.cover_path] : null;
   el.innerHTML = `<div class="phero"><span class="img" style="background-image:url('${coverFor(p, coverUrl)}')"></span>
       <a class="back glass" href="#/projects" aria-label="חזרה">${icon('back', 20)}</a>
-      <span class="ph-bottom"><span class="pill ${TONE[p.status_label] ?? ''}">${esc(stLabel(p.status_label))}</span><b>${esc(p.name)}</b><small>${esc(p.client_name || '')}</small></span></div>
+      <span class="ph-bottom"><span class="row tight">${p.engagement === 'פיילוט' ? '<span class="pill pilot">פיילוט</span>' : ''}<span class="pill ${TONE[p.status_label] ?? ''}">${esc(stLabel(p.status_label))}</span></span><b>${esc(p.name)}</b><small>${esc([p.service, p.client_name].filter(Boolean).join(' · '))}</small></span></div>
     <div class="tabs" id="pt">${TABS.map(([k, t]) => `<button data-t="${k}" aria-selected="${k === tab || (tab === 'i' && k === 'o')}">${t}</button>`).join('')}</div>
     <div id="pb" class="stack"></div>`;
   $$('#pt button').forEach(b => b.onclick = () => { replaceHash(`#/p/${id}/${b.dataset.t}`, false); renderTab(b.dataset.t); $$('#pt button').forEach(x => x.setAttribute('aria-selected', x === b)); });

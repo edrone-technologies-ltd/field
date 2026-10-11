@@ -58,7 +58,7 @@ export async function renderSites(el) {
     if (s.kind !== 'lead') return done === n || (done && (P.length || s.monday_spec_item_id)) ? 'done' : 'open';
     const g = s.lead_group || '';
     if (/הצעה נשלחה|לא אושרה|הומרו/.test(g)) return 'arch';
-    return done === n || /אפיון בוצע|קבלן משנה/.test(g) ? 'done' : 'open'; };
+    return done === n || /אפיון בוצע|קבלן משנה|פיילוט/.test(g) ? 'done' : 'open'; };
   const GROUPS = [['open', 'לסיור ואפיון'], ['done', 'אפיון הושלם'], ['arch', 'ארכיון']];
   const folder = s => { const { n, done, draft } = st(s), lead = s.kind === 'lead';
     return { href: lead && n === 1 ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, img: coverFor(s, s.cover_path && urls[s.cover_path]), title: s.name,

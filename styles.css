@@ -1281,3 +1281,7 @@ div.arow:active,div.lrow:active{transform:none} div.arow{cursor:default}
 button.arow:disabled,button.lrow:disabled,.chip:disabled{opacity:.5;pointer-events:none}
 .t td small{display:block}
 button.back{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--card);border:1px solid var(--line);color:var(--ink);cursor:pointer;padding:0}
+.pill.pilot{background:color-mix(in srgb,#784bd1 16%,var(--card));color:#6a3fc4}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .pill.pilot{color:#b89cf0}}
+:root[data-theme="dark"] .pill.pilot{color:#b89cf0}
+.row.tight{gap:6px}

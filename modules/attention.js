@@ -53,6 +53,18 @@ async function tourRows() {
   const { data: v } = await sb.from('kb_views').select('item_id').eq('item_id', it.id).eq('user_id', state.user.id).maybeSingle();
   return v ? [] : [{ k: 'tour', tone: '', ic: icon('play', 18), title: 'הדרכה: 5 דקות להכרת האפליקציה', sub: 'לו״ז, שיבוץ, תכניות וביקורות', href: '#/tour/ops' }];
 }
+// הנהלה: פיילוט שממתין לאישור (במאנדי: "פיילוט — ממתין לאישור הנהלה") — מאשרים או דוחים כאן, הליד מתעדכן במאנדי
+async function pilotRows() {
+  if (state.profile.role !== 'admin') return [];
+  const { data } = await sb.from('sites').select('id,name,service,lead_owner,pilot_decision').eq('kind', 'lead').eq('is_active', true).eq('lead_stage', 'פיילוט — ממתין לאישור הנהלה').is('pilot_decision', null);
+  return (data || []).map(x => ({ k: 'pilot', tone: 'warn', ic: icon('shield', 18), title: `פיילוט לאישור: ${x.name}`, sub: [x.service, x.lead_owner].filter(Boolean).join(' · '),
+    act: () => { sheet(`<h3 class="sh">פיילוט — ${esc(x.name)}</h3>${x.service ? `<div class="muted">${esc(x.service)}</div>` : ''}
+      <div class="row-btns"><button class="btn ghost" data-pd="0">לא — להצעה</button><button class="btn primary" data-pd="1">אישור פיילוט</button></div>`, (s2, close) => {
+      s2.querySelectorAll('[data-pd]').forEach(b => b.onclick = async () => { b.disabled = true; const ok = b.dataset.pd === '1';
+        const { error } = await sb.rpc('decide_pilot', { s: x.id, ok }); if (error) { b.disabled = false; return toast(error.message); }
+        close(); toast(ok ? 'הפיילוט אושר — נפתח פרויקט פיילוט' : 'חזר להצעת מחיר'); dispatchEvent(new HashChangeEvent('hashchange')); });   // ציור מחדש של המסך
+    }); } }));
+}
 async function pushRows() {
   const st = await pushState();
   if (st === 'off') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'התראות כבויות', sub: '', btn: 'הפעלה' }];
@@ -62,7 +74,7 @@ async function pushRows() {
 
 // כל מה שמחכה למשתמש עצמו (הודעות, הדרכות, קליטה, התראות, שיבוץ שחסר)
 export async function attentionItems() {
-  const parts = await Promise.all([tourRows(), schedRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
+  const parts = await Promise.all([pilotRows(), tourRows(), schedRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   return items;
