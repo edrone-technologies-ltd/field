@@ -16,50 +16,61 @@ const kpiRow = xs => { const k = xs.filter(([v]) => v && v !== '—'); return k.
 // ---------- רשימה ----------
 export async function renderProjects(el) {
   el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>פרויקטים</h1></header><input type="search" id="pq" class="search" placeholder="חיפוש פרויקט או לקוח"><div class="tabs" id="pf"><button aria-selected="true" data-f="a">פתוחים</button><button aria-selected="false" data-f="d">הסתיימו</button></div><div id="pl" class="list"><div class="skel"></div></div>`;
+  const RDp = isManager() ? sb.rpc('readiness_list').then(r => new Map((r.data || []).map(x => [x.project_id, x]))).catch(() => new Map()) : Promise.resolve(new Map());   // במקביל לרשימה
   let rows;
   try {
     const { data, error } = await sb.from('projects').select('id,name,client_name,status_label,engagement,service,planned_from,planned_to,monday_group,site_id,cover_path,closed_summary,lat,lng,sites(lat,lng),work_days(id,day,status),tasks(status)').order('planned_from', { nullsFirst: false });
     if (error) throw error; rows = data || []; await cache.set('projects', rows);
   } catch { rows = (await cache.get('projects')) || []; }
   const t = isoDay();
-  const cov = await covers(rows);
+  // ציון מוכנות לביצוע לכל פרויקט שמתוכנן קדימה (מנהלים) — אותו חישוב כמו בפרויקט עצמו
+  const [cov, RD] = await Promise.all([covers(rows), RDp]);
+  const soon = addD(t, 2);
   const RANK = { 'בביצוע': 0, 'תואם - ממתין לביצוע': 1, 'אושר מול לקוח': 2, 'קביעת מועד': 3, 'תקוע': 4 };
   const range = p => p.planned_from ? (p.planned_to && p.planned_to !== p.planned_from ? `${dm(p.planned_from)}–${dm(p.planned_to)}` : dm(p.planned_from)) : null;
   let F = 'a';
   const draw = (f = F) => {
     F = f; const q = ($('#pq')?.value || '').trim();
-    const list = rows.filter(p => (f === 'a') === !(p.monday_group === ARCHIVE || String(p.status_label).startsWith('הסתיים') || p.closed_summary))
+    const nr = p => { const r = RD.get(p.id); return r && r.ok < r.n; }, nx = p => RD.get(p.id)?.next_day || p.planned_from || '9';
+    const list = (f === 'r' ? rows.filter(nr) : rows.filter(p => (f === 'a') === !(p.monday_group === ARCHIVE || String(p.status_label).startsWith('הסתיים') || p.closed_summary)))
       .filter(p => !q || (p.name + ' ' + (p.client_name || '')).includes(q))
-      .sort((a, b) => (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((b.planned_from || '') > (a.planned_from || '') ? 1 : -1));
+      .sort(f === 'r' ? (a, b) => nx(a) < nx(b) ? -1 : 1 : (a, b) => (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((b.planned_from || '') > (a.planned_from || '') ? 1 : -1));
     $('#pl').innerHTML = list.length ? folderGrid(list.map(p => {
       const next = (p.work_days || []).filter(d => d.day >= t && d.status !== 'done').sort((a, b) => a.day < b.day ? -1 : 1)[0];
-      return { href: `#/p/${p.id}`, img: cov[p.id], title: p.name, sub: [p.engagement === 'פיילוט' ? 'פיילוט' : null, p.service, p.client_name, next ? `יום שטח ${dayLabel(next.day)}` : range(p)].filter(Boolean).join(' · '),
+      return { href: `#/p/${p.id}`, img: cov[p.id], title: p.name, data: RD.has(p.id) ? `data-rd="${p.id}"` : '', sub: [p.engagement === 'פיילוט' ? 'פיילוט' : null, p.service, p.client_name, next ? `יום שטח ${dayLabel(next.day)}` : range(p)].filter(Boolean).join(' · '),
         pill: stLabel(p.status_label), tone: { lime: 'ok', bad: 'bad', warn: 'warn' }[TONE[p.status_label]] || '' };
     })) : `<div class="empty-line">${q ? 'לא נמצא פרויקט' : 'אין פרויקטים'}</div>`;
+    $$('#pl [data-rd]').forEach(a => { const r = RD.get(a.dataset.rd), all = r.ok === r.n, near = r.next_day && r.next_day <= soon;
+      a.querySelector('.grow')?.insertAdjacentHTML('afterend', `<span class="rdring ${all ? 'ok' : near ? 'warn' : ''}" style="--p:${Math.round(r.ok / r.n * 100)}" title="${esc(all ? 'מוכן לשטח' : 'חסר: ' + (r.miss || []).join(', '))}" aria-label="מוכנות ${r.ok} מתוך ${r.n}"><b>${all ? icon('check', 14) : r.ok + '/' + r.n}</b></span>`); });
   };
+  // "לא מוכנים" — פרויקטים שמתוכננים קדימה ועוד חסר בהם משהו (הקרוב ביותר ראשון)
+  const nrN = [...RD.values()].filter(x => x.ok < x.n).length;
+  if (nrN) $('#pf [data-f="d"]').insertAdjacentHTML('beforebegin', `<button aria-selected="false" data-f="r">לא מוכנים <span class="count">${nrN}</span></button>`);
   $$('#pf button').forEach(b => b.onclick = () => { $$('#pf button').forEach(x => x.setAttribute('aria-selected', x === b)); draw(b.dataset.f); });
   $('#pq').oninput = () => draw();
   draw('a');
 }
 
+const addD = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 // ---------- פרויקט ----------
 export async function renderProject(el, id, tab = 'o') {
   el.innerHTML = skeleton('detail');
   const ck = 'proj:' + id; let D;
   try {
-    const [{ data: p, error }, { data: tasks }, { data: days }, { data: issues }, { data: reps }, fin, { data: sites }, { data: team }, { data: drones }] = await Promise.all([
+    const [{ data: p, error }, { data: tasks }, { data: days }, { data: issues }, { data: reps }, fin, { data: sites }, { data: team }, { data: drones }, { data: ready }] = await Promise.all([
       sb.from('projects').select('*, sites(id,slug,name,address,contact_name,contact_phone,lat,lng)').eq('id', id).single(),
       sb.from('tasks').select('*, buildings(name,code)').eq('project_id', id).order('day_no', { nullsFirst: false }).order('seq'),
-      sb.from('work_days').select('*, work_day_crew(user_id,role,hours,confirmed_at,profiles(full_name))').eq('project_id', id).order('day'),
+      sb.from('work_days').select('*, work_day_crew(user_id,role,hours,confirmed_at,cant_come_at,profiles(full_name))').eq('project_id', id).order('day'),
       sb.from('issues').select('*').eq('project_id', id).order('created_at', { ascending: false }),
       sb.from('field_reports').select('*').eq('project_id', id).order('report_date', { ascending: false }),
       can('finance') ? sb.from('project_finance').select('*').eq('project_id', id).maybeSingle() : Promise.resolve({ data: null }),
-      isManager() ? sb.from('sites').select('id,name,slug,kind,buildings(id,specs(status,days_expected))').eq('is_active', true) : Promise.resolve({ data: [] }),
+      isManager() ? sb.from('sites').select('id,name,slug,kind,buildings(id,specs(status,days_expected,hydrants,power,docking))').eq('is_active', true) : Promise.resolve({ data: [] }),
       isManager() ? sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true) : Promise.resolve({ data: [] }),
       sb.from('equipment').select('id,name,health').eq('kind', 'drone'),
+      isManager() ? sb.rpc('project_readiness', { p: id }) : Promise.resolve({ data: null }),
     ]);
     if (error) throw error;
-    D = { p, tasks: tasks || [], days: days || [], issues: issues || [], reps: reps || [], fin: fin.data, sites: sites || [], team: (team || []).filter(x => FIELD_ROLES.includes(x.role)), drones: drones || [] };
+    D = { p, tasks: tasks || [], days: days || [], issues: issues || [], reps: reps || [], fin: fin.data, sites: sites || [], team: (team || []).filter(x => FIELD_ROLES.includes(x.role)), drones: drones || [], ready };
     await cache.set(ck, D);
   } catch { D = await cache.get(ck); }
   if (!D) { el.innerHTML = `<div class="empty-line">הפרויקט לא נמצא</div>`; return; }
@@ -140,8 +151,54 @@ export async function renderProject(el, id, tab = 'o') {
           close(); toast(`הועבר ל${dayLabel(d)} · הצוות קיבל עדכון`); reload('o'); };
       }); });
   }
+  // ----- מוכנות לביצוע: כל מה שצריך כדי לצאת לשטח, ברשימה אחת. אוטומטי מהנתונים; מה שאין לו מקור (מרחב אווירי, כניסה, מים) — סימון בלחיצה -----
+  // סימון ידני תקף לימי השטח שתוכננו כשסומן; שינוי תאריכים = מתאמים מחדש
+  // הרשימה מחושבת בשרת (project_readiness, db/095b) — אותו ציון כמו ברשימת הפרויקטים ובסיכום הערב. כאן רק מוסיפים לאן כל שורה מובילה + תחזית חיה
+  let wxExtra = null;
+  function readyItems() {
+    const R = D.ready; if (!M || !R?.items) return null;
+    const st = linkedSite(), specHref = () => { const B = st?.buildings || [], sl = st?.slug || p.sites?.slug; return st?.kind === 'lead' && B.length === 1 ? `#/b/${sl}/${B[0].id}` : '#/site/' + sl; };
+    const A = { site: () => ({ act: 'site' }), spec: x => ({ href: x.ok ? `#/p/${id}/a` : specHref() }), plan: x => ({ href: x.ok ? `#/plan/${id}` : `#/p/${id}/t` }), sched: () => ({ act: 'sched' }) };
+    const out = R.items.map(x => ({ ...x, ...(A[x.k]?.(x) || {}), ...(x.day ? { act: 'day:' + x.day } : {}), ...(x.tog ? { tog: x.k } : {}) }));
+    if (wxExtra && !out.some(x => x.k === 'wx')) out.splice(out.findIndex(x => x.k === 'drone') + 1 || out.length, 0, wxExtra);
+    return { out, up: R.up || [] };
+  }
+  // תחזית ליום השטח הבא: "לא לטוס" נכנס לרשימה גם לפני שהשרת שלח התראה
+  async function readyWx(box) {
+    const R = D.ready, sid = p.site_id, nid = R?.items?.find(x => x.k === 'drone')?.day;
+    if (!R?.next || !sid || !nid || R.items.some(x => x.k === 'wx') || !(p.sites?.lat || p.lat)) return;
+    const { siteDays } = await import('../lib/wx.js');
+    const x = (await siteDays([{ id: sid, lat: p.sites?.lat || p.lat, lng: p.sites?.lng || p.lng }]))[sid]?.[R.next];
+    if (!x || x.L < 2) return;
+    wxExtra = { k: 'wx', ok: false, bad: true, t: 'תחזית לא לטוס', s: `${dayLabel(R.next)} · משבים ${Math.round(x.g)} קמ״ש${x.r >= 2 ? ` · גשם ${x.r.toFixed(1)}` : ''}`, act: 'day:' + nid };
+    const sec = $('#ready', box); if (sec) { sec.outerHTML = readySection(); bindReady(box); }
+  }
+  function readySection() {
+    const r = readyItems(); if (!r) return '';
+    const okN = r.out.filter(x => x.ok).length, all = okN === r.out.length;
+    const row = (x, i) => { const tag = x.tog || x.act ? 'button' : x.href ? 'a' : 'div';
+      return `<${tag} class="rdy ${x.ok ? 'on' : x.bad ? 'bad' : ''}" ${tag === 'a' ? `href="${esc(x.href)}"` : tag === 'button' ? `type="button" data-rdy="${i}"` : ''}><span class="rbox">${x.ok ? icon('check', 16) : x.bad ? '!' : ''}</span>
+        <span class="grow"><b>${esc(x.t)}</b>${x.s ? `<small>${esc(x.s)}</small>` : ''}</span>${x.tog ? `<span class="rtog">${x.ok ? 'ביטול' : 'תואם'}</span>` : tag !== 'div' ? `<span class="chev">${icon('chev', 16)}</span>` : ''}</${tag}>`; };
+    return `<section id="ready" class="${all ? 'allok' : ''}"><div class="sh-row"><h3 class="sh">${all ? 'מוכנים לשטח' : 'מוכנות לביצוע'}</h3><span class="count ${all ? 'ok' : ''}">${okN}/${r.out.length}</span></div>
+      <div class="rdylist">${all ? `<button type="button" class="rdy on" id="rdyall"><span class="rbox">${icon('check', 16)}</span><span class="grow"><b>הכל מוכן</b><small>${r.out.map(x => x.t).join(' · ')}</small></span><span class="chev">${icon('chev', 16)}</span></button><div hidden id="rdyrows">${r.out.map(row).join('')}</div>` : r.out.map(row).join('')}</div></section>`;
+  }
+  function bindReady(box) {
+    const r = readyItems(); if (!r) return;
+    const all = $('#rdyall', box); if (all) all.onclick = () => { all.remove(); $('#rdyrows', box).hidden = false; };
+    $$('[data-rdy]', box).forEach(b => b.onclick = async e => {
+      e.preventDefault(); const x = r.out[+b.dataset.rdy]; if (!x || b.disabled) return;
+      if (x.act === 'site') return siteSheet();
+      if (x.act === 'sched') return openSched();
+      if (x.act?.startsWith('day:')) return import('./dayadmin.js').then(m => m.openDayAdmin(x.act.slice(4), () => reload('o')));
+      if (x.tog) { b.disabled = true;
+        const { data, error } = await sb.rpc('set_readiness', { p: id, k: x.tog, on_: !x.ok, days: r.up });
+        if (error) { b.disabled = false; return toast(error.message); }
+        p.readiness = data || {}; D.ready = (await sb.rpc('project_readiness', { p: id })).data || D.ready; cache.set(ck, D).catch(() => {}); toast(x.ok ? `${x.t} — בוטל` : `${x.t} — תואם`, 1600, x.ok ? 'light' : 'success');
+        const sec = $('#ready', box); if (sec) { sec.outerHTML = readySection(); bindReady(box); } }
+    });
+  }
   function overview(box) {
-    const tot = D.tasks.filter(x => x.status !== 'dropped').length, done = D.tasks.filter(x => x.status === 'done').length;
+    const tot =D.tasks.filter(x => x.status !== 'dropped').length, done = D.tasks.filter(x => x.status === 'done').length;
     const dDone = D.days.filter(d => d.status === 'done').length, f = D.fin, s = p.sites;
     const open = D.issues.filter(i => i.status === 'open');
     const range = p.planned_from ? (p.planned_to && p.planned_to !== p.planned_from ? `${dm(p.planned_from)}–${dm(p.planned_to)}` : dm(p.planned_from)) : null;
@@ -151,9 +208,9 @@ export async function renderProject(el, id, tab = 'o') {
     const tel = s?.contact_phone ? s.contact_phone.replace(/\D/g, '').replace(/^0/, '') : '';
     const wxDay = (() => { const t = isoDay(), nx = D.days.filter(d => d.day >= t && d.status !== 'done').map(d => d.day).sort()[0];
       return nx || (p.planned_from && (p.planned_to || p.planned_from) >= t ? (p.planned_from > t ? p.planned_from : t) : null); })();
-    box.innerHTML = `${schedSection()}${p.site_id && wxDay ? `<span data-wxcard="${p.site_id}|${wxDay}|תחזית ל${dayLabel(wxDay)}"></span>` : ''}
+    box.innerHTML = `${schedSection()}${readySection()}${p.site_id && wxDay ? `<span data-wxcard="${p.site_id}|${wxDay}|תחזית ל${dayLabel(wxDay)}"></span>` : ''}
       ${kpiRow(appPlan
-        ? [[tot && Math.round(done / tot * 100) + '%', 'מהתכנית בוצע']]
+        ? [[done && Math.round(done / tot * 100) + '%', 'מהתכנית בוצע'], [dDone && `${dDone}/${D.days.length}`, 'ימי שטח']]
         : [[range, 'לו"ז'], [fdays && `${fdays}${p.field_days_planned ? '/' + nf(p.field_days_planned) : ''}`, 'ימי שטח'], [D.reps.length, 'דוחות שטח']])}
       ${open.length ? `<section><h3 class="sh">תקלות פתוחות</h3><div class="alist">${open.map(i => `<div class="arow ${i.severity === 'critical' ? 'bad' : 'warn'}"><span class="aic">${icon('alert', 20)}</span><span class="grow"><b>${esc(i.body)}</b><small>${KIND_HE[i.kind] || ''} · ${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span>${M ? `<button class="chip" data-x="${i.id}">טופל</button>` : ''}</div>`).join('')}</div></section>` : ''}
       <div class="menu">
@@ -174,7 +231,7 @@ export async function renderProject(el, id, tab = 'o') {
     $$('[data-act]', box).forEach(r => r.onclick = () => r.dataset.act === 'site' ? siteSheet() : notesSheet());
     if (p.site_id) { const cb = document.createElement('div'); $('.menu', box)?.after(cb); import('../lib/contacts.js').then(m => m.renderContacts(cb, { siteId: p.site_id, clientId: p.client_id, org: p.client_name || p.sites?.name, title: 'אנשי קשר באתר' })); }
     import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
-    bindSched(box);
+    bindSched(box); bindReady(box); readyWx(box).catch(() => {});
     const sh = $('#share', box); if (sh) sh.onclick = shareSheet;
   }
   async function shareSheet() {
@@ -414,6 +471,22 @@ export async function renderProject(el, id, tab = 'o') {
     (await import('./chat.js')).renderChat($('#cx'), { project: p });
   }
 
+  // ----- סגירה: ימים נסגרו → חתימת לקוח (סוגרת את הפרויקט) → דוח ללקוח. הצעד הבא תמיד בולט -----
+  function closeFlow(SG, cs) {
+    const lead = state.profile.role === 'crew_lead'; if (!M && !lead) return '';
+    const open = D.days.filter(d => d.status !== 'done'), live = D.days.find(d => !['done', 'planned', 'cancelled'].includes(d.status));
+    const daysOk = (D.days.length || D.reps.length) && !open.length;
+    const doneN = D.days.length - open.length;
+    const step = (n, ok, t, s, href, next) => `<a class="rdy rstep ${ok ? 'on' : next ? 'next' : ''}" ${href ? `href="${esc(href)}"` : ''}><span class="rbox">${ok ? icon('check', 16) : n}</span><span class="grow"><b>${t}</b>${s ? `<small>${s}</small>` : ''}</span>${href ? `<span class="chev">${icon('chev', 16)}</span>` : ''}</a>`;
+    const pilot = p.engagement === 'פיילוט';
+    const rows = [
+      step(1, daysOk, 'ימי השטח נסגרו', D.days.length ? `${doneN}/${D.days.length}${live ? ' · יום פתוח עכשיו' : open.length ? ` · הבא ${dm(open[0].day)}` : ''}` : D.reps.length ? `${D.reps.length} דוחות יומיים` : 'עוד אין ימי שטח', live ? `#/day/${live.id}` : '', false),
+      step(2, !!SG.length, 'חתימת לקוח', SG.length ? esc(`${SG[0].name || ''}${SG[0].at ? ' · ' + dm(SG[0].at.slice(0, 10)) : ''}`) : '', cs && !SG.length ? '' : `#/signoff/${id}`, daysOk && !SG.length),
+      M ? step(3, false, 'דוח ללקוח', 'PDF · קולאז׳ לפני/אחרי', `#/client-report/${id}`, !!SG.length || !!cs) : '',
+    ];
+    const closeBtn = M && !cs && (pilot || (state.profile.role === 'admin' && !SG.length)) ? `<button class="btn ghost block" id="cls">${pilot ? 'סיום הפיילוט' : 'סגירה בלי חתימה'}</button>` : '';
+    return `<section><h3 class="sh">${cs ? 'אחרי הסגירה' : 'סגירת הפרויקט'}</h3><div class="rdylist">${rows.join('')}</div></section>${closeBtn}`;
+  }
   // ----- סיכום -----
   async function summary(box) {
     const done = D.days.filter(d => d.status === 'done');
@@ -434,8 +507,7 @@ export async function renderProject(el, id, tab = 'o') {
         <small class="muted">${[g.at ? new Date(g.at).toLocaleDateString('he-IL') : '', g.days.length ? 'ימים: ' + daysTxt(g.days) : '', g.rating ? `שביעות רצון ${g.rating}/5` : ''].filter(Boolean).join(' · ')}</small>
         ${g.notes ? `<small>${esc(g.notes)}</small>` : ''}<div data-sg="${i}"></div></div>`).join('')}</section>` : ''}
       <section id="galsec" hidden><h3 class="sh">לפני / אחרי</h3><div class="photos" id="gal"></div></section>
-      ${M ? `<a class="btn ghost block" href="#/client-report/${id}">${icon('report', 18)} דוח ללקוח (PDF)</a>` : ''}
-      ${M && !cs ? `<button class="btn ghost block" id="cls">סגירת פרויקט</button>` : ''}`;
+      ${closeFlow(SG, cs)}`;
     if (M) laborBlock();
     const { data: ph } = await sb.from('photos').select('kind,storage_path,work_day_id').eq('project_id', id).in('kind', ['before', 'after']).order('created_at');
     const urls = await signedUrls('field', [...(ph || []).map(x => x.storage_path), ...SG.map(g => g.path).filter(Boolean)]);

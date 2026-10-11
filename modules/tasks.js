@@ -1,6 +1,6 @@
 // משימות אישיות (מעקב): מנהל פותח לעובד משימה — לרוב מקושרת לליד/אתר — והעובד רואה אותה בראש מסך הבית,
 // עם חיוג / וואטסאפ / מייל לאיש הקשר וסימון "בוצע". כל פעולה נחתמת ביומן הפעולות.
-import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials, ask, signedUrls, zoom, addFieldPhoto, enqueue, flush } from '../lib/core.js';
+import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials, ask, signedUrls, zoom, addFieldPhoto, enqueue, flush, cache, haptic } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
 const SEL = 'id,title,instructions,due,status,assignee_id,created_by,site_id,project_id,done_at,photos,sites(name,slug,contact_name,contact_phone),projects(name)';
@@ -19,15 +19,21 @@ export async function myTasks(box) {
       isManager() ? sb.from('tasks').select(SEL).eq('created_by', me).eq('phase', 'מעקב').neq('assignee_id', me).not('status', 'in', '(done,dropped)').order('due', { nullsFirst: false }) : Promise.resolve({ data: [] }),
       sb.from('profiles').select('id,full_name'),
     ]);
+    if (!a) throw new Error('offline');
     mine = a || []; others = b || []; (p || []).forEach(x => names.set(x.id, x.full_name));
-  } catch { return; }
+    await cache.set('my-tasks', { mine, others, names: [...names] }).catch(() => {});
+  } catch {   // בלי קליטה: המשימות מהפעם האחרונה (פחות מה שכבר סומן בתור)
+    const c = await cache.get('my-tasks').catch(() => null); if (!c) return;
+    let doneQ = new Set(); try { const { outbox } = await import('../lib/store.js'); doneQ = new Set((await outbox.all()).filter(x => x.table === 'tasks' && x.patch?.status === 'done').map(x => x.rowId)); } catch { /* */ }
+    mine = c.mine.filter(t => !doneQ.has(t.id)); others = c.others; names = new Map(c.names);
+  }
   if (!mine.length && !others.length) { box.innerHTML = ''; return; }
   const urls = await signedUrls('field', mine.flatMap(t => t.photos?.before || [])).catch(() => ({}));
   const row = (t, mineRow) => {
     const s = t.sites, ph = s?.contact_phone, em = emailIn(t.instructions);
     return `<div class="card stack" data-id="${t.id}">
       <div class="row"><span class="grow"><b>${esc(t.title)}</b><small>${[s?.name && !t.project_id ? esc(s.name) : '', dueTxt(t.due), !mineRow ? 'אצל ' + esc((names.get(t.assignee_id) || '').split(' ')[0]) : ''].filter(Boolean).join(' · ')}</small></span>
-        ${mineRow ? `<button class="btn primary sm" data-done="${t.id}">בוצע</button>` : ''}</div>
+        ${mineRow ? `<button class="btn primary sm" data-done="${t.id}">${t.project_id && t.photos?.before?.length ? `${icon('photo', 16)} טיפלתי` : 'בוצע'}</button>` : ''}</div>
       ${t.instructions ? `<div class="small">${esc(t.instructions).replace(/\n/g, '<br>')}</div>` : ''}
       ${mineRow && t.photos?.before?.length ? `<div class="fphs sm">${t.photos.before.map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : ''}
       ${mineRow && (ph || em || s) ? `<div class="chips tacts">${s?.contact_name ? `<span class="small muted grow">${esc(s.contact_name)}</span>` : '<span class="grow"></span>'}
@@ -47,9 +53,8 @@ export async function myTasks(box) {
     const note = await ask('מה סוכם?', { multiline: true, placeholder: 'למשל: נקבעה פגישה ל-12.10 בשעה 10:00 (לא חובה)', ok: 'סימון בוצע', optional: true });
     if (note == null || b.disabled) return;
     b.disabled = true;
-    const { error } = await sb.from('tasks').update({ status: 'done', done_by: me, done_at: new Date().toISOString(), done_note: note.trim() || null }).eq('id', b.dataset.done);
-    if (error) { b.disabled = false; return toast(errText(error)); }
-    b.closest('.card')?.classList.add('leaving'); toast('סומן כבוצע — עודכן גם במאנדי'); myTasks(box);
+    await enqueue({ kind: 'update', table: 'tasks', rowId: b.dataset.done, patch: { status: 'done', done_by: me, done_at: new Date().toISOString(), done_note: note.trim() || null } });   // דרך התור — עובד גם בלי קליטה
+    b.closest('.card')?.classList.add('leaving'); haptic('success'); toast(navigator.onLine ? 'סומן כבוצע' : 'סומן — יישלח כשתהיה קליטה'); setTimeout(() => myTasks(box), 350);
   });
 }
 
@@ -91,6 +96,7 @@ export function completeTask(t, onDone, meta = {}) {
       if ($('#cb', s)) $('#cb', s).innerHTML = before.map(img).join('');
       $('#ca', s).innerHTML = after.map(img).join('') + `<label class="fph add" aria-label="צילום אחרי">${icon('photo', 18)}<input type="file" accept="image/*" capture="environment" multiple id="cf" hidden></label>`;
       $$('img.fph', s).forEach(i => i.onclick = () => zoom(i.src, ''));
+      const need = before.length && !after.length, ok = $('#cok', s); if (ok) ok.innerHTML = need ? `${icon('photo', 18)} צילום אחרי` : 'טופל ✓';
       $('#cf', s).onchange = async e => {
         const fl = [...e.target.files]; if (!fl.length) return;
         for (const file of fl) {
@@ -103,11 +109,11 @@ export function completeTask(t, onDone, meta = {}) {
     };
     Object.assign(urls, await signedUrls('field', [...before, ...after]).catch(() => ({}))); draw();
     $('#cok', s).onclick = async () => {
-      if (before.length && !after.length) return toast('צריך תמונה של אחרי הטיפול');
+      if (before.length && !after.length) return $('#cf', s)?.click();   // הכפתור הראשי פותח את המצלמה — אחרי התמונה הוא הופך ל"טופל"
       if ($('#cok', s).disabled) return; $('#cok', s).disabled = true;
       const patch = { status: 'done', done_by: state.user.id, done_at: new Date().toISOString(), done_note: $('#cn', s).value.trim() || null, photos: { before, after } };
       await enqueue({ kind: 'update', table: 'tasks', rowId: t.id, patch });   // אחרי התמונות בתור — נשלח לפי הסדר
-      Object.assign(t, patch); close(); toast(navigator.onLine ? 'סומן כטופל' : 'סומן כטופל — יישלח כשתהיה קליטה'); await flush(); onDone && onDone();
+      Object.assign(t, patch); close(); haptic('success'); toast(navigator.onLine ? 'סומן כטופל' : 'סומן כטופל — יישלח כשתהיה קליטה'); await flush(); onDone && onDone();
     };
   });
 }

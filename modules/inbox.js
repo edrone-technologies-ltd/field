@@ -13,15 +13,17 @@ export async function renderInbox(el) {
   const groups = rows.filter(c => c.kind === 'group'), dms = rows.filter(c => c.kind === 'dm');
   const row = c => `<a class="lrow msgrow ${c.unread ? 'unread' : ''}" href="#/c/${c.id}">${av(c)}<span class="grow"><span class="r1"><b>${esc(c.title || '')}</b><small>${c.last_message_at ? timeAgo(c.last_message_at) : ''}</small></span>
     <small class="r2">${esc(c.last_message || (c.kind === 'group' ? `${(c.members || []).length} חברים` : 'אין הודעות עדיין'))}</small></span>${c.unread ? `<span class="badge">${c.unread}</span>` : ''}</a>`;
-  $('#ib').innerHTML = `${dms.length ? `<h3 class="sh">אישי</h3>${dms.map(row).join('')}` : ''}
-    <h3 class="sh">קבוצות</h3>${groups.map(row).join('') || '<div class="empty-line">אין קבוצות</div>'}`;
-  $('#new').onclick = newMessage;
+  // רשימה אחת לפי ההודעה האחרונה (כמו בוואטסאפ): שלא נקראו למעלה, אחר כך החדשות
+  const all = [...dms, ...groups].sort((a, b) => (b.unread ? 1 : 0) - (a.unread ? 1 : 0) || String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
+  $('#ib').innerHTML = all.map(row).join('') + (dms.length ? '' : `<button class="lrow msgrow newdm" id="new2"><span class="avatar grp">${icon('plus', 20)}</span><span class="grow"><b>הודעה אישית</b></span></button>`);
+  $('#new').onclick = newMessage; const n2 = $('#new2'); if (n2) n2.onclick = newMessage;
 }
 
 async function newMessage() {
   const { data: people } = await sb.from('profiles').select('id,full_name,role').eq('is_active', true).neq('id', state.user.id).order('full_name');
   sheet(`<div class="lrow"><h3 class="grow">הודעה חדשה</h3><button class="chip" data-close>סגירה</button></div>
-    <div class="list">${(people || []).map(p => `<button class="lrow" data-p="${p.id}"><span class="avatar">${esc(initials(p.full_name))}</span><span class="grow"><b>${esc(p.full_name)}</b><small>${esc(ROLE_HE[p.role] || '')}</small></span></button>`).join('')}</div>
+    ${(people || []).length > 8 ? '<input type="search" id="pq" placeholder="חיפוש" aria-label="חיפוש">' : ''}
+    <div class="list">${(people || []).map(p => `<button class="lrow" data-p="${p.id}" data-n="${esc(p.full_name)}"><span class="avatar">${esc(initials(p.full_name))}</span><span class="grow"><b>${esc(p.full_name)}</b><small>${esc(ROLE_HE[p.role] || '')}</small></span></button>`).join('')}</div>
     ${isManager() ? `<button class="btn ghost block" id="ng">${icon('users', 18)} קבוצת תפוצה חדשה</button>` : ''}`, (s, close) => {
     $$('[data-p]', s).forEach(b => b.onclick = async () => {
       if (b.disabled) return; b.disabled = true;
@@ -29,6 +31,7 @@ async function newMessage() {
       close(); location.hash = '#/c/' + data;
     });
     const g = $('#ng', s); if (g) g.onclick = () => { close(); newGroup(people || [], newMessage); };
+    const q = $('#pq', s); if (q) q.oninput = () => { const v = q.value.trim(); $$('[data-p]', s).forEach(b => b.hidden = !!v && !b.dataset.n.includes(v)); };
   });
 }
 function newGroup(people, back) {

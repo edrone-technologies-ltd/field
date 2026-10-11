@@ -169,7 +169,8 @@ export async function reportsTab(box, D, { reload }) {
   ].sort((a, b) => a.at < b.at ? 1 : -1);
   $('#rlist').innerHTML = `
     <section><div class="sh-row"><h3 class="sh">כל הדוחות</h3>${feed.length ? `<span class="count">${feed.length}</span>` : ''}</div>
-      ${feed.length ? `<div class="list">${feed.map(f => f.html).join('')}</div>` : '<div class="empty-line">אין דוחות</div>'}</section>`;
+      <div class="list">${feed.map(f => f.html).join('')}<button class="addrow" id="rnew" type="button">${icon('plus', 18)} ${feed.length ? 'דוח חדש' : 'דוח ראשון'}</button></div></section>`;
+  $('#rnew').onclick = () => pickType(pid);
   $$('[data-mr]').forEach(b => b.onclick = async () => { const r = D.reps.find(x => x.monday_item_id === b.dataset.mr); const u = await signedUrls('media', (r.photos || []).filter(Boolean));
     sheet(`<h3>דוח יומי · ${dm(r.report_date)}</h3><div class="small muted">${esc(r.crew || '')}</div>
       <div class="menu">${[['עבודה', r.work], ['שעות', r.hours], ['גלונים', r.gallons], ['בעיות', r.issues], ['הערות', r.notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(String(v))}</b></span></div>`).join('')}</div>

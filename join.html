@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#101613">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="E-Drone">
+<title>E-Drone שטח</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&family=Rubik:wght@500;700;800&display=swap">
+<style>
+  :root{--bg:#101613;--ink:#eaf1ec;--muted:#97a69d;--lime:#b5e04a;--lime-ink:#14200a;--line:#2a3832}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"Heebo",system-ui,-apple-system,sans-serif}
+  body{display:flex;align-items:center;justify-content:center;padding:24px;overflow:hidden;
+    background:radial-gradient(120% 70% at 50% 0%,#24321a 0%,var(--bg) 62%)}
+  main{width:100%;max-width:380px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:18px}
+  .mk{width:96px;height:96px;border-radius:26px;box-shadow:0 0 0 0 #b5e04a55;animation:pulse 1.8s ease-out infinite}
+  h1{font-family:"Rubik","Heebo",sans-serif;font-weight:800;font-size:1.9rem;margin:0;line-height:1.2}
+  p{margin:0;color:var(--muted);font-size:1.05rem}
+  .bar{width:140px;height:4px;border-radius:9px;background:var(--line);overflow:hidden}
+  .bar i{display:block;height:100%;width:40%;background:var(--lime);border-radius:9px;animation:slide 1.1s ease-in-out infinite alternate}
+  a.btn{display:flex;align-items:center;justify-content:center;min-height:56px;width:100%;border-radius:16px;background:var(--lime);color:var(--lime-ink);font-weight:800;font-size:1.1rem;text-decoration:none}
+  .ok .mk{animation:pop .5s cubic-bezier(.3,1.6,.5,1) both}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 #b5e04a66}100%{box-shadow:0 0 0 26px #b5e04a00}}
+  @keyframes slide{from{transform:translateX(-30%)}to{transform:translateX(180%)}}
+  @keyframes pop{0%{transform:scale(.6)}100%{transform:scale(1)}}
+  @media (prefers-reduced-motion: reduce){.mk,.bar i{animation:none}}
+</style>
+</head>
+<body>
+<main id="m">
+  <svg class="mk" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="26" fill="#c9ec7f"/><g stroke="#3d3f40" stroke-width="7" stroke-linecap="round" fill="none"><path d="M33 33l34 34M67 33L33 67"/><path d="M19 30a14 14 0 0 1 11-11M81 30a14 14 0 0 0-11-11M19 70a14 14 0 0 0 11 11M81 70a14 14 0 0 1-11 11"/></g><g fill="#3d3f40"><circle cx="50" cy="50" r="13"/><circle cx="31" cy="31" r="6"/><circle cx="69" cy="31" r="6"/><circle cx="31" cy="69" r="6"/><circle cx="69" cy="69" r="6"/></g></svg>
+  <h1>מתחברים…</h1>
+  <div class="bar"><i></i></div>
+</main>
+<script type="module">
+// קישור הזמנה אישי: #<טוקן> → כניסה בלי להקליד → האפליקציה (שם מחכה קבלת הפנים)
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
+import { SUPABASE_URL, SUPABASE_ANON } from './config.js';
+const m = document.getElementById('m');
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const MK = document.querySelector('.mk').outerHTML;
+const fail = t => { m.innerHTML = `<svg class="mk" style="animation:none" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="26" fill="#c9ec7f"/><g stroke="#3d3f40" stroke-width="7" stroke-linecap="round" fill="none"><path d="M33 33l34 34M67 33L33 67"/><path d="M19 30a14 14 0 0 1 11-11M81 30a14 14 0 0 0-11-11M19 70a14 14 0 0 0 11 11M81 70a14 14 0 0 1-11 11"/></g><g fill="#3d3f40"><circle cx="50" cy="50" r="13"/><circle cx="31" cy="31" r="6"/><circle cx="69" cy="31" r="6"/><circle cx="31" cy="69" r="6"/><circle cx="69" cy="69" r="6"/></g></svg><h1>${esc(t)}</h1><p>בקשו מהמשרד קישור חדש, או היכנסו עם הטלפון והקוד</p><a class="btn" href="./">לכניסה</a>`; };
+const tok = (location.hash.replace(/^#\/?/, '').match(/[0-9a-f]{36}/) || [])[0];
+(async () => {
+  if (!tok) return fail('הקישור לא שלם');
+  history.replaceState(null, '', location.pathname);   // הטוקן לא נשאר בשורת הכתובת / בהיסטוריה
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true, autoRefreshToken: false, storageKey: 'edrone-field-auth' } });
+  try {
+    const { data, error } = await sb.functions.invoke('invite', { body: { action: 'redeem', token: tok } });
+    if (error || !data?.token_hash) {
+      let msg = 'הקישור כבר לא בתוקף'; try { msg = (await error?.context?.json())?.error || msg; } catch { /* */ }
+      // כבר מחובר במכשיר הזה? ממשיכים פנימה
+      const { data: { session } } = await sb.auth.getSession(); if (session) return location.replace('./#/');
+      return fail(msg);
+    }
+    const { error: e2 } = await sb.auth.verifyOtp({ token_hash: data.token_hash, type: 'magiclink' });
+    if (e2) return fail('הכניסה לא הצליחה');
+    try { if (data.phone) localStorage.setItem('edrone-phone', data.phone); sessionStorage.setItem('edrone-joined', '1'); } catch { /* */ }
+    const first = String(data.name || '').trim().split(/\s+/)[0];
+    m.classList.add('ok');
+    m.innerHTML = `<svg class="mk" viewBox="0 0 100 100" aria-hidden="true"><rect width="100" height="100" rx="26" fill="#c9ec7f"/><g stroke="#3d3f40" stroke-width="7" stroke-linecap="round" fill="none"><path d="M33 33l34 34M67 33L33 67"/><path d="M19 30a14 14 0 0 1 11-11M81 30a14 14 0 0 0-11-11M19 70a14 14 0 0 0 11 11M81 70a14 14 0 0 1-11 11"/></g><g fill="#3d3f40"><circle cx="50" cy="50" r="13"/><circle cx="31" cy="31" r="6"/><circle cx="69" cy="31" r="6"/><circle cx="31" cy="69" r="6"/><circle cx="69" cy="69" r="6"/></g></svg><h1>${first ? `היי ${esc(first)}` : 'ברוכים הבאים'}</h1><p>נכנסת ל-E-Drone שטח</p>`;
+    setTimeout(() => location.replace('./#/'), 900);
+  } catch { fail('אין חיבור לשרת'); }
+})();
+</script>
+</body>
+</html>

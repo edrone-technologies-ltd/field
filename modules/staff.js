@@ -37,8 +37,8 @@ export async function renderStaff(el) {
       return `<a class="lrow" href="#/staff/${p.id}"><span class="avatar sm">${esc(initials(p.full_name))}</span><span class="grow"><b>${esc(p.full_name)}${open.has(p.id) ? ' <span class="cl-dot inline"></span>' : ''}</b>
         <small>${esc(pr?.job_title || ROLE_HE[p.role] || '')}${pr?.employment_type && pr.employment_type !== 'עובד' ? ' · ' + esc(pr.employment_type) : ''}${R?.totals.net ? ` · ${hhmm(R.totals.net)} שעות החודש` : ''}</small></span>
         ${r ? `<span class="pill">${PAY_TYPES[r.pay_type] || ''}</span>` : ''}<span class="chev">${icon('chev', 18)}</span></a>`; }).join('')}</div>`;
-  import('./onboarding.js').then(async m => { for (const p of active) { const it = await m.status(p.id).catch(() => []); const d = it.filter(x => x.done).length;
-    const row = $(`#sl a[href="#/staff/${p.id}"] .chev`); if (row && it.length && d < it.length) row.insertAdjacentHTML('beforebegin', `<span class="pill">קליטה ${d}/${it.length}</span>`); } });
+  import('./onboarding.js').then(m => active.forEach(async p => { const it = await m.status(p.id).catch(() => []); const d = it.filter(x => x.done).length;   // במקביל, לא אחד-אחד
+    const row = $(`#sl a[href="#/staff/${p.id}"] .chev`); if (row && it.length && d < it.length) row.insertAdjacentHTML('beforebegin', `<span class="pill">קליטה ${d}/${it.length}</span>`); }));
   const b = $('#bulk'); if (b) b.onclick = async () => (await import('./files.js')).bulkUpload(active, () => renderStaff(el));
 }
 
@@ -66,18 +66,33 @@ async function infoTab(box, p) {
   const { data: e } = await sb.from('employee_profile').select('*').eq('user_id', p.id).maybeSingle();
   const F = [['job_title', 'תפקיד בחברה'], ['division', 'חטיבה'], ['employment_type', 'סוג התקשרות'], ['start_date', 'תחילת עבודה', 'date'], ['id_number', 'תעודת זהות'], ['birth_date', 'תאריך לידה', 'date'], ['address', 'כתובת'], ['emergency_contact', 'איש קשר לחירום'], ['notes', 'הערות', 'long']];
   const v = (k, type) => e?.[k] ? (type === 'date' ? new Date(e[k]).toLocaleDateString('he-IL') : esc(e[k])) : '<span class="muted">—</span>';
-  box.innerHTML = `<div class="menu">${F.map(([k, l, t]) => `<div class="lrow kv"><span class="grow"><small>${l}</small><b>${v(k, t)}</b></span></div>`).join('')}
+  // שדות חובה לתיק שלם — מה שחסר מסומן, ולחיצה על שורה פותחת עריכה ישר בשדה
+  const NEED = ['job_title', 'start_date', 'id_number', 'emergency_contact'], miss = NEED.filter(k => !e?.[k]).concat(p.phone ? [] : ['__phone']);
+  box.innerHTML = `${miss.length ? `<button class="arow warn card-like" type="button" data-go="${miss[0]}"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>חסרים ${miss.length} פרטים</b><small>${miss.map(k => k === '__phone' ? 'טלפון' : F.find(f => f[0] === k)[1]).join(' · ')}</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
+    <div class="menu">${F.filter(([k]) => e?.[k] || NEED.includes(k)).map(([k, l, t]) => `<button type="button" class="lrow kv ${NEED.includes(k) && !e?.[k] ? 'missing' : ''}" data-go="${k}"><span class="grow"><small>${l}</small><b>${v(k, t)}</b></span></button>`).join('')}
       ${p.is_pilot ? `<div class="lrow kv"><span class="grow"><small>רישיון מטיס</small><b>${esc(p.pilot_license_no || '')}${p.pilot_license_expiry ? ' · עד ' + new Date(p.pilot_license_expiry).toLocaleDateString('he-IL') : ''}</b></span></div>` : ''}
       <div class="lrow kv"><span class="grow"><small>הרשאה באפליקציה</small><b>${esc(ROLE_HE[p.role] || '')}${p.is_active ? '' : ' · מושבת'}</b></span>${isAdmin() ? '<a class="chip" href="#/admin">שינוי</a>' : ''}</div></div>
     <button class="btn ghost block" id="edit">עריכת פרטים</button>`;
-  $('#edit', box).onclick = () => sheet(`<h3>עריכת פרטים · ${esc(p.full_name)}</h3>${F.map(([k, l, t]) => `<label class="field">${l}${t === 'long' ? `<textarea data-f="${k}" rows="2">${esc(e?.[k] || '')}</textarea>` : `<input type="${t === 'date' ? 'date' : 'text'}" data-f="${k}" value="${esc(e?.[k] || '')}">`}</label>`).join('')}
+  const IM = { id_number: 'numeric', emergency_contact: 'text' };
+  const open = focus => sheet(`<h3>עריכת פרטים · ${esc(p.full_name)}</h3>
+    ${isAdmin() ? `<label class="field">טלפון<input type="tel" inputmode="tel" data-p="phone" value="${esc(p.phone || '')}"></label>` : ''}
+    ${F.map(([k, l, t]) => `<label class="field">${l}${t === 'long' ? `<textarea data-f="${k}" rows="2">${esc(e?.[k] || '')}</textarea>` : `<input type="${t === 'date' ? 'date' : 'text'}" ${IM[k] ? `inputmode="${IM[k]}"` : ''} data-f="${k}" value="${esc(e?.[k] || '')}"${k === 'emergency_contact' ? ' placeholder="שם וטלפון"' : ''}>`}</label>`).join('')}
+    ${isAdmin() ? `<label class="tog"><span>מטיס</span><span class="sw"><input type="checkbox" id="ipl" ${p.is_pilot ? 'checked' : ''}><i></i></span></label>
+      <div class="row" id="plr" ${p.is_pilot ? '' : 'hidden'}><label class="field grow">מס׳ רישיון<input data-p="pilot_license_no" value="${esc(p.pilot_license_no || '')}"></label><label class="field grow">בתוקף עד<input type="date" data-p="pilot_license_expiry" value="${p.pilot_license_expiry || ''}"></label></div>` : ''}
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="sv">שמירה</button></div>`, (s, close) => {
+    const f = focus === '__phone' ? $('[data-p="phone"]', s) : $(`[data-f="${focus}"]`, s); if (f) setTimeout(() => { f.focus(); f.scrollIntoView?.({ block: 'center' }); }, 120);
+    const ip = $('#ipl', s); if (ip) ip.onchange = () => { $('#plr', s).hidden = !ip.checked; };
     $('#sv', s).onclick = async () => {
       const sv = $('#sv', s); if (sv.disabled) return; sv.disabled = true;
       const row = { user_id: p.id, updated_at: new Date().toISOString() }; $$('[data-f]', s).forEach(i => row[i.dataset.f] = i.value.trim() || null);
-      const { error } = await sb.from('employee_profile').upsert(row); if (error) { sv.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); } close(); toast('נשמר'); infoTab(box, p);
+      const { error } = await sb.from('employee_profile').upsert(row); if (error) { sv.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); }
+      if (isAdmin()) { const pp = { is_pilot: !!ip?.checked }; $$('[data-p]', s).forEach(i => pp[i.dataset.p] = i.value.trim() || null);
+        const { error: e2 } = await sb.from('profiles').update(pp).eq('id', p.id); if (e2) { sv.disabled = false; return toast(errText(e2, 'לא נשמר — נסו שוב')); } Object.assign(p, pp); }
+      close(); toast('נשמר'); infoTab(box, p);
     };
   });
+  $('#edit', box).onclick = () => open(null);
+  $$('[data-go]', box).forEach(b => b.onclick = () => open(b.dataset.go));
 }
 
 async function payTab(box, p) {

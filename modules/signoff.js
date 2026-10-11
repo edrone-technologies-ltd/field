@@ -97,7 +97,6 @@ export async function renderSignoff(el, pid, dayId = null) {
         <label class="field">מה בוצע<textarea id="sw" rows="3">${esc(summaryText())}</textarea></label>
         ${contacts.length ? `<div class="field">מי חותם<div class="chips">${contacts.map((x, i) => `<button type="button" class="chip" data-ct="${i}" aria-pressed="false">${esc(x.name)}${x.role ? ` · ${esc(x.role)}` : ''}</button>`).join('')}</div></div>` : ''}
         <div class="row"><label class="field grow">שם החותם<input type="text" id="sn" value="${esc(contacts.length === 1 ? contacts[0].name : p.sites?.contact_name || '')}"></label><label class="field grow">תפקיד<input type="text" id="sr" value="${esc(contacts.length === 1 ? contacts[0].role || '' : '')}"></label></div>
-        <label class="field">מייל לשליחת הדוח<input type="email" id="se" dir="ltr" value="${esc(contacts.find(x => x.email)?.email || '')}"></label>
         <div class="menu pad"><label class="tog"><span>העבודה בוצעה במלואה ולשביעות רצוני</span><span class="sw"><input type="checkbox" id="sf" checked><i></i></span></label></div>
         <div class="field">שביעות רצון<div class="stars" id="st">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-q="${n}" aria-pressed="${S.rating >= n}" aria-label="${n}">★</button>`).join('')}</div></div>
         <details class="fold"><summary><span class="sh">הערות הלקוח</span></summary><textarea id="snt" rows="2"></textarea></details>
@@ -105,7 +104,7 @@ export async function renderSignoff(el, pid, dayId = null) {
       </div>`;
     bar.innerHTML = '<button class="btn primary" id="sgo">אישור וחתימה</button>';
     $('#b1').onclick = step1;
-    $$('[data-ct]', el).forEach(b => b.onclick = () => { const x = contacts[+b.dataset.ct]; $$('[data-ct]', el).forEach(y => y.setAttribute('aria-pressed', y === b)); $('#sn').value = x.name || ''; $('#sr').value = x.role || ''; if (x.email) $('#se').value = x.email; });
+    $$('[data-ct]', el).forEach(b => b.onclick = () => { const x = contacts[+b.dataset.ct]; $$('[data-ct]', el).forEach(y => y.setAttribute('aria-pressed', y === b)); $('#sn').value = x.name || ''; $('#sr').value = x.role || ''; });
     $$('#st [data-q]').forEach(b => b.onclick = () => { S.rating = +b.dataset.q; $$('#st [data-q]').forEach(x => x.setAttribute('aria-pressed', +x.dataset.q <= S.rating)); });
     import('./today.js').then(({ pad }) => { const sig = pad($('#sig')); $('#sclr').onclick = () => sig.clear();
       $('#sgo').onclick = async e => {
@@ -122,11 +121,11 @@ export async function renderSignoff(el, pid, dayId = null) {
         try {
           await enqueue({ kind: 'file', path, blob: await sig.blob(), type: 'image/png' });
           await enqueue({ kind: 'insert', table: 'project_signoffs', row: { id, project_id: pid, work_day_id: dayId || null, signer_name: name, signer_role: $('#sr').value.trim() || null,
-            full_ok: $('#sf').checked, rating: S.rating, works: include.text || null, notes: $('#snt').value.trim() || null, signature_path: path, client_email: $('#se').value.trim() || null,
+            full_ok: $('#sf').checked, rating: S.rating, works: include.text || null, notes: $('#snt').value.trim() || null, signature_path: path, client_email: contacts.find(x => x.name === name)?.email || null,
             include, snapshot, created_by: state.user.id } });
         } catch (err) { e.target.disabled = false; return toast('השמירה נכשלה — נסו שוב'); }
         cache.set(ck, null).catch(() => {});
-        toast(navigator.onLine ? 'נחתם · הפרויקט עובר לסגירה' : 'נחתם · יישלח כשתחזור קליטה'); goUp('#/p/' + pid);
+        toast(navigator.onLine ? 'נחתם · הפרויקט עובר לסגירה' : 'נחתם · יישלח כשתחזור קליטה'); goUp('#/p/' + pid + '/s');
       };
     });
   }

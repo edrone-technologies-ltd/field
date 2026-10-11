@@ -1,7 +1,7 @@
 // מרכז ידע: הדרכות "איך מתפעלים" — סרטון (קישור דרייב/יוטיוב שמתנגן בפנים), הסבר, מסמכים.
 // בחינם: סרטונים לא נשמרים בשרת שלנו (רק קישור). לשרת עולים רק PDF ותמונות עד 10MB.
 // "צפיתי והבנתי" = מעקב הדרכה; פריט "חובה" מופיע בבית לכל מי שעוד לא אישר.
-import { sb, state, isManager, sheet, icon, $, $$, esc, toast, confirmBox, signedUrls, backBtn, initials, replaceHash, goUp, zoom } from '../lib/core.js';
+import { sb, state, isManager, can, sheet, icon, $, $$, esc, toast, confirmBox, signedUrls, backBtn, initials, replaceHash, goUp, zoom } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
 // קהלי יעד: ריק = כולם. מנהלים רואים הכל תמיד
@@ -29,9 +29,10 @@ export async function renderKb(el, cat = '') {
   const seen = new Map((views || []).map(v => [v.item_id, v]));
   const all = items || [], M = isManager();
   const todo = all.filter(x => (x.required || (x.cert_required && ['crew', 'crew_lead'].includes(state.profile.role))) && !kbDone(x, seen.get(x.id)));
-  const used = [...new Set([...C, ...all.map(x => x.category)])].filter(c => all.some(x => x.category === c));
+  const used = [...new Set([...C, ...all.map(x => x.category)])].filter(c => all.some(x => x.category === c) || GUIDES.some(g => g.cat === c));
   el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">מרכז ידע</h1>${M ? `<button class="hbtn" id="kbnew" aria-label="הדרכה חדשה">${icon('plus', 20)}</button>` : ''}</header>
     <div class="stack lg">
+      ${cat ? '' : quickRail(all)}
       <input class="search" id="kbq" type="search" placeholder="חיפוש: משאבה, סוללות, דוח יומי…">
       ${used.length > 1 ? `<div class="chips scroll">${['', ...used].map(c => `<button class="chip" data-c="${esc(c)}" aria-pressed="${c === cat}">${c || 'הכל'}</button>`).join('')}</div>` : ''}
       ${todo.length ? `<section><div class="sh-row"><h3 class="sh">לצפייה — חובה</h3><span class="count">${todo.length}</span></div><div class="list">${todo.map(row).join('')}</div></section>` : ''}
@@ -39,24 +40,69 @@ export async function renderKb(el, cat = '') {
     </div>`;
   function row(x) {
     const v = seen.get(x.id), kind = x.video_url ? 'play' : (x.files || []).length ? 'file' : 'report';
-    return `<a class="item kb" href="#/kb/${x.id}" data-q="${esc((x.title + ' ' + (x.body || '') + ' ' + x.category).toLowerCase())}"><span class="kbic ${x.video_url ? 'vid' : ''}">${kind === 'play' ? '<svg width="20" height="20" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>' : icon(kind, 20)}</span>
+    return `<a class="item kb" href="#/kb/${x.id}" data-q="${esc((x.title + ' ' + (x.body || '') + ' ' + x.category).toLowerCase())}"><span class="kbic ${x.video_url ? 'vid' : ''}${ytThumb(x.video_url) ? ' th' : ''}"${ytThumb(x.video_url) ? ` style="--th:url('${esc(ytThumb(x.video_url))}')"` : ''}>${kind === 'play' ? '<svg width="20" height="20" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>' : icon(kind, 20)}</span>
       <span class="t"><b>${esc(x.title)}</b><small>${esc([x.video_url ? 'סרטון' : 'מדריך', M && x.roles?.length ? audTxt(x.roles) : null].filter(Boolean).join(' · '))}</small></span>
       ${kbDone(x, v) ? `<span class="pill ok" aria-label="הושלם">${icon('check', 16)}</span>` : x.quiz ? '<span class="pill warn">מבחן</span>' : x.sign_required ? '<span class="pill warn">חתימה</span>' : !v && (x.required || x.cert_required) ? '<span class="newdot" title="חדש" aria-label="חדש"></span>' : ''}</a>`;
   }
   const draw = () => {
     const q = $('#kbq').value.trim().toLowerCase();
     const list = all.filter(x => (q || !todo.includes(x)) && (!cat || x.category === cat) && (!q || (x.title + ' ' + (x.body || '') + ' ' + x.category).toLowerCase().includes(q)));
-    const groups = [...new Set(list.map(x => x.category))];
-    $('#kbl').innerHTML = groups.map(g => `<section><h3 class="sh">${esc(g)}</h3><div class="list">${list.filter(x => x.category === g).map(row).join('')}</div></section>`).join('')
+    // מדריך פתיחה לקטגוריה שעוד אין בה הדרכה (נעלם לבד כשנוספת הדרכה אמיתית)
+    const starters = GUIDES.filter(g => !all.some(x => x.category === g.cat) && (!cat || g.cat === cat) && (!q || (g.t + ' ' + g.sub + ' ' + g.cat + ' ' + g.cards.map(c => c.t + ' ' + c.items.join(' ')).join(' ')).toLowerCase().includes(q)));
+    const groups = [...new Set([...list.map(x => x.category), ...starters.map(g => g.cat)])];
+    $('#kbl').innerHTML = groups.map(g => `<section><h3 class="sh">${esc(g)}</h3><div class="list">${list.filter(x => x.category === g).map(row).join('')}${starters.filter(x => x.cat === g).map(guideRow).join('')}</div></section>`).join('')
       || `<div class="empty-line">${all.length ? 'לא נמצא' : 'אין הדרכות'}</div>`;
   };
   $('#kbq').oninput = draw;
   $$('[data-c]', el).forEach(b => b.onclick = () => replaceHash('#/kb' + (b.dataset.c ? '/c/' + encodeURIComponent(b.dataset.c) : '')));
   const n = $('#kbnew'); if (n) n.onclick = () => editKb(null, C);
+  bindQuick(el);
   draw();
 }
 
+// ---------- מדריכים מהירים: החלקות ויזואליות + "מסלול עבודה" + מה שמיועד לתפקיד שלי ----------
+const mineRole = x => x.roles?.length && (x.roles.includes(state.profile.role) || x.roles.includes(state.profile.field_role) || (isManager() && x.roles.includes('ops_manager')));
+const ytThumb = u => ytId(u || '') ? `https://i.ytimg.com/vi/${ytId(u)}/mqdefault.jpg` : '';
+function quickRail(all) {
+  const built = [['flow', 'map', 'מסלול עבודה', 'מליד ועד חתימת לקוח', 'a'], ['do', 'play', 'מה עושים כאן', '3 החלקות', 'b'], ['setup', 'chat', 'התקנה והתראות', 'דקה אחת', 'c']];
+  const mine = all.filter(mineRole).slice(0, 6);
+  return `<div class="kbrail scroll-x">${built.map(([k, ic, t, s, c]) => `<button class="kbq kbq-${c}" data-qk="${k}"><span class="kbq-ic">${icon(ic, 22)}</span><b>${t}</b><small>${s}</small></button>`).join('')}
+    ${mine.map(x => `<a class="kbq kbq-i" href="#/kb/${x.id}"${ytThumb(x.video_url) ? ` style="--th:url('${esc(ytThumb(x.video_url))}')"` : ''}><span class="kbq-ic">${icon(x.video_url ? 'play' : 'book', 20)}</span><b>${esc(x.title)}</b><small>בשבילך</small></a>`).join('')}</div>`;
+}
+function bindQuick(el) {
+  $$('[data-qk]', el).forEach(b => b.onclick = async () => {
+    const k = b.dataset.qk; if (k === 'flow') { location.hash = '#/kb/flow'; return; }
+    const w = await import('./welcome.js');
+    if (k === 'do') w.play(w.storiesFor().map(x => ({ ...x, btn: 'הבא' })).concat([{ k: 'end', art: `<div class="wl-big ok">${icon('check', 52)}</div>`, t: 'זהו', btn: 'סגירה', end: true }]), { label: 'מה עושים כאן' });
+    else w.playSetup();
+  });
+}
+
+// מסלול עבודה של שטיפת חזיתות מקצה לקצה — כל שלב מפנה למסך שבו הוא קורה (לפי הרשאות) ולהדרכות הרלוונטיות
+const FLOW = [
+  { ic: 'pin', t: 'ליד ואפיון', s: 'סיור באתר, חזיתות, גישה ומים', href: '#/specs', ok: () => can('specs'), kb: [] },
+  { ic: 'clipboard', t: 'תכנית עבודה', s: 'ימי עבודה לפי חזית, צוות וציוד', href: '#/projects', ok: () => can('projects') && isManager(), kb: [] },
+  { ic: 'calendar', t: 'שיבוץ', s: 'צוות, רחפן ותאריך — הצוות מאשר הגעה', href: '#/schedule', ok: () => true, kb: [] },
+  { ic: 'drone', t: 'הכנה', s: 'ציוד, מים וחומרים, מזג אוויר, מרחב אווירי', href: '#/weather', ok: () => true, kb: ['רחפנים', 'מערכת שטיפה ומשאבות', 'חומרים וניקוי'] },
+  { ic: 'send', t: 'יום שטח', s: 'יציאה, הגעה, בטיחות, עבודה לפי התכנית', href: '#/', ok: () => true, kb: ['בטיחות ועבודה בגובה', 'נהלים'] },
+  { ic: 'photo', t: 'דוח יומי', s: 'תמונות לפני/אחרי, תקלות, הוצאות', href: '#/', ok: () => true, kb: [] },
+  { ic: 'pen', t: 'החתמת לקוח', s: 'בסיום — הלקוח חותם בשטח', href: '#/projects', ok: () => can('projects'), kb: [] },
+  { ic: 'check', t: 'סיכום', s: 'הדוחות והתמונות מגיעים למשרד ולמאנדי לבד', href: '#/projects', ok: () => can('projects') && isManager(), kb: [] },
+];
+async function renderFlow(el) {
+  const { data: items } = await sb.from('kb_items').select('category');
+  const n = c => (items || []).filter(x => x.category === c).length;
+  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">מסלול עבודה</h1></header>
+    <ol class="kbflow">${FLOW.map((f, i) => { const go = f.ok(), cats = f.kb.filter(n);
+      return `<li class="${go ? '' : 'off'}"><span class="kf-n">${icon(f.ic, 20)}</span><div class="kf-b">
+        ${go ? `<a href="${f.href}"><b>${i + 1}. ${f.t}</b><small>${f.s}</small></a>` : `<div><b>${i + 1}. ${f.t}</b><small>${f.s} · המשרד</small></div>`}
+        ${cats.length ? `<div class="chips">${cats.map(c => `<a class="chip" href="#/kb/c/${encodeURIComponent(c)}">${icon('play', 14)} ${esc(c)} · ${n(c)}</a>`).join('')}</div>` : ''}</div></li>`; }).join('')}</ol>`;
+}
+
 export async function renderKbItem(el, id) {
+  if (id === 'flow') return renderFlow(el);
+  if (id.startsWith('g-')) return renderGuide(el, id);
+  try { const { pushState } = await import('../lib/core.js'); PUSH_ON = (await pushState()) === 'on'; } catch { /* */ }
   el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">מרכז ידע</h1></header><div class="skel"></div>`;
   const { data: x } = await sb.from('kb_items').select('*').eq('id', id).maybeSingle();
   if (!x) { el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">מרכז ידע</h1></header><div class="empty-line">ההדרכה לא נמצאה</div>`; return; }
@@ -71,6 +117,7 @@ export async function renderKbItem(el, id) {
       ${emb ? `<div class="kbvid"><iframe src="${esc(emb)}" allow="autoplay; encrypted-media; fullscreen" allowfullscreen loading="lazy" title="${esc(x.title)}"></iframe></div>`
         : x.video_url?.startsWith('#/') ? `<a class="btn primary block big" href="${esc(x.video_url)}">${icon('play', 18)} הפעלת ההדרכה</a>`   // הדרכה פנימית באפליקציה
         : x.video_url ? `<a class="btn ghost block" href="${esc(x.video_url)}" target="_blank" rel="noopener">${icon('send', 18)} פתיחת הסרטון</a>` : ''}
+      ${x.auto_done === 'push' && !PUSH_ON ? `<button class="btn primary block big" id="kbsetup">${icon('chat', 18)} הפעלה עכשיו</button>` : ''}
       ${x.body ? `<div class="card kbbody">${esc(x.body).replace(/\n/g, '<br>')}</div>` : ''}
       ${files.some(isImg) ? `<div class="kbshots">${files.filter(isImg).map((f, i) => `<figure><img src="${esc(urls[f.path] || '')}" alt="${esc(f.name.replace(/\.\w+$/, ''))}" loading="lazy"><figcaption>${i + 1}. ${esc(f.name.replace(/^\d+[-_ ]*/, '').replace(/\.\w+$/, ''))}</figcaption></figure>`).join('')}</div>` : ''}
       ${files.some(f => !isImg(f)) ? `<section><h3 class="sh">מסמכים</h3><div class="list">${files.filter(f => !isImg(f)).map(f => urls[f.path] ? `<a class="lrow" href="${esc(urls[f.path])}" target="_blank" rel="noopener"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b></span><span class="chev">${icon('chev', 18)}</span></a>` : `<div class="lrow"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b><small>לא זמין כרגע</small></span></div>`).join('')}</div></section>` : ''}
@@ -86,6 +133,7 @@ export async function renderKbItem(el, id) {
     if (error) { ok.disabled = false; return toast(errText(error)); }
     toast('נרשם — תודה'); renderKbItem(el, id);
   };
+  const su = $('#kbsetup'); if (su) su.onclick = async () => (await import('./welcome.js')).playSetup();
   const ed = $('#kbed'); if (ed) ed.onclick = async () => editKb(x, await cats());
   if (x.quiz?.length) drawQuiz(x, v, el, id);
   if (x.sign_required) drawSign(x, v, el, id);
@@ -149,11 +197,11 @@ function drawSign(x, v, el, id) {
 }
 
 // יצירה / עריכה (מנהלים)
-async function editKb(x, C) {
+async function editKb(x, C, pre = {}) {
   let keys = [];
   if (x?.quiz?.length) { const { data } = await sb.from('kb_quiz_keys').select('answers').eq('item_id', x.id).maybeSingle(); keys = data?.answers || []; }
   const Q = (x?.quiz || []).map((q, i) => ({ q: q.q, options: [...q.options, '', '', '', ''].slice(0, 4), a: keys[i] ?? 0 }));
-  const f = { title: x?.title || '', category: x?.category || C[0] || 'כללי', body: x?.body || '', video_url: x?.video_url || '', required: !!x?.required, files: [...(x?.files || [])], roles: [...(x?.roles || [])] };
+  const f = { title: x?.title || pre.title || '', category: x?.category || pre.category || C[0] || 'כללי', body: x?.body || pre.body || '', video_url: x?.video_url || '', required: !!x?.required, files: [...(x?.files || [])], roles: [...(x?.roles || [])] };
   sheet(`<h3>${x ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
     <label class="field">כותרת<input id="kt" value="${esc(f.title)}" placeholder="למשל: הפעלת משאבת הלחץ בבוקר"></label>
     <div class="field">קטגוריה<div class="chips">${[...new Set([...C, f.category])].map(c => `<button type="button" class="chip" data-kc="${esc(c)}" aria-pressed="${c === f.category}">${esc(c)}</button>`).join('')}</div></div>
@@ -230,4 +278,55 @@ export async function kbDue(box) {
     const due = (req || []).filter(x => !kbDone(x, vm.get(x.id)) && (x.required || ['crew', 'crew_lead'].includes(state.profile.role)));
     box.innerHTML = due.map(x => `<a class="promo" href="#/kb/${x.id}"><span class="mic">${icon('play', 20)}</span><span class="grow"><b>הדרכה לצפייה</b><small>${esc(x.title)}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('');
   } catch { box.innerHTML = ''; }
+}
+
+// ---------- מדריכי פתיחה (מובנים) לקטגוריות ריקות: נקודות התחלה כלליות, לא נוהל החברה. אביחי מחליף בסרטון/נוהל בלחיצה ----------
+const GUIDES = [
+  { id: 'g-drone', cat: 'רחפנים', ic: 'drone', t: 'רחפן השטיפה — היכרות', sub: 'רכיבים, סוללות ושמירה על הכלי',
+    cards: [
+      { ic: 'drone', t: 'מה יש בכלי', items: ['גוף, זרועות ומדחפים', 'צינור הזנה ופיית ריסוס', 'סוללות או כבל הזנה (לפי הדגם)', 'שלט ואפליקציית הטיסה'] },
+      { ic: 'sync', t: 'סוללות', items: ['טעינה ואחסון לפי הוראות היצרן', 'לא משאירים בשמש או ברכב חם', 'סוללה נפוחה או פגועה — לא משתמשים, מדווחים'] },
+      { ic: 'wrench', t: 'אחרי העבודה', items: ['ניקוי הכלי מחומר ולכלוך', 'בדיקה חזותית של מדחפים וחיבורים', 'כל ממצא — תקלה באפליקציה, עם תמונה'] },
+    ], links: [['#/equipment', 'ציוד ותקלות', () => can('equipment')], ['#/weather', 'מזג אוויר וטיסה', () => true]] },
+  { id: 'g-wash', cat: 'מערכת שטיפה ומשאבות', ic: 'wrench', t: 'פריסת ציוד לשטיפה', sub: 'מים, משאבה, צנרת וחיבורים',
+    cards: [
+      { ic: 'pin', t: 'מקור מים', items: ['ברז, הידרנט או מכלית — לפי מה שסומן באפיון', 'בודקים לחץ וזרימה לפני שמתחילים'] },
+      { ic: 'wrench', t: 'משאבה', items: ['על משטח ישר ויציב', 'רחוק מכניסות ומעברים', 'לפי הוראות היצרן של המשאבה'] },
+      { ic: 'map', t: 'צנרת וחיבורים', items: ['פריסה בלי קיפולים וחיכוך בפינות', 'מעבר הולכי רגל — מסומן ומכוסה', 'בדיקת דליפות לפני ההפעלה המלאה'] },
+      { ic: 'check', t: 'בסיום', items: ['ניקוז המערכת', 'ניקוי מסננים', 'מחסור או תקלה — דרך הכפתור + באפליקציה'] },
+    ], links: [['#/specs', 'אפיון האתר (מים וגישה)', () => can('specs')]] },
+  { id: 'g-safety', cat: 'בטיחות ועבודה בגובה', ic: 'shield', t: 'בטיחות בעבודה עם רחפן', sub: 'אזור עבודה, צוות ועצירה בחריג',
+    cards: [
+      { ic: 'alert', t: 'אזור העבודה', items: ['גידור ושילוט מתחת לאזור הטיסה', 'אין מעבר אנשים מתחת לרחפן', 'תיאום עם האתר: חלונות, כניסות, חניה'] },
+      { ic: 'users', t: 'הצוות', items: ['מטיס ומפעיל מערכות בקשר רציף', 'תפקידים ברורים לפני ההמראה', 'ציוד מגן אישי לפי סוג העבודה'] },
+      { ic: 'sun', t: 'עוצרים כש…', items: ['רוח ומשבים מעל המותר לכלי', 'גשם או ראות ירודה', 'אנשים נכנסים לאזור', 'כל ספק — עוצרים ומדווחים'] },
+    ], links: [['#/weather', 'מזג אוויר וטיסה', () => true]] },
+  { id: 'g-chem', cat: 'חומרים וניקוי', ic: 'clipboard', t: 'חומרי ניקוי — עקרונות', sub: 'מינון, בדיקה, אחסון ומגן',
+    cards: [
+      { ic: 'file', t: 'לפני השימוש', items: ['קוראים את התווית וגיליון הבטיחות (SDS) של היצרן', 'מינון לפי הוראות היצרן בלבד'] },
+      { ic: 'photo', t: 'בדיקה קטנה קודם', items: ['מנסים על שטח קטן ולא בולט', 'מצלמים לפני ואחרי'] },
+      { ic: 'shield', t: 'מגן ואחסון', items: ['כפפות ומשקפי מגן לפי הוראות היצרן', 'אריזה סגורה ומסומנת', 'לא שופכים לניקוז או לגינון'] },
+    ], links: [] },
+  { id: 'g-proc', cat: 'נהלים', ic: 'file', t: 'איפה כל דבר באפליקציה', sub: 'תקלה, הוצאה, בקשה, שעות',
+    cards: [
+      { ic: 'alert', t: 'תקלה בשטח', items: ['כפתור + ← תקלה, עם תמונה', 'רחפן מקורקע — מסומן לכל הצוות'] },
+      { ic: 'receipt', t: 'הוצאה', items: ['כפתור + ← הוצאה', 'מצלמים את הקבלה — זהו'] },
+      { ic: 'send', t: 'בקשה למשרד', items: ['שכר, ציוד, מסמכים', 'עוד ← בקשה למשרד'] },
+      { ic: 'clock', t: 'שעות', items: ['נרשמות לבד מיציאה ועד סיום', 'תיקון — מבקשים מ"השעות שלי"'] },
+    ], links: [['#/hours', 'השעות שלי', () => true], ['#/requests', 'בקשה למשרד', () => true]] },
+];
+const guideRow = g => `<a class="item kb kbg" href="#/kb/${g.id}" data-q="${esc((g.t + ' ' + g.sub).toLowerCase())}"><span class="kbic">${icon(g.ic, 20)}</span>
+  <span class="t"><b>${esc(g.t)}</b><small>מדריך פתיחה · ${esc(g.sub)}</small></span></a>`;
+async function renderGuide(el, id) {
+  const g = GUIDES.find(x => x.id === id);
+  if (!g) { el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">מרכז ידע</h1></header><div class="empty-line">ההדרכה לא נמצאה</div>`; return; }
+  const M = isManager(), links = g.links.filter(([, , ok]) => ok());
+  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">${esc(g.t)}</h1></header>
+    <div class="stack lg">
+      <div class="kbg-hero"><span>${icon(g.ic, 34)}</span><div><b>${esc(g.cat)}</b><small>נקודת התחלה כללית — הוראות היצרן ונוהלי החברה קודמים</small></div></div>
+      <div class="kbg-cards">${g.cards.map((c, i) => `<section class="kbg-c" style="--i:${i}"><div class="kbg-ct"><span>${icon(c.ic, 18)}</span><b>${esc(c.t)}</b></div><ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></section>`).join('')}</div>
+      ${links.length ? `<div class="list">${links.map(([h, t]) => `<a class="lrow" href="${h}"><span class="grow"><b>${esc(t)}</b></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
+      ${M ? `<button class="btn ghost block" id="kbrep">${icon('play', 18)} החלפה בסרטון / נוהל של החברה</button>` : ''}
+    </div>`;
+  const r = $('#kbrep'); if (r) r.onclick = async () => editKb(null, await cats(), { title: g.t, category: g.cat, body: g.cards.map(c => c.t + ':\n' + c.items.map(t => '• ' + t).join('\n')).join('\n\n') });
 }

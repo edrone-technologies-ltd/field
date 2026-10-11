@@ -33,7 +33,7 @@ export async function renderNews(el) {
       <h3>${esc(a.title)}</h3>${a.body ? `<p>${esc(a.body).replace(/\n/g, '<br>')}</p>` : ''}
       ${a.require_ack && !M ? (r?.ack_at ? `<div class="acked">${icon('check', 16)} אישרת קריאה</div>` : `<button class="btn primary block" data-ack="${a.id}">קראתי ואישרתי</button>`) : ''}
       ${M ? `<button class="linkbtn small" data-who="${a.id}">נקרא ${rd.length}/${aud.length}${a.require_ack ? ` · אישרו ${rd.filter(x => x.ack_at).length}` : ''}</button>` : ''}
-    </article>`; }).join('') || `<div class="empty-line">אין הודעות</div>`}</div>`;
+    </article>`; }).join('') || (M ? `<div class="ecta"><span class="ei">${icon('inbox', 28)}</span><b>עוד לא פורסם עדכון</b><button class="btn primary" id="nn2">${icon('plus', 18)} הודעה לצוות</button></div>` : `<div class="ecta"><span class="ei ok">${icon('check', 28)}</span><b>הכל מעודכן</b></div>`)}</div>`;
   // כל ההודעות שבמסך = נקראו
   if (!M) for (const a of all) if (!mine(a.id)) markRead(a.id);
   $$('[data-ack]', el).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true; const { error } = await markRead(b.dataset.ack, { ack_at: new Date().toISOString() });
@@ -41,7 +41,7 @@ export async function renderNews(el) {
   $$('[data-who]', el).forEach(b => b.onclick = () => { const a = all.find(x => x.id === b.dataset.who), rd = R.filter(x => x.ann_id === a.id);
     sheet(`<h3>מי קרא</h3><div class="list">${audience(a).map(p => { const r = rd.find(x => x.user_id === p.id);
       return `<div class="lrow"><span class="avatar sm">${esc(initials(p.full_name))}</span><b class="grow">${esc(p.full_name)}</b>${r?.ack_at ? '<span class="pill ok">אישר</span>' : r ? '<span class="pill">קרא</span>' : '<span class="pill muted">עוד לא</span>'}</div>`; }).join('')}</div><button class="btn ghost block" data-close>סגירה</button>`); });
-  const nn = $('#nn'); if (nn) nn.onclick = () => compose('news', people, () => renderNews(el));
+  ['#nn', '#nn2'].forEach(k => { const b = $(k); if (b) b.onclick = () => compose('news', people, () => renderNews(el)); });
   const nk = $('#nk'); if (nk) nk.onclick = () => compose('kudos', people, () => renderNews(el));
 }
 
@@ -99,28 +99,30 @@ export async function renderRequests(el) {
       ${M && r.status !== 'done' ? `<div class="row">${r.status === 'open' ? `<button class="chip" data-st="${r.id}">בטיפול</button>` : ''}<span class="grow"></span><button class="btn primary sm" data-rp="${r.id}">מענה וסגירה</button></div>` : ''}</div>`;
   el.querySelector('.skel').outerHTML = `<div class="stack lg">${open.length ? `<section><h3 class="sh">${M ? 'פתוחות' : 'בטיפול'}</h3><div class="stack">${open.map(card).join('')}</div></section>` : ''}
     ${closed.length ? `<details class="fold" ${open.length ? '' : 'open'}><summary><span class="sh">טופלו</span><span class="count">${closed.length}</span></summary><div class="stack">${closed.map(card).join('')}</div></details>` : ''}
-    ${!rows.length ? `<div class="empty-line">אין בקשות</div>` : ''}</div>`;
+    ${!rows.length ? (M ? `<div class="ecta"><span class="ei ok">${icon('check', 28)}</span><b>אין בקשות פתוחות</b></div>` : `<div class="ecta"><span class="ei">${icon('send', 28)}</span><b>צריך משהו מהמשרד?</b><button class="btn primary" id="rn2">${icon('plus', 18)} בקשה חדשה</button></div>`) : ''}</div>`;
   $$('.reqimg', el).forEach(i => i.onclick = () => zoom(i.src, ''));
   $$('[data-st]', el).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true;
     const { error } = await sb.from('office_requests').update({ status: 'in_progress', handled_by: state.user.id }).eq('id', b.dataset.st);
     if (error) { b.disabled = false; return toast(errText(error)); } toast('סומן בטיפול'); renderRequests(el); });
   $$('[data-rp]', el).forEach(b => b.onclick = async () => {
-    const t = await ask('מענה לעובד', { multiline: true, placeholder: 'מה נעשה / מה התשובה', ok: 'שליחה וסגירה' }); if (t == null || b.disabled) return; b.disabled = true;
+    const t = await ask('מענה לעובד', { multiline: true, placeholder: 'טופל', ok: 'שליחה וסגירה', optional: true }); if (t == null || b.disabled) return; b.disabled = true;
     const { error } = await sb.from('office_requests').update({ status: 'done', reply: t.trim() || 'טופל', handled_by: state.user.id }).eq('id', b.dataset.rp);
     if (error) { b.disabled = false; return toast(errText(error)); } toast('נשלח לעובד'); renderRequests(el);
   });
-  $('#rn').onclick = () => newRequest(() => renderRequests(el));
+  ['#rn', '#rn2'].forEach(k => { const b = $(k); if (b) b.onclick = () => newRequest(() => renderRequests(el)); });
 }
 
-async function newRequest(done) {
+export async function newRequest(done, pre) {
   const { data: st } = await sb.from('app_settings').select('value').eq('key', 'request_categories').maybeSingle();
-  const C = st?.value || ['אחר']; let cat = C[0], file = null;
+  const C = st?.value || ['אחר']; let cat = C.includes(pre) ? pre : C[0], file = null;
   sheet(`<h3>בקשה למשרד</h3>
     <div class="field">נושא<div class="chips">${C.map(c => `<button type="button" class="chip" data-c="${esc(c)}" aria-pressed="${c === cat}">${esc(c)}</button>`).join('')}</div></div>
     <label class="field">מה צריך<textarea id="rb" rows="4" placeholder="למשל: חסרות לי 6 שעות בתלוש של ספטמבר"></textarea></label>
     <label class="btn ghost block">${icon('photo', 18)} <span id="rfl">צירוף תמונה (לא חובה)</span><input type="file" accept="image/*" id="rf" hidden></label>
     <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="rs">שליחה</button></div>`, (s, close) => {
-    $$('[data-c]', s).forEach(c => c.onclick = () => { cat = c.dataset.c; $$('[data-c]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); });
+    const PH = { 'שכר': 'למשל: חסרות לי 6 שעות בתלוש של ספטמבר', 'שעות ונוכחות': 'למשל: שכחתי להחתים ביום שלישי', 'ציוד': 'למשל: צריך כפפות ונעלי עבודה מידה 43', 'מסמך / אישור': 'למשל: אישור העסקה לבנק', 'רכב': 'למשל: נורת שמן דולקת ברכב 12-345-67' };
+    $$('[data-c]', s).forEach(c => c.onclick = () => { cat = c.dataset.c; $$('[data-c]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); $('#rb', s).placeholder = PH[cat] || 'מה צריך?'; $('#rb', s).focus(); });
+    $('#rb', s).placeholder = PH[cat] || 'מה צריך?';
     $('#rf', s).onchange = e => { file = e.target.files[0]; $('#rfl', s).textContent = file ? 'תמונה צורפה' : 'צירוף תמונה (לא חובה)'; };
     $('#rs', s).onclick = async () => {
       const body = $('#rb', s).value.trim(); if (!body) return toast('מה צריך?');

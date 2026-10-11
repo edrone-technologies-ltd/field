@@ -14,7 +14,7 @@ export async function renderChat(el, { site, project, conversation }) {
   const showImportant = !conversation || isManager();
   el.innerHTML = `<div class="chat" id="msgs"><div class="skel"></div></div>`;
   const comp = document.createElement('div'); comp.className = 'composer';
-  comp.innerHTML = `<label class="cbtn" title="תמונה" aria-label="צירוף תמונה">${icon('plus', 22)}<input type="file" accept="image/*" id="catt"></label>
+  comp.innerHTML = `<label class="cbtn" title="תמונה" aria-label="צירוף תמונה">${icon('photo', 22)}<input type="file" accept="image/*" id="catt"></label>
     <textarea id="ctext" rows="1" placeholder="הודעה…" aria-label="הודעה"></textarea>
     ${showImportant ? `<button class="cbtn" id="cimp" aria-pressed="false" title="הודעה חשובה — דורשת אישור קריאה">!</button>` : ''}
     <button class="cbtn send" id="csend" aria-label="שליחה">${icon('send', 20)}</button>`;
@@ -30,9 +30,22 @@ export async function renderChat(el, { site, project, conversation }) {
   } catch {}
   taggable = taggable.filter(id => id !== state.user.id && names.get(id)).sort((a, b) => names.get(a).localeCompare(names.get(b), 'he'));
   let rows = [], acks = new Map(), audience = conversation ? (conversation.members || []).length : 0;
+  // אישורי קריאה (כמו בוואטסאפ): ✓ נשלח · ✓✓ נקרא (בשיחה אישית — ע"י השני, בקבוצה — ע"י כולם). שעון = עוד בטלפון
+  let reads = [];
+  async function loadReads() {
+    if (!conversation) return;
+    try { const { data } = await sb.from('conversation_members').select('user_id,last_read_at').eq('conversation_id', conversation.id).neq('user_id', state.user.id); reads = data || []; } catch { /* */ }
+  }
+  const tick = m => {
+    if (m._local) return `<span class="tk wait" aria-label="ממתין לשליחה">${icon('clock', 12)}</span>`;
+    if (!conversation) return '';
+    const n = reads.filter(r => r.last_read_at && new Date(r.last_read_at) >= new Date(m.created_at)).length, all = reads.length && n >= reads.length;
+    return `<span class="tk ${all ? 'read' : ''}" aria-label="${all ? 'נקרא' : 'נשלח'}" title="${conversation.kind === 'group' && n && !all ? `נקרא ע"י ${n}` : ''}">${all || n ? '✓✓' : '✓'}</span>`;
+  };
+  const retick = () => $$('[data-tk]').forEach(e => { const m = rows.find(r => r.id === e.dataset.tk); if (m) e.innerHTML = tick(m); });
   async function load() {
     try { const { data } = await sb.from('messages').select('*').eq(key.col, key.id).order('created_at').limit(300); rows = data || []; } catch {}
-    await loadAcks(); draw();
+    await Promise.all([loadAcks(), loadReads()]); draw();
   }
   async function loadAcks() {
     const imp = rows.filter(r => r.important).map(r => r.id); if (!imp.length) return;
@@ -55,14 +68,14 @@ export async function renderChat(el, { site, project, conversation }) {
     box.innerHTML = rows.length ? rows.map(m => {
       const me = m.author_id === state.user.id, d = dkey(m.created_at);
       const sep = d !== lastDay ? `<div class="dsep"><span>${dlabel(m.created_at)}</span></div>` : '';
-      const showWho = !me && (m.author_id !== lastAuthor || d !== lastDay);
+      const first = m.author_id !== lastAuthor || d !== lastDay, showWho = !me && conversation?.kind !== 'dm' && first;   // בשיחה אישית — בלי שם על כל בועה
       lastDay = d; lastAuthor = m.author_id;
-      return `${sep}<div class="msg ${me ? 'me' : ''} ${m.important ? 'imp' : ''} ${showWho ? '' : 'cont'} ${(m.mentions || []).includes(state.user.id) ? 'tagged' : ''}">
+      return `${sep}<div class="msg ${me ? 'me' : ''} ${m.important ? 'imp' : ''} ${first ? '' : 'cont'} ${(m.mentions || []).includes(state.user.id) ? 'tagged' : ''}">
         ${showWho ? `<div class="who">${esc(m.author_label || names.get(m.author_id) || '')}${m.source === 'monday' ? ' · מהמשרד' : ''}</div>` : ''}
         ${m.important ? '<div class="impl">חשוב</div>' : ''}
         ${m.photo_path ? `<img src="${esc(urls[m.photo_path]?.t || '')}" alt="" data-full="${esc(urls[m.photo_path]?.f || '')}" data-z="${esc(urls[m.photo_path]?.f || '')}">` : ''}
         ${m.body ? `<div class="tx">${tagHtml(m)}</div>` : ''}
-        ${ackLine(m, me)}<div class="when">${new Date(m.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div></div>`;
+        ${ackLine(m, me)}<div class="when">${new Date(m.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}${me ? `<span data-tk="${m.id}">${tick(m)}</span>` : ''}</div></div>`;
     }).join('') : `<div class="empty-line">אין הודעות עדיין</div>`;
     $$('[data-z]', box).forEach(i => i.onclick = () => i.dataset.z && zoom(i.dataset.z, ''));
     $$('[data-do-ack]', box).forEach(b => b.onclick = async () => { const id = b.dataset.doAck; if (!acks.has(id)) acks.set(id, []); acks.get(id).push(state.user.id); draw(); await enqueue({ kind: 'insert', table: 'message_acks', row: { message_id: id, user_id: state.user.id } }); });
@@ -73,8 +86,12 @@ export async function renderChat(el, { site, project, conversation }) {
   await load();
   if (channel) sb.removeChannel(channel);
   channel = sb.channel('msg-' + key.id).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `${key.col}=eq.${key.id}` },
-    p => { if (!rows.find(r => r.id === p.new.id)) { rows.push(p.new); draw(); if (conversation) markRead(); } }).subscribe();
-  addEventListener('hashchange', () => { if (channel) { sb.removeChannel(channel); channel = null; } }, { once: true });
+    p => { const had = rows.find(r => r.id === p.new.id);
+      if (had) { if (had._local) { had._local = false; had.created_at = p.new.created_at; retick(); } return; }
+      rows.push(p.new); draw(); if (conversation) markRead(); }).subscribe();
+  // קריאה של האחרים מתעדכנת כל 15 שניות כל עוד השיחה פתוחה (רק הסימונים, בלי לצייר מחדש)
+  const rt = conversation ? setInterval(async () => { if (document.hidden) return; await loadReads(); retick(); }, 15000) : 0;
+  addEventListener('hashchange', () => { clearInterval(rt); if (channel) { sb.removeChannel(channel); channel = null; } }, { once: true });
   const markRead = () => sb.from('conversation_members').update({ last_read_at: new Date().toISOString() }).eq('conversation_id', key.id).eq('user_id', state.user.id).then(() => {});
 
   const imp = $('#cimp');
@@ -101,10 +118,13 @@ export async function renderChat(el, { site, project, conversation }) {
     const mentions = taggable.filter(id => body.includes('@' + names.get(id)));
     const row = { id: crypto.randomUUID(), [key.col]: key.id, author_id: state.user.id, body: body || '', photo_path: photoPath || null,
       important: imp?.getAttribute('aria-pressed') === 'true', mentions: mentions.length ? mentions : null, created_at: new Date().toISOString() };
-    rows.push(row); draw();
+    rows.push({ ...row, _local: true }); draw();
     ta.value = ''; ta.oninput(); imp?.setAttribute('aria-pressed', 'false');
     const { created_at, ...dbRow } = row;
     await enqueue({ kind: 'insert', table: 'messages', row: dbRow });
+    // גיבוי אם אין אירוע בזמן אמת: בודקים שההודעה הגיעה לשרת
+    setTimeout(async () => { const m = rows.find(r => r.id === row.id); if (!m?._local) return;
+      try { const { data } = await sb.from('messages').select('id,created_at').eq('id', row.id).maybeSingle(); if (data) { m._local = false; m.created_at = data.created_at; retick(); } } catch { /* */ } }, 3500);
   }
   $('#csend').onclick = () => send();
   ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); send(); } };

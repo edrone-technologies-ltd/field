@@ -68,6 +68,20 @@ async function certRows() {
     : [{ k: 'cert', tone, ic: icon('shield', 18), title: `${due.length} תעודות פגות או עומדות לפוג`, sub: due.map(line).join(' · '),
         list: due.map(d => ({ href: `#/staff/${d.user_id}/docs`, t: line(d), s: when(d) })) }];
 }
+// הנהלה: ביטוח / רישום / רישוי של כלים (רחפנים, רכבים, ציוד) — 30 יום לפני = אזהרה, פג = קריטי (db/097)
+async function equipRows() {
+  if (!['admin', 'ops_manager'].includes(state.profile.role)) return [];
+  const today = new Date().toISOString().slice(0, 10), lim = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+  const { data } = await sb.from('equipment').select('id,name,kind,insurance_until,license_until').or(`insurance_until.lte.${lim},license_until.lte.${lim}`);
+  const dm = d => `${+d.slice(8)}.${+d.slice(5, 7)}`;
+  const due = (data || []).flatMap(e => [['ביטוח', e.insurance_until], [e.kind === 'drone' ? 'רישום' : e.kind === 'vehicle' ? 'טסט' : 'רישוי', e.license_until]]
+    .filter(([, d]) => d && d <= lim).map(([t, d]) => ({ e, t, d }))).sort((a, b) => a.d < b.d ? -1 : 1);
+  if (!due.length) return [];
+  const tone = due.some(x => x.d < today) ? 'bad' : 'warn', line = x => `${x.e.name} · ${x.t}`, when = x => x.d < today ? `פג ב-${dm(x.d)}` : `בתוקף עד ${dm(x.d)}`;
+  return due.length === 1 ? [{ k: 'equip', tone, ic: icon('drone', 18), title: `${line(due[0])} — ${due[0].d < today ? 'פג' : 'פג בקרוב'}`, sub: when(due[0]), href: '#/equipment' }]
+    : [{ k: 'equip', tone, ic: icon('drone', 18), title: `${due.length} ביטוחים / רישויים של כלים ${tone === 'bad' ? 'פגו או פגים' : 'פגים בקרוב'}`, sub: due.map(line).join(' · '),
+        list: due.map(x => ({ href: '#/equipment', t: line(x), s: when(x) })) }];
+}
 async function tourRows() {
   if (state.profile.role !== 'ops_manager') return [];
   const { data: it } = await sb.from('kb_items').select('id').eq('video_url', '#/tour/ops').maybeSingle(); if (!it) return [];
@@ -93,7 +107,7 @@ async function pushRows() {
 
 // כל מה שמחכה למשתמש עצמו (הודעות, הדרכות, קליטה, התראות, שיבוץ שחסר)
 export async function attentionItems() {
-  const parts = await Promise.all([noPushRows(), tourRows(), schedRows(), certRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
+  const parts = await Promise.all([noPushRows(), tourRows(), schedRows(), certRows(), equipRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   return items;

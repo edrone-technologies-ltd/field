@@ -14,13 +14,28 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://pshdouedsfaklqdggfst.supabase.co" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="preconnect" href="https://server.arcgisonline.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&family=Rubik:wght@500;700;800&display=swap">
 <link rel="stylesheet" href="styles.css">
+<script>try{var t=localStorage.getItem('edrone-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<!-- גופנים לא חוסמים את הציור הראשון -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;700;800&family=Rubik:wght@500;700;800&display=swap" media="print" onload="this.media='all'">
+<!-- כל שרשרת הטעינה במקביל (במקום קובץ אחרי קובץ) -->
+<link rel="modulepreload" href="lib/core.js">
+<link rel="modulepreload" href="lib/store.js">
+<link rel="modulepreload" href="config.js">
+<link rel="modulepreload" href="modules/home.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/auth-js@2.65.0/+esm" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/postgrest-js@1.16.1/+esm" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/realtime-js@2.10.2/+esm" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/storage-js@2.7.0/+esm" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/functions-js@2.4.1/+esm" crossorigin>
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/@supabase/node-fetch@2.6.15/+esm" crossorigin>
 </head>
 <body>
-<div id="app" class="app"></div>
+<div id="app" class="app"><div class="boot" aria-label="טוען"><img src="icon-192.png" alt="" width="72" height="72"></div></div>
 <div id="net" class="net" hidden></div>
 <div id="toast" class="toast" hidden></div>
 <div id="sheet" class="sheet" hidden></div>

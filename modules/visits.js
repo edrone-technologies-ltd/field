@@ -1,6 +1,6 @@
 // דוח ביקור / ביקורת: מנהל מבקר צוות, סיור עם לקוח או בקרת איכות. שייך לפרויקט אבל לא לשרשרת הצוות.
 // ממצאי "לתיקון" עוברים בלחיצה אחת לצ'קליסט הפרויקט — הכל במקום אחד, התראה אחת.
-import { sb, state, isManager, sheet, icon, $, $$, esc, toast, backBtn, signedUrls, zoom, isoDay, dm, goUp } from '../lib/core.js';
+import { sb, state, isManager, sheet, icon, $, $$, esc, toast, backBtn, signedUrls, zoom, isoDay, dm, goUp, confirmBox } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { errText } from '../lib/audit.js';
 
@@ -14,13 +14,25 @@ const SEV = { ok: ['תקין', 'ok'], note: ['הערה', 'warn'], fix: ['לתי�
 export async function renderVisitForm(el, pid, vid) {
   if (!isManager()) { el.innerHTML = '<div class="empty-line">אין גישה</div>'; return; }
   const [{ data: p }, { data: v }] = await Promise.all([
-    sb.from('projects').select('id,name,client_name').eq('id', pid).single(),
+    sb.from('projects').select('id,name,client_name,sites(contact_name)').eq('id', pid).single(),
     vid ? sb.from('project_visits').select('*').eq('id', vid).single() : Promise.resolve({ data: null })]);
-  const f = v ? { ...v, findings: [...(v.findings || [])], todo: [...(v.todo || [])] } : { todo: [], kind: 'crew_check', visit_date: isoDay(), participants: '', findings: [], client_feedback: '', rating: 0, summary: '' };
-  const [urls, T] = await Promise.all([signedUrls('field', [...f.findings, ...f.todo].flatMap(PH)), team()]);
-  const who = { id: null, due: '' };
+  // טיוטה בטלפון לדוח חדש — יציאה באמצע (שיחה, מצלמה) לא מאבדת ממצאים
+  const DK = 'visit-draft:' + pid, dget = () => { try { return JSON.parse(localStorage.getItem(DK) || 'null'); } catch { return null; } };
+  const dput = x => { try { x ? localStorage.setItem(DK, JSON.stringify(x)) : localStorage.removeItem(DK); } catch { /* */ } };
+  const dr = !v && dget();
+  const f = v ? { ...v, findings: [...(v.findings || [])], todo: [...(v.todo || [])] } : dr?.f || { todo: [], kind: 'crew_check', visit_date: isoDay(), participants: '', findings: [], client_feedback: '', rating: 0, summary: '' };
+  // מילוי מראש: הצוות של יום השטח בתאריך הביקור (או האחרון) → משתתפים; ראש הצוות → מטפל ברירת מחדל
+  const crewOn = d => sb.from('work_days').select('day,work_day_crew(role,user_id,profiles(full_name))').eq('project_id', pid).lte('day', d).order('day', { ascending: false }).limit(1)
+    .then(r => { const C = r.data?.[0]?.work_day_crew || []; return { txt: C.map(x => x.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', '), lead: C.find(x => x.role === 'lead')?.user_id || null }; }, () => ({ txt: '', lead: null }));
+  const [urls, T, crew] = await Promise.all([signedUrls('field', [...f.findings, ...f.todo].flatMap(PH)), team(), v ? Promise.resolve(null) : crewOn(f.visit_date)]);
+  const okLead = id => id && T.some(u => u.id === id) ? id : null;
+  if (!v && !dr && crew?.txt) f.participants = crew.txt;
+  const who = dr?.who || { id: okLead(crew?.lead), due: '' };
+  let crewTxt = dr ? dr.crewTxt ?? f.participants : f.participants, autoLead = dr ? dr.autoLead ?? null : who.id;
+  const hasDraft = () => !!dr && !!(f.findings.length || f.todo.length || (f.summary || '').trim() || (f.client_feedback || '').trim() || f.rating);
   const draw = () => {
-    el.innerHTML = `<header class="phead">${backBtn(`#/p/${pid}/d`)}<h1 class="grow">דוח ביקור</h1></header>
+    if (!vid) dput({ f, who, crewTxt, autoLead });
+    el.innerHTML = `<header class="phead">${backBtn(`#/p/${pid}/d`)}<h1 class="grow">דוח ביקור</h1>${hasDraft() ? '<button class="chip" id="vdrop" type="button">טיוטה חדשה</button>' : ''}</header>
       <div class="stack lg">
         <div class="small muted">${esc(p?.name || '')}</div>
         <div class="field">סוג הביקור<div class="chips">${Object.entries(KIND).map(([k, t]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${f.kind === k}">${t}</button>`).join('')}</div></div>
@@ -43,7 +55,15 @@ export async function renderVisitForm(el, pid, vid) {
         <button class="btn primary block big" id="vsave">שמירת דוח ביקור${pending(f).length ? ` + ${pending(f).length} לצ'קליסט` : ''}</button>
       </div>`;
     const keep = () => { if ($('#vdue')) who.due = $('#vdue').value; f.visit_date = $('#vd').value; f.participants = $('#vp').value; f.summary = $('#vs').value; if ($('#vc')) f.client_feedback = $('#vc').value; $$('[data-ft]').forEach(t => f.findings[+t.dataset.ft].text = t.value); };
-    $$('[data-k]').forEach(b => b.onclick = () => { keep(); f.kind = b.dataset.k; draw(); });
+    const dropB = $('#vdrop'); if (dropB) dropB.onclick = async () => { if (!(await confirmBox('למחוק את הטיוטה ולהתחיל דוח חדש?', { ok: 'מחיקה' }))) return; dput(null); renderVisitForm(el, pid); };
+    // תאריך אחר → הצוות של אותו יום (רק אם לא שינו ידנית את המשתתפים)
+    $('#vd').onchange = async () => { keep(); if (f.kind === 'client_tour' || (f.participants && f.participants !== crewTxt)) return;
+      const c = await crewOn(f.visit_date); crewTxt = f.participants = c.txt; if (who.id === autoLead) who.id = autoLead = okLead(c.lead); draw(); };
+    $$('[data-k]').forEach(b => b.onclick = () => { keep(); const was = f.participants; f.kind = b.dataset.k;
+      if (f.kind === 'client_tour' && (!was || was === crewTxt) && p?.sites?.contact_name) f.participants = p.sites.contact_name;
+      else if (f.kind !== 'client_tour' && was === p?.sites?.contact_name) f.participants = crewTxt || '';
+      draw(); });
+    if (!vid) { let dt; el.oninput = () => { clearTimeout(dt); dt = setTimeout(() => { keep(); dput({ f, who, crewTxt, autoLead }); }, 600); }; }
     $('#vadd').onclick = () => { keep(); f.findings.push({ text: '', sev: 'note' }); draw(); setTimeout(() => $$('[data-ft]').pop()?.focus(), 50); };
     $$('[data-fs]').forEach(b => b.onclick = () => { keep(); f.findings[+b.dataset.fs].sev = b.dataset.v; draw(); });
     $$('[data-fr]').forEach(b => b.onclick = () => { keep(); f.findings.splice(+b.dataset.fr, 1); draw(); });
@@ -78,7 +98,7 @@ export async function renderVisitForm(el, pid, vid) {
       $('#vsave').disabled = true;
       const { data, error } = vid ? await sb.from('project_visits').update(row).eq('id', vid).select('id').single() : await sb.from('project_visits').insert(row).select('id').single();
       if (error) { $('#vsave').disabled = false; return toast(errText(error, 'הדוח לא נשמר — נסו שוב')); }
-      const n = await toChecklist(data.id, pid, f, who.id, who.due);
+      dput(null); const n = await toChecklist(data.id, pid, f, who.id, who.due);
       toast(n ? `דוח הביקור נשמר · ${n} פריטים בצ'קליסט` : 'דוח הביקור נשמר'); location.replace(`#/visit/${data.id}`);
     };
   };

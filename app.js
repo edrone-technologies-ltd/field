@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir, skeleton } from './lib/core.js';
 
 const app = $('#app');
 // לשוניות תחתונות — מוצגות לפי ההרשאות
@@ -11,27 +11,11 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch']);
+const WITH_NAV = new Set(['kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch', 'tasks']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
-  nav(false);
-  app.innerHTML = `<form class="login" id="lf" autocomplete="on">
-    <div class="brand"><img src="icon-192.png" alt="E-Drone"><h1>E-Drone שטח</h1><div class="muted">כניסה לצוות</div></div>
-    <label class="field" for="ph">מספר טלפון<input id="ph" type="tel" inputmode="tel" autocomplete="tel" placeholder="05X-XXXXXXX" required></label>
-    <label class="field" for="cd">קוד אישי<small>6 ספרות. קיבלתם אותו מהמשרד</small><input id="cd" class="code" type="password" inputmode="numeric" autocomplete="current-password" maxlength="12" required></label>
-    <div class="err" id="er">${esc(msg)}</div>
-    <button class="btn primary block" id="go">כניסה</button>
-  </form>`;
-  try { const last = localStorage.getItem('edrone-phone'); if (last) { $('#ph').value = last; $('#cd').focus(); } } catch {}
-  $('#lf').onsubmit = async e => {
-    e.preventDefault(); const b = $('#go'); b.disabled = true; b.textContent = 'נכנס…';
-    try {
-      await signIn($('#ph').value, $('#cd').value);
-      try { localStorage.setItem('edrone-phone', $('#ph').value); } catch {}
-      await boot('login');
-    } catch (err) { $('#er').textContent = err.message; b.disabled = false; b.textContent = 'כניסה'; }
-  };
+  nav(false); import('./modules/login.js').then(m => m.renderLogin(app, msg, () => boot('login')));
 }
 
 // ---------- ניווט תחתון ----------
@@ -100,6 +84,7 @@ function renderMenu() {
       isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
       isManager() && ['#/clients', 'folder', 'לקוחות', 'תיק לקוח והיסטוריית עבודות'],
       state.profile.role === 'admin' && ['#/activity', 'clock', 'פעילות', 'מי מחובר ומה קורה'],
+      state.profile.role === 'admin' && ['#/onboarding/launch', 'activity', 'השקה', 'מי נכנס, התקין והפעיל התראות'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
     ]],
   ].map(([t, r]) => [t, r.filter(Boolean)]).filter(([, r]) => r.length);
@@ -151,7 +136,7 @@ function themeColor() {
 }
 try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeColor); } catch {}
 let deferredInstall;
-addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; installHint(); });
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; window.__bip = e; installHint(); });
 function installHint() {
   const box = $('#install'); if (!box || matchMedia('(display-mode: standalone)').matches || navigator.standalone) return;
   const ios = /iphone|ipad/i.test(navigator.userAgent);
@@ -183,9 +168,32 @@ async function route(ev) {
   const cur = location.hash || '#/', d = navDir();
   transition(ev === NOANIM ? '' : !ev ? 'fade' : d === 'same' ? '' : lastHash != null && isRootHash(cur) && isRootHash(lastHash) ? 'fade' : d === 'back' ? 'back' : 'fwd');
   lastHash = cur; titleReset();
-  try { await routeInner(); } catch (e) { console.error(e); if (my !== navSeq) return; app.innerHTML = `<div class="empty-card"><span><b>משהו השתבש בטעינת המסך</b><small>${esc(e.message || e)}</small></span></div><button class="btn ghost block" onclick="location.reload()">רענון</button>`; }
+  // מסך שנתקע על שלד טעינה (קליטה חלשה) — אחרי 15 שניות מציעים לנסות שוב במקום להמתין לנצח
+  clearTimeout(route.wd); route.wd = setTimeout(() => { if (my === navSeq && app.querySelector(':scope > .sk, :scope > .stack > .sk') && !app.querySelector('.oops')) app.insertAdjacentHTML('beforeend', oops('הטעינה לוקחת יותר מהרגיל', !navigator.onLine)); }, 15000);
+  try { await routeInner(); } catch (e) {
+    console.error(e); if (my !== navSeq) return;
+    if (chunkErr(e)) return;
+    app.innerHTML = oops('המסך לא נטען', !navigator.onLine);
+  }
   finally { if (my === navSeq) { rtObs?.disconnect(); rtObs = null; } }   // מסך שלא החליף תוכן — לא מנפישים מאוחר
 }
+// כרטיס תקלה ידידותי: בלי הודעת שגיאה טכנית, כפתור אחד שמנסה שוב באותו מסך
+function oops(t, off) {
+  return `<div class="oops" role="alert"><span class="oops-ic">${icon(off ? 'sync' : 'alert', 28)}</span><b>${off ? 'אין קליטה כרגע' : t}</b><button class="btn primary" data-retry>${icon('sync', 18)} לנסות שוב</button>${t !== 'המסך לא נטען' ? '' : '<a class="oops-home" href="#/">למסך הבית</a>'}</div>`;
+}
+app.addEventListener('click', e => { if (e.target.closest('[data-retry]')) { haptic('tap'); route(NOANIM); } });
+// קובץ מסך מגרסה קודמת לא נמצא (עדכון באמצע) — טעינה מחדש אחת, בלי מסך שגיאה
+function chunkErr(e) {
+  if (!/dynamically imported module|Importing a module script failed|error loading dynamically|Failed to fetch/i.test(String(e?.message || e)) || !navigator.onLine) return false;
+  let tried = false; try { tried = sessionStorage.getItem('rr:chunk') === '1'; sessionStorage.setItem('rr:chunk', '1'); } catch { /* */ }
+  if (tried) return false;
+  location.reload(); return true;
+}
+// שגיאה שלא נתפסה בתוך מסך — אם המסך נשאר ריק (מסך לבן), מציגים כרטיס עם "לנסות שוב"
+const whiteGuard = () => setTimeout(() => { if (state.profile && !app.children.length) app.innerHTML = oops('המסך לא נטען', !navigator.onLine); }, 50);
+addEventListener('error', whiteGuard);
+addEventListener('unhandledrejection', e => { if (chunkErr(e.reason)) return; whiteGuard(); });
+setTimeout(() => { try { sessionStorage.removeItem('rr:chunk'); } catch { /* */ } }, 20000);
 async function routeInner() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
   app.scrollTop = 0;
@@ -193,8 +201,13 @@ async function routeInner() {
   $('#sheet').hidden = true;
   // מסך שורש של לשונית (בלי תת-נתיב) — בלי כפתור חזרה בכותרת
   if (h.length === 1 && TABS.some(t => t.k === h[0] && t.ok())) document.body.dataset.root = ''; else delete document.body.dataset.root;
-  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' ? '' : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'kb', 'news', 'requests', 'weather'].includes(h[0]) ? 'menu' : h[0]);
-  const guard = m => { if (!can(m)) { app.innerHTML = `<div class="empty-card"><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; } return true; };
+  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' || h[0] === 'tasks' ? '' : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'kb', 'news', 'requests', 'weather'].includes(h[0]) ? 'menu' : h[0]);
+  // מסך בלי הרשאה — מסך אחד אחיד (כותרת, חזרה, הסבר קצר), בלי לטעון את המודול
+  const deny = () => { app.innerHTML = `<header class="phead">${backBtn('#/')}</header><div class="empty-card"><span class="ei">${icon('shield', 26)}</span><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; };
+  const guard = m => can(m) || deny();
+  const MGR = { attendance: 1, dispatch: 1, clients: 1, client: 1, staff: 1, files: 1, 'client-report': 1 };
+  if (MGR[h[0]] && !isManager()) return deny();
+  if (h[0] === 'activity' && state.profile.role !== 'admin') return deny();
   const home = () => import('./modules/home.js');
   switch (h[0]) {
     case '': return (await home()).renderHome(app);
@@ -222,6 +235,12 @@ async function routeInner() {
     case 'plan': if (guard('projects')) return (await import('./modules/plan.js')).renderPlan(app, h[1], h[2] === 'print'); return;
     case 'visit': { const m = await import('./modules/visits.js'); return h[1] === 'new' ? m.renderVisitForm(app, h[2]) : h[1] === 'edit' ? m.renderVisitForm(app, h[2], h[3]) : h[2] === 'report' ? m.renderVisitReport(app, h[1]) : m.renderVisit(app, h[1]); }
     case 'expenses': await (await import('./modules/expenses.js')).renderExpenses(app); return;
+    case 'tasks': {   // המשימות שלי — אותה רשימה כמו בבית, במסך מלא
+      app.innerHTML = `<header class="phead">${backBtn('#/')}<h1>משימות</h1></header><div id="tk" class="stack lg">${skeleton('list', 4)}</div>`;
+      const box = $('#tk'); await (await import('./modules/tasks.js')).myTasks(box);
+      if (box.isConnected && (!box.children.length || box.querySelector(':scope > .sk'))) box.innerHTML = `<div class="empty-card ok"><span class="ei">${icon('check', 26)}</span><span><b>אין משימות פתוחות</b><small>הכל טופל</small></span></div>`;
+      return;
+    }
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
     case 'staff': case 'files': { const m = await import('./modules/staff.js'); return h[1] ? m.renderEmployee(app, h[1], h[2]) : m.renderStaff(app); }
     case 'signoff': return (await import('./modules/signoff.js')).renderSignoff(app, h[1], h[2] || null);   // #/signoff/<project>[/<work_day>]
@@ -243,17 +262,35 @@ async function routeInner() {
   }
 }
 
+// תחזית מראש לכל האתרים הפתוחים (בקשה אחת). ה-service worker שומר לכל אתר בנפרד — כל מסך מקבל תחזית מיידית
+async function wxWarm() {
+  if (!navigator.onLine || !state.profile) return;
+  try {
+    const { data } = await sb.from('projects').select('id,site_id,lat,lng,sites(lat,lng)').neq('monday_group', 'group_mm5052gw').limit(150);
+    const S = [...new Map((data || []).map(p => { const la = p.sites?.lat ?? p.lat, ln = p.sites?.lng ?? p.lng; return la != null && ln != null ? [p.site_id || p.id, { id: p.site_id || p.id, lat: la, lng: ln }] : null; }).filter(Boolean)).values()];
+    const wx = await import('./lib/wx.js');
+    wx.kpSeries().catch(() => {});
+    for (let i = 0; i < S.length; i += 50) await wx.forecast(S.slice(i, i + 50)).catch(() => {});
+  } catch { /* */ }
+}
 async function boot(how = 'open') {
   try { const t = localStorage.getItem('edrone-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
   if (!(await loadMe())) return renderLogin();
   if (!state.profile.is_active) { await sb.auth.signOut(); return renderLogin('הגישה שלך הושבתה. פנו למשרד.'); }
   addEventListener('hashchange', route);
   updateNet(); flush(); route(); themeColor();
+  import('./modules/welcome.js').then(m => m.maybeWelcome()).catch(() => {});
+  // בזמן מת: טעינה מוקדמת של מסכי הלשוניות — מעבר ראשון בין לשוניות בלי המתנה לקובץ
+  const idle = window.requestIdleCallback || (f => setTimeout(f, 1500));
+  idle(() => ['home', 'projects', 'inbox', 'today', 'reports', 'ops'].forEach((m, i) => setTimeout(() => import(`./modules/${m}.js`).catch(() => {}), i * 120)), { timeout: 4000 });
+  setTimeout(() => idle(wxWarm, { timeout: 5000 }), 6000);
+  setInterval(() => { if (document.visibilityState === 'visible') wxWarm(); }, 25 * 6e4);
   import('./lib/track.js').then(m => m.startTracking(how)).catch(() => {});
   // בקשת אחסון קבוע — כדי שהטלפון לא ימחק נתונים שעוד לא נשלחו
   try { navigator.storage?.persist?.(); } catch {}
 }
-sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') renderLogin(); });
+// החיבור פג (לא יציאה יזומה) — חוזרים למסך כניסה עם הטלפון שמור, ואחרי הכניסה לאותו מסך שהיינו בו
+sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') renderLogin(window.__signingOut ? '' : 'החיבור פג — נכנסים שוב'); });
 // גרסה חדשה: ה-service worker מתעדכן ברקע, והאפליקציה נטענת מחדש פעם אחת (רק אם לא באמצע טופס/שיחה)
 if ('serviceWorker' in navigator) {
   const hadController = !!navigator.serviceWorker.controller; let reloaded = false;

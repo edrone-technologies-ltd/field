@@ -40,7 +40,13 @@ export async function renderMyFile(el) {
   el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">התיק שלי</h1></header><div id="mf" class="stack lg"><div class="skel"></div></div>`;
   const { data } = await sb.from('employee_docs').select('*').eq('user_id', state.user.id);
   const L = docList(data || [], { manage: false, reload: () => renderMyFile(el) });
-  $('#mf').innerHTML = L.html; L.bind($('#mf'));
+  const p = state.profile, lic = p.is_pilot && p.pilot_license_expiry ? daysTo(p.pilot_license_expiry) : null;
+  // מסמך שחסר / רישיון שפג — שולחים צילום למשרד בלחיצה (נכנס לבקשות המשרד עם הקטגוריה הנכונה)
+  $('#mf').innerHTML = `${lic != null && lic <= 45 ? `<div class="arow ${lic < 0 ? 'bad' : 'warn'} card-like"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>רישיון מטיס ${lic < 0 ? 'פג' : `פג בעוד ${lic} ימים`}</b><small>${new Date(p.pilot_license_expiry).toLocaleDateString('he-IL')}</small></span></div>` : ''}
+    ${(data || []).length ? L.html : `<div class="ecta"><span class="ei">${icon('file', 28)}</span><b>התיק עוד ריק</b></div>`}
+    <button class="btn ${(data || []).length ? 'ghost' : 'primary'} block" id="mfsend">${icon('photo', 18)} שליחת מסמך למשרד</button>`;
+  L.bind($('#mf'));
+  $('#mfsend').onclick = async () => (await import('./news.js')).newRequest(() => toast('נשלח — יעלה לתיק אחרי בדיקה'), 'מסמך / אישור');
 }
 
 // ---------- תיקי עובדים (מנהלים) ----------

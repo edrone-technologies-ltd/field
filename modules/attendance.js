@@ -123,16 +123,16 @@ export async function clockOut(open, after) {
 
 // ---------- כרטיס שעון בבית ----------
 let tick;
-export async function clockCard(box) {
+export async function clockCard(box, onChange) {
   if (!box) return;
-  const draw = async () => {
+  const draw0 = async () => {
     const open = await myOpenShift();
     clearInterval(tick);
     const el = document.createElement('div'); el.className = 'clock' + (open ? ' on' : ''); el.id = 'clockcard';
     const elapsed = () => hhmm((Date.now() - new Date(open.start_at)) / 36e5);
     el.innerHTML = open
       ? `<span class="cl-dot"></span><span class="grow"><b>במשמרת מ-${tm(open.start_at)}</b><small id="cl-t">${elapsed()} שעות</small></span><button class="btn sm danger" id="cl-out">יציאה</button>`
-      : `<span class="mic">${icon('clock', 20)}</span><span class="grow"><b>לא במשמרת</b><small><a href="#/hours">השעות שלי</a></small></span><button class="btn sm primary" id="cl-in">כניסה</button>`;
+      : `<span class="mic">${icon('clock', 20)}</span><span class="grow"><b>לא במשמרת</b>${location.hash.startsWith('#/hours') ? '' : '<small><a href="#/hours">השעות שלי</a></small>'}</span><button class="btn sm primary" id="cl-in">כניסה</button>`;
     $('#clockcard')?.remove(); box.prepend(el);
     if (open && (Date.now() - new Date(open.start_at)) / 36e5 > 11) {
       el.insertAdjacentHTML('beforeend', `<div class="cl-warn">משמרת פתוחה ${elapsed()} שעות — שכחת להחתים יציאה? <button class="linkbtn" id="cl-fix">יצאתי בשעה אחרת</button></div>`);
@@ -142,7 +142,9 @@ export async function clockCard(box) {
     if (open) { tick = setInterval(() => { const t = $('#cl-t'); if (t) t.textContent = elapsed() + ' שעות'; else clearInterval(tick); }, 30000); $('#cl-out').onclick = () => clockOut(open, draw); }
     else { const ci = $('#cl-in'); ci.onclick = async () => { if (ci.disabled) return; ci.disabled = true; try { await clockIn(draw); } finally { if (ci.isConnected) ci.disabled = false; } }; }
   };
-  draw();
+  // אחרי כניסה/יציאה/בקשה: המסך שמכיל את הכרטיס מתעדכן (למשל השעות שלי), אחרת רק הכרטיס
+  const draw = () => onChange ? onChange() : draw0();
+  draw0();
 }
 
 
@@ -159,13 +161,18 @@ async function suggestIn(el) {
 }
 
 // ---------- בקשת עריכה של עובד (נכנסת לשעות רק אחרי אישור מנהל) ----------
+const REASONS = ['שכחתי להחתים יציאה', 'שכחתי להחתים כניסה', 'לא הייתה קליטה', 'הטלפון כבה'];
 function requestSheet(sh, month, done) {
   const d0 = sh ? new Date(sh.start_at) : null, day = sh ? ymd(d0) : (ymd(new Date()).slice(0, 7) === month ? ymd(new Date()) : `${month}-01`);
+  const defReason = !sh ? 'שכחתי להחתים' : !sh.end_at ? REASONS[0] : '';
   sheet(`<h3>${sh ? 'עריכת משמרת' : 'הוספת משמרת ששכחתי להחתים'}</h3>
     <label class="field">תאריך<input type="date" id="rd" value="${day}" ${sh ? 'disabled' : ''}></label>
-    <div class="row"><label class="field grow">כניסה<input type="time" id="rs" value="${sh ? tm(sh.start_at) : '07:00'}"></label><label class="field grow">יציאה<input type="time" id="re" value="${sh?.end_at ? tm(sh.end_at) : ''}"></label></div>
-    <label class="field">סיבה (חובה)<textarea id="rr" rows="2" placeholder="למשל: שכחתי להחתים יציאה, יצאתי ב-16:30"></textarea></label>
+    <div class="row"><label class="field grow">כניסה<input type="time" id="rs" value="${sh ? tm(sh.start_at) : '07:00'}"></label><label class="field grow">יציאה<input type="time" id="re" value="${sh?.end_at ? tm(sh.end_at) : sh ? '' : '16:00'}"></label></div>
+    <div class="chips" id="rq">${REASONS.map(r => `<button type="button" class="chip" data-r="${esc(r)}">${esc(r)}</button>`).join('')}</div>
+    <label class="field">סיבה<textarea id="rr" rows="2" placeholder="למשל: שכחתי להחתים יציאה, יצאתי ב-16:30">${esc(defReason)}</textarea></label>
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="ro">שליחה לאישור</button></div>`, (s, close) => {
+    $$('[data-r]', s).forEach(c => c.onclick = () => { $('#rr', s).value = c.dataset.r; $$('[data-r]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); });
+    if (sh && !sh.end_at) setTimeout(() => $('#re', s)?.focus(), 80);
     $('#ro', s).onclick = async () => {
       const d = $('#rd', s).value, reason = $('#rr', s).value.trim(), st = $('#rs', s).value, en = $('#re', s).value;
       if (!st || !en) return toast('חסרה שעת כניסה או יציאה');
@@ -179,16 +186,22 @@ function requestSheet(sh, month, done) {
     };
   });
 }
+// אותה הערה בכמה ימים = שורה אחת עם רשימת התאריכים
+function flagGroups(flags) {
+  const m = new Map();
+  for (const f of flags) { const x = /^(\d+\.\d+): (.*)$/.exec(f), k = x ? x[2] : f; if (!m.has(k)) m.set(k, []); if (x) m.get(k).push(x[1]); }
+  return [...m];
+}
 const REQ_ST = { pending: ['ממתין לאישור', 'warn'], approved: ['אושר', 'ok'], rejected: ['נדחה', 'bad'] };
 function reqLine(r, sh) {
   const [t, c] = REQ_ST[r.status];
-  return `<div class="req ${c}"><div class="row"><span class="pill ${c}">${t}</span><small class="grow">${r.shift_id ? 'עריכה' : 'משמרת שלא הוחתמה'}: ${tm(r.req_start)}–${tm(r.req_end)}${sh ? ` (במקום ${tm(sh.start_at)}–${sh.end_at ? tm(sh.end_at) : 'פתוחה'})` : ''}</small></div>
+  return `<div class="req ${c}"><div class="row"><span class="pill ${c}">${t}</span><small class="grow">${r.shift_id ? 'עריכה' : 'משמרת שלא הוחתמה'}: <bdi dir="ltr">${tm(r.req_start)}–${tm(r.req_end)}</bdi>${sh ? ` (במקום <bdi dir="ltr">${tm(sh.start_at)}–${sh.end_at ? tm(sh.end_at) : '…'}</bdi>)` : ''}</small></div>
     <div class="small">סיבה: ${esc(r.reason)}</div>${r.manager_reply ? `<div class="small mreply">תגובת המנהל: ${esc(r.manager_reply)}</div>` : ''}</div>`;
 }
 function bindDecide(root, reload) {
   $$('[data-dec]', root).forEach(b => b.onclick = async () => {
     const ok = b.dataset.ok === '1';
-    const reply = await ask(ok ? 'אישור הבקשה' : 'דחיית הבקשה', { multiline: true, placeholder: ok ? 'תגובה לעובד (לא חובה)' : 'למה נדחה? (חובה)', ok: ok ? 'אישור' : 'דחייה', optional: ok });
+    const reply = ok ? '' : await ask('דחיית הבקשה', { multiline: true, placeholder: 'למה נדחה?', ok: 'דחייה' });   // אישור = לחיצה אחת
     if (reply == null || b.disabled) return; const btns = [...b.parentElement.querySelectorAll('button')]; btns.forEach(x => lock(x, true));
     const { error } = await sb.rpc('decide_shift_request', { rid: b.dataset.dec, ok, reply: reply.trim() });
     if (error) { btns.forEach(x => lock(x, false)); return toast(errText(error), 4000); } toast(ok ? 'אושר — השעות עודכנו' : 'נדחה — העובד קיבל הודעה'); reload();
@@ -224,7 +237,7 @@ const absBtns = a => `<div class="row-btns"><button class="btn ghost sm" data-ad
 function bindAbsDecide(root, reload) {
   $$('[data-adec]', root).forEach(b => b.onclick = async () => {
     const ok = b.dataset.ok === '1';
-    const reply = await ask(ok ? 'אישור ההיעדרות' : 'דחיית ההיעדרות', { multiline: true, placeholder: ok ? 'תגובה (לא חובה)' : 'למה נדחה? (חובה)', ok: ok ? 'אישור' : 'דחייה', optional: ok });
+    const reply = ok ? '' : await ask('דחיית ההיעדרות', { multiline: true, placeholder: 'למה נדחה?', ok: 'דחייה' });
     if (reply == null || b.disabled) return; const btns = [...b.parentElement.querySelectorAll('button')]; btns.forEach(x => lock(x, true));
     const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, manager_reply: reply || null, decided_at: new Date().toISOString() }).eq('id', b.dataset.adec);
     if (error) { btns.forEach(x => lock(x, false)); return toast(errText(error)); } toast(ok ? 'אושר' : 'נדחה — העובד קיבל הודעה'); reload();
@@ -239,50 +252,52 @@ export async function renderHours(el, userId, month) {
     <div class="monthbar"><button id="mp" aria-label="חודש קודם">${icon('back', 18)}</button><b>${monthName(month)}</b><button id="mn" aria-label="חודש הבא">${icon('chev', 18)}</button></div>
     <div id="hb" class="stack lg"><div class="skel"></div></div>`;
   const base = me ? '#/hours' : `#/attendance/${userId}`;
+  const isNow = month === ymd(new Date()).slice(0, 7);
   $('#mp').onclick = () => replaceHash(`${base}/${prevMonth(month)}`);
   $('#mn').onclick = () => replaceHash(`${base}/${nextMonth(month)}`);
-  const S = await settings();
+  const Sp = settings();
   const from = new Date(monthStart(prevMonth(month)) + 'T00:00:00+03:00').toISOString(), to = new Date(monthStart(nextMonth(month)) + 'T00:00:00+02:00').toISOString(); // +02 = חצות חורף; בקיץ שעה עודפת שמסוננת לפי יום מקומי
-  const [{ data: shifts }, { data: am }, { data: who }, { data: edits }, { data: reqs }] = await Promise.all([
+  const [S, { data: shifts }, { data: am }, { data: who }, { data: edits }, { data: reqs }, { data: abs }, { data: rate }] = await Promise.all([Sp,
     sb.from('shifts').select('*').eq('user_id', userId).gte('start_at', from).lt('start_at', to).order('start_at'),
     sb.from('attendance_months').select('*').eq('user_id', userId).eq('month', monthStart(month)).maybeSingle(),
     sb.from('profiles').select('full_name').eq('id', userId).single(),
     sb.from('shift_edits').select('*').eq('user_id', userId).order('at', { ascending: false }).limit(30),
     sb.from('shift_requests').select('*').eq('user_id', userId).gte('req_start', from).lt('req_start', to).order('created_at', { ascending: false }),
-  ]);
-  const { data: abs } = await sb.from('absences').select('*').eq('user_id', userId).lt('date_from', monthStart(nextMonth(month))).gte('date_to', `${month}-01`).order('date_from');
+    sb.from('absences').select('*').eq('user_id', userId).lt('date_from', monthStart(nextMonth(month))).gte('date_to', `${month}-01`).order('date_from'),
+    can('finance') ? sb.from('employee_rates').select('*').eq('user_id', userId).maybeSingle() : Promise.resolve({ data: null }),
+  ]);   // הכל במקביל — סבב אחד לשרת
   const R0 = reqs || [], pendingNew = R0.filter(r => !r.shift_id), byShift = id => R0.filter(r => r.shift_id === id);
   if (!me) $('#ht').textContent = who?.full_name || '';
   const nowIso = new Date().toISOString(), R = computeMonth((shifts || []).map(x => x.end_at ? x : { ...x, end_at: nowIso, _open: true }), month, S);   // משמרת פתוחה נספרת עד עכשיו
   await geoFlags(R);
   const T = R.totals, M = isManager() && !me || (isManager() && me);
-  const { data: rate } = !me && can('finance') ? await sb.from('employee_rates').select('*').eq('user_id', userId).maybeSingle() : { data: null };
   const E = livePay(shifts, month, S, rate);
   const locked = am?.locked;
   const box = $('#hb'); if (!box) return;
   const any = R.days.length > 0;
-  box.innerHTML = `
+  box.innerHTML = `${me && isNow ? '<div id="hclock"></div>' : ''}
     ${any ? `<div class="kpis"><div class="kpi"><b>${T.days}</b><span>ימי עבודה</span></div><div class="kpi"><b>${hhmm(T.net)}</b><span>סה״כ שעות</span></div><div class="kpi"><b>${hhmm(T.ot125 + T.ot150)}</b><span>שעות נוספות</span></div></div>
-    ${T.net ? `<div class="menu">${CATS.filter(([k]) => T[k] > 0 || ['reg', 'ot125', 'ot150'].includes(k)).map(([k, l]) => `<div class="lrow kv"><span class="grow"><small>${l}</small><b>${hhmm(T[k])} שעות</b></span></div>`).join('')}
-      ${T.nights ? `<div class="lrow kv"><span class="grow"><small>משמרות לילה</small><b>${T.nights}</b></span></div>` : ''}</div>` : ''}` : ''}
+    ${T.net ? `<details class="fold"${me ? '' : ' open'}><summary><span class="sh">פירוט לפי תעריף</span></summary><div class="menu">${CATS.filter(([k]) => T[k] > 0 || ['reg', 'ot125', 'ot150'].includes(k)).map(([k, l]) => `<div class="lrow kv"><span class="grow"><small>${l}</small><b>${hhmm(T[k])} שעות</b></span></div>`).join('')}
+      ${T.nights ? `<div class="lrow kv"><span class="grow"><small>משמרות לילה</small><b>${T.nights}</b></span></div>` : ''}</div></details>` : ''}` : ''}
     ${E ? `<section><h3 class="sh">שכר מצטבר</h3><div class="menu"><div class="lrow kv"><span class="grow"><small>${E.type === 'hourly' ? 'רגיל' : E.partial ? 'משכורת · עד היום' : 'משכורת'}</small><b>${nis(E.base)}</b></span></div>${E.ot ? `<div class="lrow kv"><span class="grow"><small>${E.type === 'global' ? 'גלובלי / נוספות' : 'נוספות ושבת/חג'}</small><b>${nis(E.ot)}</b></span></div>` : ''}${E.travel ? `<div class="lrow kv"><span class="grow"><small>נסיעות</small><b>${nis(E.travel)}</b></span></div>` : ''}<div class="lrow kv"><span class="grow"><small>סה״כ עד עכשיו · לפני ניכויים</small><b>${nis(E.total)}</b></span></div>${E.notes.map(n => `<div class="lrow kv"><span class="grow"><small class="fl">${esc(n)}</small></span></div>`).join('')}</div></section>` : ''}
-    ${R.flags.length ? `<section><h3 class="sh">לתשומת לב</h3><div class="alist">${R.flags.map(f => `<div class="arow warn"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small class="fl">${esc(f)}</small></span></div>`).join('')}</div></section>` : ''}
-    <section><h3 class="sh">לפי ימים</h3><div class="list">${R.days.map(d => `<div class="lrow dayline"><span class="datebox"><b>${+d.date.slice(8)}</b><small>יום ${HE_D1[new Date(d.date + 'T12:00').getDay()]}</small></span>
+    ${R.flags.length && !me ? `<section><h3 class="sh">לתשומת לב</h3><div class="alist">${flagGroups(R.flags).map(([f, ds]) => `<div class="arow warn"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b class="fl">${esc(f)}</b>${ds.length ? `<small>${esc(ds.join(' · '))}</small>` : ''}</span></div>`).join('')}</div></section>` : ''}
+    ${any || pendingNew.length || !me ? `<section><h3 class="sh">לפי ימים</h3><div class="list">${R.days.map(d => `<div class="lrow dayline"><span class="datebox"><b>${+d.date.slice(8)}</b><small>יום ${HE_D1[new Date(d.date + 'T12:00').getDay()]}</small></span>
       <span class="grow"><b>${d.shifts.map(s => `${tm(s.start_at)}–${s._open ? 'עכשיו' : tm(s.end_at)}${s.start_lat == null && s.source === 'app' ? `<span class="muted nogeo" title="בלי מיקום" aria-label="בלי מיקום">${icon('pin', 14)}</span>` : ''}`).join(' · ')}</b>
       <small>${hhmm(d.netH)} שעות${d.ot125 + d.ot150 ? ` · נוספות ${hhmm(d.ot125 + d.ot150)}` : ''}${d.isNight ? ' · לילה' : ''}${d.holiday ? ' · ' + d.holiday : ''}${!me && d.shifts.some(x => x.late_sync_min) ? ` · <span class="pill warn">כניסה נשלחה באיחור ${Math.max(...d.shifts.map(x => x.late_sync_min || 0))} דק׳</span>` : ''}${!me ? d.shifts.filter(x => x.start_dist_m > (S.geofence_m || 500) || x.end_dist_m > (S.geofence_m || 500)).map(x => ` · <span class="pill warn" title="${esc(x.note || '')}">${x.start_dist_m > (S.geofence_m || 500) ? 'כניסה' : 'יציאה'} ${km(x.start_dist_m > (S.geofence_m || 500) ? x.start_dist_m : x.end_dist_m)} מ${esc(x.start_dist_m > (S.geofence_m || 500) ? x.start_place : x.end_place)}</span>${x.note ? ` <small>"${esc(x.note)}"</small>` : ''}`).join('') : ''}</small></span>
       ${me && !locked && !d.shifts.some(x => byShift(x.id).some(r => r.status === 'pending')) ? `<button class="chip" data-req="${d.shifts[0].id}">עריכה</button>` : !me && isManager() && !locked ? `<button class="chip" data-edit="${d.shifts[0].id}">תיקון</button>` : ''}</div>
       ${d.shifts.flatMap(x => byShift(x.id).filter(r => r.status === 'pending' || Date.now() - new Date(r.decided_at) < 30 * 864e5).map(r => reqLine(r, x) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : ''))).join('')}`).join('') || '<div class="empty-line">אין משמרות בחודש הזה</div>'}
-      ${pendingNew.map(r => reqLine(r) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : '')).join('')}</div>
+      ${pendingNew.map(r => reqLine(r) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : '')).join('')}</div></section>` : '<section>'}
       ${me && !locked ? `<button class="btn ghost block" id="reqadd">${icon('plus', 18)} הוספת משמרת ששכחתי להחתים</button>` : ''}
       ${!me && isManager() && !locked ? `<button class="btn ghost block" id="addsh">${icon('plus', 18)} הוספת משמרת (מנהל)</button>` : ''}</section>
-    <section><div class="sh-row"><h3 class="sh">היעדרויות</h3>${me && !locked ? `<button class="more" type="button" id="absadd">${icon('plus', 16)} דיווח היעדרות</button>` : ''}</div>
-      ${(abs || []).map(a => absLine(a) + (!me && isManager() && a.status === 'pending' ? absBtns(a) : '')).join('') || '<div class="empty-line">אין היעדרויות בחודש הזה</div>'}</section>
+    ${(abs || []).length ? `<section><div class="sh-row"><h3 class="sh">היעדרויות</h3>${me && !locked ? `<button class="more" type="button" id="absadd">${icon('plus', 16)} דיווח היעדרות</button>` : ''}</div>
+      ${abs.map(a => absLine(a) + (!me && isManager() && a.status === 'pending' ? absBtns(a) : '')).join('')}</section>` : me && !locked ? `<button class="btn ghost block" id="absadd">${icon('calendar', 18)} חופשה, מחלה או מילואים</button>` : ''}
     ${any || am ? `<section><h3 class="sh">אישור החודש</h3><div class="menu">
       <div class="lrow kv"><span class="grow"><small>העובד</small><b>${am?.worker_ok_at ? 'אישר ' + new Date(am.worker_ok_at).toLocaleDateString('he-IL') : 'עוד לא אישר'}</b></span>${me && !am?.worker_ok_at && !locked ? `<button class="btn primary sm" id="wok"${any ? '' : ' disabled'}>אישור השעות</button>` : ''}</div>
       <div class="lrow kv"><span class="grow"><small>המנהל</small><b>${locked ? 'אושר ונעל ' + new Date(am.manager_ok_at).toLocaleDateString('he-IL') : 'עוד לא אושר'}</b></span>${isManager() && !me && !locked ? '<button class="btn primary sm" id="mok">אישור ונעילה</button>' : ''}</div></div>
 </section>` : ''}
     ${isManager() && (edits || []).length ? `<details class="fold"><summary><span class="sh">יומן תיקונים</span><span class="count">${edits.length}</span></summary><div class="list">${edits.map(e => `<div class="lrow kv"><span class="grow"><small>${new Date(e.at).toLocaleString('he-IL')}</small><b>${esc(e.reason || '')}</b></span></div>`).join('')}</div></details>` : ''}`;
   const reload = () => renderHours(el, me ? null : userId, month);
+  if (me && isNow) clockCard($('#hclock'), reload);
   $('#wok')?.addEventListener('click', async e => { const w = e.currentTarget; if (w.disabled) return; lock(w, true); const { error } = await sb.rpc('worker_approve_month', { m: monthStart(month) }); if (error) { lock(w, false); return toast(errText(error)); } toast('אישרת את השעות'); reload(); });
   $('#mok')?.addEventListener('click', async e => {
     const mk = e.currentTarget; if (mk.disabled) return;
@@ -337,26 +352,51 @@ export async function renderAttendance(el, month) {
     sb.from('absences').select('*').eq('status', 'approved').lt('date_from', monthStart(nextMonth(month))).gte('date_to', `${month}-01`),
     sb.from('employee_rates').select('*'),
   ]);
-  const rows = (people || []).map(p => ({ p, R: computeMonth((shifts || []).filter(s => s.user_id === p.id), month, S), am: (ams || []).find(a => a.user_id === p.id) }));
+  const nowIso = new Date().toISOString(), live = x => x.end_at ? x : { ...x, end_at: nowIso };   // משמרת פתוחה נספרת עד עכשיו — כמו במסך העובד
+  const rows = (people || []).map(p => ({ p, R: computeMonth((shifts || []).filter(s => s.user_id === p.id).map(live), month, S), am: (ams || []).find(a => a.user_id === p.id) }))
+    .sort((a, b) => b.R.totals.net - a.R.totals.net || a.p.full_name.localeCompare(b.p.full_name, 'he'));
   const fin = can('finance') && (rates || []).length, payOf = id => (rates || []).find(r => r.user_id === id) || null;
   rows.forEach(r => { r.E = fin ? livePay((shifts || []).filter(x => x.user_id === r.p.id), month, S, payOf(r.p.id)) : null; });
   const payTotal = rows.reduce((a, r) => a + (r.E?.total || 0), 0);
-  const nowOn = (shifts || []).filter(s => s.status === 'open');
+  const nowOn = (shifts || []).filter(s => s.status === 'open' && (people || []).some(p => p.id === s.user_id));
+  const idle = rows.filter(r => !(r.R.totals.days || r.am || r.E?.total));
+  const toLock = rows.filter(r => r.R.totals.days && !r.am?.locked);
+  const pendAll = (pend || []).length + (pabs || []).length;
   const box = $('#ab'); if (!box) return;
   const { data: pShifts } = (pend || []).some(r => r.shift_id) ? await sb.from('shifts').select('*').in('id', pend.filter(r => r.shift_id).map(r => r.shift_id)) : { data: [] };
   box.innerHTML = `
-    ${(pend || []).length + (pabs || []).length ? `<section><div class="sh-row"><h3 class="sh">בקשות לאישור</h3><span class="count">${(pend || []).length + (pabs || []).length}</span></div>
+    ${pendAll ? `<section><div class="sh-row"><h3 class="sh">בקשות לאישור</h3>${pendAll > 1 ? `<button class="more" type="button" id="okall">${icon('check', 16)} אישור הכל (${pendAll})</button>` : `<span class="count">1</span>`}</div>
       <div class="list">${(pabs || []).map(a => `<div class="card stack reqcard"><b>${esc(people.find(x => x.id === a.user_id)?.full_name || '')}</b>${absLine(a)}${absBtns(a)}</div>`).join('')}${(pend || []).map(r => `<div class="card stack reqcard"><b>${esc(people.find(x => x.id === r.user_id)?.full_name || '')} · ${new Date(r.req_start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}</b>${reqLine(r, (pShifts || []).find(x => x.id === r.shift_id))}${decideBtns(r)}</div>`).join('')}</div></section>` : ''}
-    <section><div class="sh-row"><h3 class="sh">במשמרת עכשיו</h3><span class="count">${nowOn.length}</span></div>
-      ${nowOn.length ? `<div class="list">${nowOn.map(s => { const p = people.find(x => x.id === s.user_id); return `<a class="lrow" href="#/attendance/${s.user_id}"><span class="cl-dot"></span><span class="grow"><b>${esc(p?.full_name || '')}</b><small>מ-${tm(s.start_at)} · ${hhmm((Date.now() - new Date(s.start_at)) / 36e5)} שעות${s.start_lat != null ? ` · <span class="maplink" data-ll="${s.start_lat},${s.start_lng}">מיקום כניסה</span>` : ' · בלי מיקום'}</small></span></a>`; }).join('')}</div>` : '<div class="empty-line">אף אחד לא במשמרת כרגע</div>'}</section>
-    ${fin ? `<div class="kpis"><div class="kpi"><b>${nis(payTotal)}</b><span>שכר מצטבר</span></div><div class="kpi"><b>${hhmm(rows.reduce((a, r) => a + r.R.totals.net, 0))}</b><span>שעות</span></div><div class="kpi"><b>${hhmm(rows.reduce((a, r) => a + r.R.totals.ot125 + r.R.totals.ot150, 0))}</b><span>נוספות</span></div></div>` : ''}
+    ${month !== ymd(new Date()).slice(0, 7) ? '' : `<section><div class="sh-row"><h3 class="sh">במשמרת עכשיו</h3><span class="count">${nowOn.length}</span></div>
+      ${nowOn.length ? `<div class="list">${nowOn.map(s => { const p = people.find(x => x.id === s.user_id); return `<a class="lrow" href="#/attendance/${s.user_id}"><span class="cl-dot"></span><span class="grow"><b>${esc(p?.full_name || '')}</b><small>מ-${tm(s.start_at)} · ${hhmm((Date.now() - new Date(s.start_at)) / 36e5)} שעות${s.start_lat != null ? ` · <span class="maplink" data-ll="${s.start_lat},${s.start_lng}">מיקום כניסה</span>` : ' · בלי מיקום'}</small></span></a>`; }).join('')}</div>` : '<div class="empty-line">אף אחד לא במשמרת כרגע</div>'}</section>`}
+    ${fin ? `<div class="kpis"><div class="kpi"><b>${nis(payTotal)}</b><span>${month === ymd(new Date()).slice(0, 7) ? 'שכר עד עכשיו' : 'שכר החודש'}</span></div><div class="kpi"><b>${hhmm(rows.reduce((a, r) => a + r.R.totals.net, 0))}</b><span>שעות</span></div><div class="kpi"><b>${hhmm(rows.reduce((a, r) => a + r.R.totals.ot125 + r.R.totals.ot150, 0))}</b><span>נוספות</span></div></div>` : ''}
     <section><div class="sh-row"><h3 class="sh">סיכום חודשי</h3>${can('finance') ? '<button class="more" type="button" id="exp">ייצוא לחשבת השכר</button>' : ''}</div>
-      <div class="list">${rows.map(({ p, R, am, E }) => `<a class="lrow" href="#/attendance/${p.id}/${month}"><span class="avatar sm">${esc(p.full_name.split(' ').map(w => w[0]).slice(0, 2).join(''))}</span><span class="grow"><b>${esc(p.full_name)}</b>
+      ${toLock.length && (month < ymd(new Date()).slice(0, 7) || (month === ymd(new Date()).slice(0, 7) && +ymd(new Date()).slice(8) >= 28)) ? `<button class="btn primary block" id="lockall">${icon('check', 18)} אישור ונעילה · ${toLock.length} עובדים</button>` : ''}
+      <div class="list">${rows.filter(r => r.R.totals.days || r.am || r.E?.total).map(rowHtml).join('') || '<div class="empty-line">עוד אין שעות בחודש הזה</div>'}</div>
+      ${idle.length ? `<details class="fold"><summary><span class="sh">בלי שעות החודש</span><span class="count">${idle.length}</span></summary><div class="list">${idle.map(rowHtml).join('')}</div></details>` : ''}</section>`;
+  function rowHtml({ p, R, am, E }) { return `<a class="lrow" href="#/attendance/${p.id}/${month}"><span class="avatar sm">${esc(p.full_name.split(' ').map(w => w[0]).slice(0, 2).join(''))}</span><span class="grow"><b>${esc(p.full_name)}</b>
         <small>${R.totals.days} ימים · ${hhmm(R.totals.net)} שעות${R.totals.ot125 + R.totals.ot150 ? ` · נוספות ${hhmm(R.totals.ot125 + R.totals.ot150)}` : ''}${R.flags.length ? ` · ${R.flags.length} הערות` : ''}</small></span>
-        ${E ? `<b class="amt">${nis(E.total)}</b>` : ''}${am?.locked ? '<span class="pill ok">נעול</span>' : am?.worker_ok_at ? '<span class="pill lime">העובד אישר</span>' : R.totals.days ? '<span class="pill">פתוח</span>' : ''}</a>`).join('')}</div></section>`;
+        ${E ? `<b class="amt">${nis(E.total)}</b>` : ''}${am?.locked ? '<span class="pill ok">נעול</span>' : am?.worker_ok_at ? '<span class="pill lime">העובד אישר</span>' : R.totals.days ? '<span class="pill">פתוח</span>' : ''}</a>`; }
   bindDecide(box, () => renderAttendance(el, month)); bindAbsDecide(box, () => renderAttendance(el, month));
   $$('.maplink', box).forEach(m => m.onclick = e => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.google.com/maps?q=${m.dataset.ll}`, '_blank'); });
   const xb = $('#exp'); if (xb) xb.onclick = () => exportXlsx(month, rows, mabs || [], rates || [], S);
+  const again = () => renderAttendance(el, month);
+  $('#okall')?.addEventListener('click', async e => {
+    const b = e.currentTarget; if (b.disabled) return;
+    if (!(await confirmBox(`לאשר ${pendAll} בקשות?`, { ok: 'אישור הכל' }))) return; lock(b, true);
+    const errs = [];
+    for (const r of pend || []) { const { error } = await sb.rpc('decide_shift_request', { rid: r.id, ok: true, reply: '' }); if (error) errs.push(error); }
+    for (const a of pabs || []) { const { error } = await sb.from('absences').update({ status: 'approved', manager_id: state.user.id, decided_at: new Date().toISOString() }).eq('id', a.id); if (error) errs.push(error); }
+    toast(errs.length ? errText(errs[0]) : 'הכל אושר', errs.length ? 4000 : 2200); again();
+  });
+  $('#lockall')?.addEventListener('click', async e => {
+    const b = e.currentTarget; if (b.disabled) return;
+    const notOk = toLock.filter(r => !r.am?.worker_ok_at).length, openN = toLock.filter(r => nowOn.some(s => s.user_id === r.p.id)).length;
+    if (!(await confirmBox(`לנעול את ${monthName(month)} ל-${toLock.length} עובדים?`, { body: [notOk && `${notOk} עוד לא אישרו בעצמם.`, openN && `${openN} במשמרת פתוחה.`, pendAll && 'יש בקשות שלא טופלו.'].filter(Boolean).join(' '), ok: 'אישור ונעילה' }))) return;
+    lock(b, true); const t = new Date().toISOString();
+    const { error } = await sb.from('attendance_months').upsert(toLock.map(r => ({ user_id: r.p.id, month: monthStart(month), manager_ok_at: t, manager_id: state.user.id, locked: true })));
+    if (error) { lock(b, false); return toast(errText(error)); } toast('החודש נעול'); again();
+  });
 }
 
 // ---------- ייצוא לשכר (Excel, במבנה של קונקטים + פירוק לפי החוק) ----------

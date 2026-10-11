@@ -30,7 +30,7 @@ export async function renderPlan(el, pid, print = false) {
   const [{ data: p }, { data: tasks }, { data: days }, { data: rows }] = await Promise.all([
     sb.from('projects').select('id,name,client_name,site_id,sites(name,address,contact_name,contact_phone)').eq('id', pid).single(),
     sb.from('tasks').select('id,title,day_no,method,instructions,risk,building_id,work_day_id,status').eq('project_id', pid).neq('phase', 'מעקב').neq('status', 'dropped').order('day_no').order('seq'),
-    sb.from('work_days').select('id,day,status,report_time,kind').eq('project_id', pid).neq('kind', 'report').order('day'),
+    sb.from('work_days').select('id,day,status,report_time,kind,drone_id').eq('project_id', pid).neq('kind', 'report').order('day'),
     sb.from('plan_days').select('*').eq('project_id', pid).order('day_no')]);
   if (!p) { el.innerHTML = `<header class="phead"><a class="back" href="#/p/${pid}" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">תכנית עבודה</h1></header><div class="empty-line">הפרויקט לא נמצא</div>`; return; }
   // אין תכנית ויש אתר עם אפיון שהושלם → נבנית לבד (בדרך כלל השרת כבר בנה אותה בשיוך/בסיום האפיון); הטקסט נשאר לעריכה
@@ -52,7 +52,8 @@ export async function renderPlan(el, pid, print = false) {
   const U = await urlsFor([...new Set(nums.flatMap(photosOf))]);
   const s = p.sites;
   const notes = [...new Set((tasks || []).map(t => t.instructions).filter(Boolean))], risks = [...new Set((tasks || []).map(t => t.risk).filter(Boolean))];
-  const brief = notes.length || risks.length ? `<section class="pbrief"><b>דגשים מהאפיון</b>${notes.map(x => `<div>${esc(x).replace(/\n/g, '<br>')}</div>`).join('')}${risks.map(x => `<div class="warn">${icon('alert', 14)} ${esc(x)}</div>`).join('')}</section>` : '';
+  const load = await loadout(p, nums.length, days || []).catch(() => '');
+  const brief = load + (notes.length || risks.length ? `<section class="pbrief"><b>דגשים מהאפיון</b>${notes.map(x => `<div>${esc(x).replace(/\n/g, '<br>')}</div>`).join('')}${risks.map(x => `<div class="warn">${icon('alert', 14)} ${esc(x)}</div>`).join('')}</section>` : '');
 
   const dayCard = n => {
     const ts = (tasks || []).filter(t => t.day_no === n), wd = dateOf(n), body = R.get(n)?.body ?? draft(ts), ph = photosOf(n);
@@ -120,6 +121,33 @@ export async function renderPlan(el, pid, print = false) {
         if (await save(n, { photos: [...sel], body: R.get(n)?.body ?? $(`[data-body="${n}"]`)?.value ?? '' })) { close(); toast('נשמר'); renderPlan(el, pid); } else b.disabled = false; };
     });
   }
+}
+
+// "מה להעמיס" — נגזר מהאפיונים שהושלמו באתר + הרחפן ששובץ. קריאה בלבד, בלי מספרים מומצאים
+async function loadout(p, ndays, days) {
+  if (!p.site_id) return '';
+  const droneIds = [...new Set(days.map(d => d.drone_id).filter(Boolean))];
+  const [{ data: bs }, { data: dr }] = await Promise.all([
+    sb.from('buildings').select('floors,specs(status,method,material,floors,site_ops,hydrants,power)').eq('site_id', p.site_id),
+    droneIds.length ? sb.from('equipment').select('name').in('id', droneIds) : Promise.resolve({ data: [] })]);
+  const S = (bs || []).flatMap(b => (Array.isArray(b.specs) ? b.specs : [b.specs]).filter(x => x?.status === 'done').map(x => ({ ...x, fl: Number(x.floors ?? b.floors) || 0 })));
+  if (!S.length) return '';
+  const O = S.map(x => x.site_ops || {}), has = (k, v) => O.some(o => o[k] === v), any = k => [...new Set(O.flatMap(o => o[k] || []))];
+  const M = new Set(S.map(x => x.method).filter(Boolean)), mats = [...new Set(S.map(x => x.material).filter(m => m && m !== 'אחר'))];
+  const fl = Math.max(0, ...S.map(x => x.fl)), haz = any('hazards');
+  const L = [];
+  if (M.has('רחפן') || M.has('משולב') || !M.size) L.push(['רחפן', (dr || []).map(x => x.name).join(', ') || 'שטיפה']);
+  if (M.has('סנפלינג') || M.has('משולב')) L.push(['סנפלינג', 'ציוד גלישה ועיגון']);
+  if (mats.length) L.push(['חומר ניקוי', mats.join(' · ') + (ndays ? ` · ל-${ndays} ימי עבודה` : '')]);
+  if (has('water', 'מכלית')) L.push(['מים', 'מכלית — אין מקור באתר']);
+  else if (has('water', 'הידרנט')) L.push(['מים', 'מתאם הידרנט']);
+  else if (has('water', 'ברז באתר')) L.push(['מים', 'מחבר לברז']);
+  else if (S.some(x => x.hydrants)) L.push(['מים', 'מתאם הידרנט']);   // אפיונים מלפני 096
+  if (fl) L.push(['צנרת', `לגובה ${fl} קומות (≈${fl * 3} מ׳)` + (has('access', 'רחוק — סחיבה') ? ' + תוספת לסחיבה' : '')]);
+  if (has('power', 'גנרטור')) L.push(['חשמל', 'גנרטור']);
+  else if (has('power', 'שקע באתר') || S.some(x => x.power)) L.push(['חשמל', 'כבל מאריך']);
+  L.push(['בטיחות', ['גידור ושלטים', 'אפודים', haz.includes('הולכי רגל') && 'גידור מעבר הולכי רגל', has('launch', 'גג') && 'עבודה מהגג — רתמות'].filter(Boolean).join(' · ')]);
+  return `<section class="pload"><b>מה להעמיס</b>${L.map(([k, v]) => `<div class="pl"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</section>`;
 }
 
 // הדפסה: אותו מסמך בתבנית הדוחות של החברה, בלי שדות עריכה

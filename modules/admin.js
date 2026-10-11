@@ -18,7 +18,8 @@ export async function renderAdmin(el) {
     <div class="stack">
     <div id="teams"></div>
     <h3 class="sh">אנשים והרשאות</h3>
-    <div class="list">${people.map(p => `<div class="lrow">
+    ${people.length > 10 ? '<input type="search" id="aq" placeholder="חיפוש לפי שם או טלפון" aria-label="חיפוש">' : ''}
+    <div class="list" id="apl">${[...people].sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0)).map(p => `<div class="lrow${p.is_active ? '' : ' off'}" data-q="${esc((p.full_name || '') + ' ' + (p.phone || ''))}">
       <span class="avatar" aria-hidden="true">${esc(initials(p.full_name))}</span>
       <span class="grow"><b>${esc(p.full_name)}</b><small>${esc(p.phone || '')}${p.field_role ? ' · ' + FIELD_HE[p.field_role] : ''}${p.is_pilot && p.pilot_license_expiry ? ' · רישיון עד ' + new Date(p.pilot_license_expiry).toLocaleDateString('he-IL') : ''}</small></span>
       <select data-role="${p.id}" aria-label="תפקיד" ${p.id === state.user.id ? 'disabled' : ''} class="sel-auto">${ROLES.map(r => `<option value="${r}" ${p.role === r ? 'selected' : ''}>${ROLE_HE[r]}</option>`).join('')}</select>
@@ -53,6 +54,7 @@ export async function renderAdmin(el) {
     const q = c.checked ? sb.from('site_members').insert({ site_id, user_id }) : sb.from('site_members').delete().eq('site_id', site_id).eq('user_id', user_id);
     c.disabled = true; const { error } = await q; c.disabled = false; if (error) { c.checked = !c.checked; return toast(errText(error, 'לא נשמר — נסו שוב')); } toast('השיוך עודכן');
   });
+  const aq = $('#aq'); if (aq) aq.oninput = () => { const v = aq.value.trim(); $$('#apl [data-q]').forEach(r => r.hidden = !!v && !r.dataset.q.includes(v)); };
   usageCard(el); teamsCard(people);
   // קישור עמוק ליומן הסנכרון (#/admin/sync) — מההתראה "הסנכרון נעצר" / "שליחה למאנדי נכשלה"
   if (location.hash.startsWith('#/admin/sync')) { replaceHash('#/admin', false); $('#sync')?.scrollIntoView({ block: 'start' }); }

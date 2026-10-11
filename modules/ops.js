@@ -1,7 +1,7 @@
 // הבית של המנהל (מנהל תפעול ומעלה): מסך אחד שעונה על "מה קורה בשטח, מה תקוע, ומה מחכה לי" — ומאשרים ישר מכאן.
 // סדר קבוע: מדדים · דורש טיפול (רשימה אחת) · לאישורך · היום בשטח · מחר · המשימות שלי · אתמול.
 // היום ומחר בשטח (צוות, מי החתים, מי אישר הגעה, מזג אוויר) · בעיות (מחושבות מהנתונים, שבוע קדימה) · לאישורך (תיקוני שעות, היעדרויות, בקשות למשרד, רכש).
-import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, HE_DOW, toast, ask, timeAgo, can, initials, sheet, leadMark, shortName } from '../lib/core.js';
+import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, HE_DOW, toast, ask, confirmBox, timeAgo, can, initials, sheet, leadMark, shortName, dayLabel } from '../lib/core.js';
 import { attentionItems, sortNeeds, needsList, bindNeeds } from './attention.js';
 import { errText } from '../lib/audit.js';
 
@@ -22,8 +22,8 @@ export async function renderOps(el) {
   const t = isoDay(), tm = addDays(t, 1), y = addDays(t, -1), wk = addDays(t, 6);
   const q = async p => { try { const { data } = await p; return data || []; } catch { return []; } };
   const admin = state.profile.role === 'admin';
-  const [days, people, shifts, abs, sreq, oreq, preq, exq, drones, ended, pulls] = await Promise.all([
-    q(sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,site_id,planned_from,planned_to),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', t).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
+  const [days, people, shifts, abs, sreq, oreq, preq, exq, drones, ended, pulls, rdy] = await Promise.all([
+    q(sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,site_id,planned_from,planned_to,readiness),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', t).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
     q(sb.from('profiles').select('id,full_name,role,is_active,is_pilot').eq('is_active', true)),
     q(sb.from('shifts').select('id,user_id,start_at,end_at,status,start_dist_m,start_place,note').or(`status.eq.open,start_at.gte.${new Date(y + 'T00:00:00').toISOString()}`).order('start_at', { ascending: false }).limit(80)),
     q(sb.from('absences').select('id,user_id,kind,date_from,date_to,note,status').in('status', ['pending', 'approved']).gte('date_to', y)),
@@ -34,6 +34,7 @@ export async function renderOps(el) {
     q(sb.from('equipment').select('id,name,health').eq('kind', 'drone')),
     q(sb.from('work_days').select('id,day,signoff,project_id,projects!inner(id,name,closed_summary,monday_group)').eq('is_last_day', true).eq('status', 'done').is('projects.closed_summary', null).gte('day', addDays(t, -30))),
     q(sb.from('sync_log').select('created_at,status').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(6)),
+    q(sb.rpc('readiness_list')),
   ]);
   const P = new Map(people.map(p => [p.id, p])), name = id => first(P.get(id)?.full_name) || '—';
   const open = shifts.filter(s => s.status === 'open' && !s.end_at), openBy = new Map(open.map(s => [s.user_id, s]));
@@ -45,6 +46,7 @@ export async function renderOps(el) {
   const issues = [];
   const busy = new Map(); days.filter(w => w.drone_id && w.status !== 'done').forEach(w => { const k = w.day + w.drone_id; busy.set(k, (busy.get(k) || 0) + 1); });
   for (const w of days) {
+    const i0 = issues.length;
     const pn = (w.projects?.name || '').replace(/^[^—]*—\s*/, '') || w.projects?.name || '', when = w.day === t ? 'היום' : w.day === tm ? 'מחר' : `${HE_D1[new Date(w.day + 'T12:00:00').getDay()]} ${dm(w.day)}`, href = `#/day/${w.id}`;
     const crew = (w.work_day_crew || []), ppl = [...new Set([w.crew_lead_id, ...crew.map(c => c.user_id)].filter(Boolean))];
     const fix = w.status === 'planned' ? { act: () => import('./dayadmin.js').then(m => m.openDayAdmin(w.id, () => renderOps(el))) } : {};
@@ -61,6 +63,29 @@ export async function renderOps(el) {
     if (un.length && w.day === tm) issues.push({ tone: 'warn', ic: 'clock', t: `${un.length > 1 ? un.length + ' לא אישרו' : name(un[0].user_id) + ' לא אישר'} הגעה למחר`, s: pn + (un.length > 1 ? ' · ' + un.map(c => name(c.user_id)).join(', ') : ''), href, ...fix });
     for (const c of crew) { const a = absOn(c.user_id, w.day); if (a) issues.push({ tone: 'bad', ic: 'calendar', t: `${name(c.user_id)} ב${ABS[a.kind] || 'היעדרות'} ומשובץ ${when}`, s: pn, href, ...fix }); }
     const dr = D.get(w.drone_id); if (dr?.health === 'grounded') issues.push({ tone: 'bad', ic: 'drone', t: `רחפן ${dr.name} מקורקע ומשובץ ${when}`, s: pn, href: `#/equipment/${dr.id}`, ...fix });
+    issues.slice(i0).forEach(i => { i.d = w.day; i.w = when; });
+  }
+  // אותה בעיה באותו פרויקט בכמה ימים = שורה אחת ("אין מטיס בצוות · 3 ימים"), לא שלוש
+  { const G = new Map(), out = [];
+    for (const i of issues) { if (!i.w) { out.push(i); continue; }
+      const k = i.t.replace(i.w, '').replace(/[\s·]+$/, '') + '|' + i.s;
+      const g = G.get(k); if (g) { g.ds.push(i.d); if (i.tone === 'bad') g.tone = 'bad'; continue; }
+      const n = { ...i, base: i.t.replace(i.w, '').replace(/[\s·]+$/, ''), ds: [i.d] }; G.set(k, n); out.push(n); }
+    for (const g of G.values()) if (g.ds.length > 1) g.t = `${g.base} · ${g.ds.length} ימים מ${g.w === 'היום' || g.w === 'מחר' ? g.w : '-' + dm(g.ds[0])}`;
+    issues.splice(0, issues.length, ...out); }
+  // מוכנות להיום/מחר (project_readiness — אותה רשימה כמו בפרויקט): מה שלא מכוסה כבר בשורות למעלה (צוות/רחפן/תחזית/אישורים).
+  // רק מרחב אווירי חסר → סימון בלחיצה מכאן. אחרת → רשימת המוכנות בפרויקט
+  const PREP = ['אפיון', 'תכנית עבודה', 'מקור מים', 'מכלית מים', 'תיאום כניסה לאתר', 'מרחב אווירי'];
+  for (const r of rdy.filter(x => x.next_day && x.next_day <= tm)) {
+    const miss = (r.miss || []).filter(m => PREP.includes(m)); if (!miss.length) continue;
+    const w = days.find(x => x.project_id === r.project_id && x.day === r.next_day), nm = shortName(w?.projects?.name || ''), when = r.next_day === t ? 'היום' : 'מחר';
+    const pd = days.filter(x => x.project_id === r.project_id && x.status === 'planned').map(x => x.day);
+    const onlyAir = miss.length === 1 && miss[0] === 'מרחב אווירי';
+    issues.push({ tone: 'warn', ic: onlyAir ? 'drone' : 'clipboard', ds: [r.next_day], t: onlyAir ? `מרחב אווירי לא תואם · ${when}` : `לא מוכן ל${when} · ${nm}`, s: onlyAir ? nm : miss.join(' · '),
+      ...(onlyAir ? { act: async () => {
+        if (!(await confirmBox('מרחב אווירי תואם?', { body: nm, ok: 'תואם' }))) return;
+        const { error } = await sb.rpc('set_readiness', { p: r.project_id, k: 'airspace', on_: true, days: [...new Set([...(w?.projects?.readiness?.airspace?.days || []), ...pd])] });
+        if (error) return toast(errText(error)); toast('סומן — מרחב אווירי תואם', 1800, 'success'); renderOps(el); } } : { href: `#/p/${r.project_id}` }) });
   }
   for (const s of open) {
     const h = (Date.now() - new Date(s.start_at)) / 36e5;
@@ -78,7 +103,7 @@ export async function renderOps(el) {
   // רשימה אחת: בעיות שטח (שבוע קדימה) + מה שהמערכת מזהה (צי, פרויקטים, רישיונות, סנכרון) + מה שמחכה לי אישית
   const [sys, mineA] = await extra;
   const N = sortNeeds([
-    ...issues.map(i => ({ tone: i.tone, ic: icon(i.ic, 20), title: i.t, sub: i.s, ...(i.act ? { act: i.act } : { href: i.href }) })),
+    ...issues.map(i => ({ tone: i.tone, ic: icon(i.ic, 20), title: i.t, sub: i.s, ds: i.ds || (i.d ? [i.d] : []), ...(i.act ? { act: i.act } : { href: i.href }) })),
     ...sys.filter(a => a.k !== 'shiftreq').map(a => ({ tone: a.tone, ic: icon(a.ic, 20), title: a.title, sub: a.sub, href: a.href, list: a.list, act: a.act })),
     ...mineA.filter(x => x.k !== 'push')]);
   const pushA = mineA.find(x => x.k === 'push');   // הגדרה אישית — לא חלק מתור הניהול
@@ -102,6 +127,17 @@ export async function renderOps(el) {
     const fixIt = nc && w.status === 'planned', tag = fixIt ? 'button' : 'a';   // מישהו לא יגיע → הלחיצה פותחת ישר את ניהול היום
     return `<${tag} class="lrow" ${fixIt ? `type="button" data-da="${w.id}"` : `href="#/day/${w.id}"`}><span class="timebox"><b>${w.report_time ? w.report_time.slice(0, 5) : '—'}</b></span><span class="grow"><b>${esc(shortName(w.projects?.name))}</b><small>${ppl.map(u => (cc(u) ? `<s>${esc(name(u))}</s>` : esc(name(u))) + (u === w.crew_lead_id ? leadMark() : '')).join(' · ') || 'לא שובץ צוות'}</small>
       <span class="tags">${w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${w.day}"></span>` : ''}${nc ? `<span class="pill bad">${nc > 1 ? nc + ' לא יגיעו' : 'לא יגיע'}</span>` : ''}${miss ? `<span class="pill warn">${miss} ${w.day === t ? 'לא החתימו' : 'לא אישרו'}</span>` : ''}</span></span></${tag}>`; };
+
+  // ---- השבוע במבט אחד: 7 ימים, כמה ימי שטח וצבע לפי הבעיה הכי חמורה. לחיצה = היום הזה (בעיות + ימי שטח + שיבוץ) ----
+  const wkDays = [0, 1, 2, 3, 4, 5, 6].map(i => addDays(t, i));
+  const wkTone = d => { const is = N.filter(x => x.ds?.includes(d)); return is.some(x => x.tone === 'bad') ? 'bad' : is.length ? 'warn' : days.some(w => w.day === d) ? 'ok' : ''; };
+  const week = `<div class="wks" role="list">${wkDays.map(d => { const n = days.filter(w => w.day === d).length, dw = new Date(d + 'T12:00').getDay();
+    return `<button type="button" role="listitem" class="wkd ${wkTone(d)} ${d === t ? 'now' : ''} ${dw === 6 ? 'sat' : ''}" data-wk="${d}" aria-label="${esc(dayLabel(d))}${n ? ' · ' + n + ' ימי שטח' : ''}"><small>${d === t ? 'היום' : HE_D1[dw]}</small><b>${+d.slice(8)}</b><span class="wdots">${'<i></i>'.repeat(Math.min(n, 3))}</span></button>`; }).join('')}</div>`;
+  const wkSheet = d => { const ws = days.filter(w => w.day === d), is = N.filter(x => x.ds?.includes(d));
+    sheet(`<h3>${esc(dayLabel(d))}</h3>${is.length ? needsList(is, { head: false, limit: 99, id: 'wkn' }) : ''}${ws.length ? `<div class="list">${ws.map(dayRow).join('')}</div>` : `<div class="empty-line">אין ימי שטח</div>`}
+      <a class="btn ghost block" href="#/dispatch/${d}">${icon('plus', 18)} שיבוץ</a>`, s2 => { bindNeeds(s2, is, () => renderOps(el));
+      $$('[data-da]', s2).forEach(b => b.onclick = () => import('./dayadmin.js').then(m => m.openDayAdmin(b.dataset.da, () => renderOps(el))));
+      import('../lib/wx.js').then(m => m.fillWx(s2)).catch(() => {}); }); };
 
   // ---- לאישורך ----
   const pendAbs = abs.filter(a => a.status === 'pending' && (admin || a.user_id !== state.user.id));   // אין אישור עצמי
@@ -127,6 +163,7 @@ export async function renderOps(el) {
       ${pushA ? pushA.href ? `<a class="lrow slim" id="pushA" href="${pushA.href}"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span></a>`
         : `<div class="lrow slim" id="pushA"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span>${pushA.btn ? `<button class="btn ghost sm" id="pushOn">${pushA.btn}</button>` : ''}</div>` : ''}
       <div class="kpis opk">${kpi(dToday.length, 'בשטח היום', 'today')}${kpi(open.length, 'במשמרת', 'shift')}${kpi(N.length, 'לטיפול', 'needs', N.some(i => i.tone === 'bad') ? 'bad' : N.length ? 'warn' : '')}${kpi(approvals.length, 'לאישור', 'appr', approvals.length ? 'warn' : '')}</div>
+      ${week}
       ${needsList(N, { limit: 3 })}
       ${approvals.length ? `<section id="sec-appr"><div class="sh-row"><h3 class="sh">לאישורך</h3><span class="count">${approvals.length}</span></div>${approvals.join('')}</section>` : ''}
       <section id="sec-today"><div class="sh-row"><h3 class="sh">היום בשטח</h3><a class="more" href="#/schedule">לו״ז</a></div>${dToday.length ? `<div class="list">${dToday.map(dayRow).join('')}</div>` : `<div class="empty-line">אין ימי שטח היום${nextDay ? ` · הבא ${dm(nextDay.day)} ${esc(shortName(nextDay.projects?.name))}` : ''}</div>`}</section>
@@ -146,6 +183,7 @@ export async function renderOps(el) {
     appr: () => sheet(`${shead('לאישורך', approvals.length)}${approvals.join('') || none('אין מה לאשר', '')}`, (s2, close) => bindAppr(s2, () => { close(); again(); })),
   };
   $$('[data-kpi]', el).forEach(b => b.onclick = () => KPI[b.dataset.kpi]());
+  $$('[data-wk]', el).forEach(b => b.onclick = () => wkSheet(b.dataset.wk));
 
   bindNeeds(el, N, () => renderOps(el));
   $$('[data-da]', el).forEach(b => b.onclick = () => import('./dayadmin.js').then(m => m.openDayAdmin(b.dataset.da, () => renderOps(el))));
