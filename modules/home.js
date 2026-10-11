@@ -1,6 +1,6 @@
 // בית: עונה רק על "מה קורה היום ומה צריך אותי". כל השאר בלשוניות.
 // מנהל → מסך הבקרה (ops.js). עובד שטח: שעון · מחכה לך · היום שלי · הימים הקרובים. יצירת כל דבר חדש — רק בכפתור +.
-import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel, toast, isOpenProject, enqueue, ask, haptic } from '../lib/core.js';
+import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel, toast, isOpenProject, enqueue, ask, haptic, othersPending, othersCard } from '../lib/core.js';
 import { needsList, bindNeeds } from './attention.js';
 import { errText } from '../lib/audit.js';
 
@@ -25,7 +25,7 @@ const mineDay = w => w.crew_lead_id === state.user.id || (w.work_day_crew || [])
 
 export async function load() {
   const q = async (p) => { try { const { data, error } = await p; if (error) throw error; return data || []; } catch { return null; } };
-  const t = today(), since = addDays(t, -14), M = isManager();
+  const t = today(), since = addDays(t, -14), M = isManager(), n0 = state.storedN;
   const [projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq, vsites] = await Promise.all([
     q(sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id,closed_summary,lat,lng,sites(lat,lng)')),
     q(sb.from('field_reports').select('monday_item_id,project_id,project_label,report_date,crew,work,had_issues,issues,photos').gte('report_date', since).order('report_date', { ascending: false })),
@@ -42,7 +42,42 @@ export async function load() {
   if (visits && vsites) visits.forEach(v => v.href = visitHref(v, vsites));
   const data = { projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq };
   if (projects) await cache.set('home2', data); else Object.assign(data, (await cache.get('home2')) || {});
+  await overlayDays(data.wdays, !projects || state.storedN > n0).catch(() => {});
   return data;
+}
+// מה שנעשה בטלפון ועוד לא הגיע לשרת (או שהשרת לא נקרא — בלי קליטה) מוחל על הימים: יציאה/הגעה/סגירה, אישור הגעה,
+// "לא אגיע". כך הבית לא מציע "פתיחת היום" ליום שכבר עבדו בו. מקור: התור (לפי הסדר) + היום השמור בטלפון (today.js)
+const DRANK = { planned: 0, en_route: 1, on_site: 2, working: 3, issue: 3, done: 5 };
+async function overlayDays(ws, offline) {
+  if (!ws?.length) return;
+  const { outbox } = await import('../lib/store.js'); const q = await outbox.all();
+  const forDay = id => q.filter(x => x.rowId === id || x.args?.d === id || x.row?.work_day_id === id || x.meta?.work_day_id === id);
+  for (const w of ws) {
+    if (!mineDay(w)) continue;
+    const mine = forDay(w.id); if (!mine.length && !offline) continue;
+    const c = await cache.get('day:' + w.id).catch(() => null), crew = w.work_day_crew || [];
+    if (c?.day && (DRANK[c.day.status] ?? -1) > (DRANK[w.status] ?? 0)) w.status = c.day.status;
+    for (const cc of c?.day?.work_day_crew || []) { const m = crew.find(x => x.user_id === cc.user_id); if (m) { m.clock_in ||= cc.clock_in; m.confirmed_at ||= cc.confirmed_at; m.cant_come_at ||= cc.cant_come_at; } }
+    const me = crew.find(x => x.user_id === state.user.id);
+    for (const x of mine) {
+      if (x.kind === 'update' && x.table === 'work_days') Object.assign(w, x.patch);
+      else if (x.kind === 'rpc' && me) {
+        if (x.fn === 'crew_depart') me.clock_in ||= x.args.t;
+        else if (x.fn === 'confirm_day') { me.confirmed_at ||= new Date(x.at).toISOString(); me.cant_come_at = null; }
+        else if (x.fn === 'cant_come') me.cant_come_at ||= new Date(x.at).toISOString();
+      }
+    }
+  }
+}
+// משימות שסימנתי "בוצע" ועוד בתור — לא מוצגות שוב כפתוחות (גם כשיש קליטה והשרת עוד לא קיבל)
+async function hideQueuedTasks() {
+  const box = $('#mytasks'); if (!box) return;
+  const { outbox } = await import('../lib/store.js');
+  const done = new Set((await outbox.all()).filter(x => x.kind === 'update' && x.table === 'tasks' && x.patch?.status === 'done').map(x => x.rowId));
+  if (!done.size) return;
+  $$('[data-id]', box).forEach(c => done.has(c.dataset.id) && c.remove());
+  const sec = box.querySelector('section'), n = sec ? $$('[data-id]', sec).length : 0;
+  if (sec && !n) sec.remove(); else if (sec) { const k = sec.querySelector('.count'); if (k) k.textContent = n; }
 }
 
 // ---------- מה דורש טיפול: מקובץ, הכי חמור קודם ----------
@@ -131,13 +166,14 @@ export async function renderHome(el) {
   const heroDays = openToday.length ? openToday : ahead.slice(0, 1), rest = ahead.filter(w => !heroDays.includes(w)).slice(0, 4);
   const pend = ahead.filter(needsOk);
   const sv = can('specs') ? await surveyVisits(t) : [];   // סוקר: הסיורים הקרובים (מהליד) — ישר לטופס האפיון
-  box.innerHTML = `<div id="attn"></div><div id="pulse">${pulseHtml(await cache.get('pulse').catch(() => null))}</div><div id="mytasks"></div><div id="openpast"></div>
+  box.innerHTML = `<div id="qown"></div><div id="attn"></div><div id="pulse">${pulseHtml(await cache.get('pulse').catch(() => null))}</div><div id="mytasks"></div><div id="openpast"></div>
     ${doneToday.length ? `<div class="list">${doneToday.map(w => dayRow(w, byId)).join('')}</div>` : ''}
     ${sv.length ? `<section><div class="sh-row"><h3 class="sh">סיורי אפיון</h3><a class="more" href="#/specs">כל האפיונים</a></div><div class="list">${sv.map(x => `<a class="lrow" href="${esc(x.href)}"><span class="grow"><b>${esc(x.name)}</b><small>${esc([x.visit_date === t ? 'היום' : dayWord(x.visit_date).replace('יום ', ''), x.scope_text, x.contact_name].filter(Boolean).join(' · '))}</small></span><span class="pill ${x.st === 'draft' ? 'warn' : ''}">${x.st === 'draft' ? 'בטיוטה' : 'לאפיון'}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
     ${heroDays.map(w => dayHero(w, byId.get(w.project_id) || {}, cov[w.project_id])).join('') || (sv.length ? '' : empty('calendar', 'אין שיבוץ בשבועיים הקרובים', 'שיבוץ חדש יופיע כאן'))}
     ${pend.length > 1 ? `<div class="okall" data-act="all"><span class="grow"><b>${pend.length} ימים מחכים לאישור הגעה</b><small>${pend.map(w => dayWord(w.day).replace('יום ', '')).join(' · ')}</small></span><button class="btn primary" data-confirm-all="${pend.map(x => x.id).join(',')}">אגיע לכולם ✓</button></div>` : ''}
     ${rest.length ? `<section><div class="sh-row"><h3 class="sh">הימים הקרובים</h3><a class="more" href="#/schedule">כל הלו״ז</a></div><div class="list">${rest.map(w => dayRow(w, byId, pend.length > 1)).join('')}</div></section>` : ''}`;
   bindConfirm(box); extras(); pastOpen($('#openpast'));
+  othersPending().then(o => { const b = $('#qown'); if (b && o.length) b.innerHTML = o.map(othersCard).join(''); }).catch(() => {});
   fillGlance(box, P);
   pulse($('#pulse'), ahead.length + mine.filter(w => w.status !== 'done').length);
   prefetchDays((d.wdays || []).filter(w => (w.day === t || w.day === addDays(t, 1)) && mineDay(w)).map(w => w.id));
@@ -157,7 +193,7 @@ async function surveyVisits(t) {
 function dayHero(w, pr, cover) {
   const isToday = w.day === today(), crew = (w.work_day_crew || []).filter(c => c.user_id !== state.user.id).map(c => (c.profiles?.full_name || '').trim()).filter(Boolean);
   const lead = (w.work_day_crew || []).find(c => c.role === 'lead' || c.user_id === w.crew_lead_id), ilead = w.crew_lead_id === state.user.id;
-  const cta = !isToday ? 'לפרטי היום' : w.status === 'planned' ? 'פתיחת היום' : w.status === 'done' ? 'סיכום היום' : 'המשך היום';
+  const cta = !isToday ? 'לפרטי היום' : w.status === 'planned' && !meOn(w)?.clock_in ? 'פתיחת היום' : w.status === 'done' ? 'סיכום היום' : 'המשך היום';
   const no = meOn(w)?.cant_come_at || PQ.no.has(w.id), okd = meOn(w)?.confirmed_at || PQ.ok.has(w.id);
   return `<div class="dhero"><a class="photo-hero" href="#/day/${w.id}">
       <span class="img" style="background-image:url('${cover || ''}')"></span>
@@ -354,7 +390,7 @@ export async function renderReports(el) {
 // תוספות בראש המסך אחרי שהוא צויר: הודעות לאישור, הפעלת התראות
 export function extras() {
   if (isManager()) yesterday();
-  import('./tasks.js').then(m => m.myTasks($('#mytasks')));
+  import('./tasks.js').then(m => m.myTasks($('#mytasks'))).then(hideQueuedTasks).catch(() => {});
   import('./attention.js').then(m => m.attention($('#attn')));
   pendingAcks();
   import('./attendance.js').then(m => m.clockCard($('#hm')));

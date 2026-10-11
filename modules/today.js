@@ -1,7 +1,7 @@
 // יום שטח: בוקר ← העמסה ← באתר ← בעבודה ← סיום. השלב נגזר ממה שכבר נשמר, כל פעולה נכנסת לתור ונשלחת כשיש קליטה.
 import { coverArt, icon, leadMark, navButtons, thumbUrls } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
-import { sb, state, cache, enqueue, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, haptic } from '../lib/core.js';
+import { sb, state, cache, enqueue, sendsLabel, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, haptic } from '../lib/core.js';
 
 const STEPS = ['בוקר', 'העמסה', 'באתר', 'בעבודה', 'סיום'];
 const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיחות': 'safety', 'כמעט תאונה': 'near_miss', 'אתר': 'site', 'לקוח': 'site', 'אחר': 'other' };
@@ -18,6 +18,7 @@ function statusPill(d) {
 // ---------- יום אחד ----------
 // טעינת יום מהשרת לתוך המטמון ('day:<id>') — גם מראש מהבית, כדי שהיום ייפתח בשטח בלי קליטה
 export async function loadDay(id) {
+  const n0 = state.storedN;
   const [{ data: day, error }, { data: tasks }, { data: checks }, { data: photos }, { data: issues }, { data: missing }, { data: settings }, { data: team }] = await Promise.all([
     sb.from('work_days').select(DAY_SEL).eq('id', id).single(),
     sb.from('tasks').select('*').eq('work_day_id', id).order('seq'),
@@ -48,6 +49,8 @@ export async function loadDay(id) {
   // רשימת ההעמסה לפי האפיון (רק כשלא נקבעה ידנית ליום): ברז/הידרנט → בלי מיכל מים, שקע → בלי גנרטור, חומר הניקוי בשמו, גג → רתמות
   const def = D.S.equip_default || [], req = day.equip_required || [];
   if (Object.keys(D.ops).length && (!req.length || (req.length === def.length && req.every(x => def.includes(x))))) day.equip_required = tailorEquip(def, D.ops, day.material_planned);
+  // חלק מהתשובות הגיעו מהעותק בטלפון (בלי קליטה / קליטה חלשה) — היום השמור מקומית (כולל מה שעשינו בו) עדכני יותר: לא דורסים אותו
+  if (state.storedN > n0) { const c = await cache.get('day:' + id).catch(() => null); if (c?.day) return c; }
   await cache.set('day:' + id, D);
   return D;
 }
@@ -347,7 +350,7 @@ export async function renderDay(el, id) {
     // התור קובע: כל עוד משהו מהיום הזה בטלפון — "ממתין", גם אם השרת כבר ראה חלק
     { const { outbox } = await import('../lib/store.js');
       const tick = async () => { if (!box.isConnected) return; const n = (await outbox.all()).filter(mineQ).length;
-        box.textContent = n ? `ממתין לקליטה · ${n} פריטים — יישלח לבד` : D.day.monday_item_id && D.day.monday_item_id !== 'none' ? 'הדוח התקבל במשרד' : 'נשלח למשרד'; if (n) setTimeout(tick, 4000); };
+        box.textContent = n ? `ממתין לקליטה · ${n} פריטים — ${sendsLabel()}` : D.day.monday_item_id && D.day.monday_item_id !== 'none' ? 'הדוח התקבל במשרד' : 'נשלח למשרד'; if (n) setTimeout(tick, 4000); };
       tick(); }
     nextUp();
     const sb0 = $('#dshift', el); if (!sb0) return;
