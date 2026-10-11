@@ -53,7 +53,7 @@ export async function renderProject(el, id, tab = 'o') {
       sb.from('issues').select('*').eq('project_id', id).order('created_at', { ascending: false }),
       sb.from('field_reports').select('*').eq('project_id', id).order('report_date', { ascending: false }),
       can('finance') ? sb.from('project_finance').select('*').eq('project_id', id).maybeSingle() : Promise.resolve({ data: null }),
-      isManager() ? sb.from('sites').select('id,name,buildings(specs(status,days_expected))').eq('is_active', true) : Promise.resolve({ data: [] }),
+      isManager() ? sb.from('sites').select('id,name,slug,kind,buildings(id,specs(status,days_expected))').eq('is_active', true) : Promise.resolve({ data: [] }),
       isManager() ? sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true) : Promise.resolve({ data: [] }),
       sb.from('equipment').select('id,name,health').eq('kind', 'drone'),
     ]);
@@ -209,6 +209,13 @@ export async function renderProject(el, id, tab = 'o') {
   }
 
   // ----- תכנית עבודה -----
+  // בונים תכנית רק מאפיון שהושלם עם ימים; אחרת — שורה שמובילה לאפיון החסר
+  const linkedSite = () => D.sites.find(x => x.id === p.site_id);
+  const specOf = b => Array.isArray(b.specs) ? b.specs[0] : b.specs;
+  const specReady = () => { const st = linkedSite(); return !st || (st.buildings || []).some(b => specOf(b)?.status === 'done' && Number(specOf(b)?.days_expected) > 0); };
+  const specMissing = () => { const st = linkedSite(), B = st.buildings || [], sl = st.slug || p.sites?.slug;
+    const href = st.kind === 'lead' && B.length === 1 && B[0].id ? `#/b/${sl}/${B[0].id}` : '#/site/' + sl;
+    return `<div class="list"><a class="lrow" href="${esc(href)}"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>אפיון חסר</b></span><span class="chev">${icon('chev', 18)}</span></a></div>`; };
   function plan(box) {
     const all = D.tasks; D.tasks = all.filter(t => t.phase !== 'מעקב');   // התכנית = משימות ימי העבודה; הצ'קליסט בנפרד למעלה
     const chk = all.filter(t => t.phase === 'מעקב' && t.status !== 'dropped');
@@ -219,7 +226,7 @@ export async function renderProject(el, id, tab = 'o') {
     box.innerHTML = `${checklistHtml(chk)}${D.tasks.length || M ? `<a class="plancard" href="#/plan/${id}"><span class="mic">${icon('report', 22)}</span><span class="grow"><b>תכנית העבודה</b>${by.size ? `<small>${[...by.keys()].filter(Boolean).length} ימים</small>` : ''}</span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
       ${D.tasks.length ? `<details class="fold"><summary><span class="sh">משימות לפי יום</span><span class="count">${tot}</span></summary><div class="stack">` : ''}${tot ? `<div class="card row"><div class="ring" style="--p:${Math.round(done / tot * 100)}"><b>${Math.round(done / tot * 100)}%</b></div><div class="grow"><b>${done} מתוך ${tot} משימות</b><div class="small muted">${by.size} ימי עבודה בתכנית${blocked.length ? ` · ${blocked.length} נתקעו` : ''}</div></div></div>` : ''}
       ${!D.tasks.length && M ? `<div class="empty-line">אין תכנית עבודה</div>` : ''}
-      ${M && p.site_id ? `<button class="btn ${D.tasks.length ? 'ghost' : 'primary'} block" id="gen">${D.tasks.length ? 'בנייה מחדש מהאפיון' : 'בניית תכנית עבודה מהאפיון'}</button>` : ''}
+      ${M && p.site_id ? (specReady() ? `<button class="btn ${D.tasks.length ? 'ghost' : 'primary'} block" id="gen">${D.tasks.length ? 'בנייה מחדש מהאפיון' : 'בניית תכנית עבודה מהאפיון'}</button>` : specMissing()) : ''}
       ${blocked.length ? `<div class="stack tight"><h3>נתקעו</h3>${blocked.map(taskRow).join('')}</div>` : ''}
       ${[...by.entries()].map(([n, ts]) => { const wd = dayOf(n); const dn = ts.filter(t => t.status === 'done').length;
         return `<div class="stack tight"><div class="row"><h3 class="grow">${n ? 'יום ' + n : 'בלי יום'}${wd ? ` · ${dayLabel(wd.day)}` : ''}</h3><span class="pill ${dn === ts.length ? 'ok' : ''}">${dn}/${ts.length}</span></div>${dayBrief(wd, ts)}${ts.map(taskRow).join('')}</div>`; }).join('')}

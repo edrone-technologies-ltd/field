@@ -1,6 +1,6 @@
 // מערכת הדוחות: כל דוח נפתח מתוך פרויקט (או מהבית ← בחירת פרויקט).
 // יומי (מסך יום השטח במצב דוח) · תקלה / אירוע בטיחות · החתמת לקוח · סיכום פרויקט פנימי · אפיון.
-import { sb, state, isManager, can, enqueue, signedUrls, addFieldPhoto, sheet, uid, icon, coverArt, $, $$, esc, nf, toast, zoom, isoDay, dayLabel, dm, confirmBox, goUp, thumbUrls, backBtn } from '../lib/core.js';
+import { sb, state, isManager, can, cache, enqueue, signedUrls, addFieldPhoto, sheet, uid, icon, coverArt, $, $$, esc, nf, toast, zoom, isoDay, dayLabel, dm, confirmBox, goUp, thumbUrls, backBtn } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
 const ROLE_CAN_SIGN = () => isManager() || state.profile.role === 'crew_lead';
@@ -23,13 +23,16 @@ export async function newReport(projectId, links = [], type = null) {
   if (T) {
     if (T.noProject) return open(T.k);
     if (projectId) return open(T.k, projectId);
+    // תקלה כשיש לי יום שטח היום: ישר ליום (בלי בחירת פרויקט)
+    if (T.k === 'issue') { const w = await myDayNow(); if (w) return issueSheet(w.project_id, null, null, w.id); }
     const again = () => pickProject(pid => open(T.k, pid, again), () => newReport()); return again();
   }
   if (projectId) return pickType(projectId);
   // מהבית: קודם סוג הדוח, ואז (אם צריך) הפרויקט
   sheet(`<h3>${links.length ? 'חדש' : 'דוח חדש'}</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}${links.map(([h, ic, t, d]) => `<a class="lrow" href="${h}" data-close><span class="mic">${icon(ic, 20)}</span><span class="grow"><b>${t}</b><small>${d}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>
     <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
-    $$('[data-t]', s).forEach(b => b.onclick = () => { close(); const t = TYPES.find(x => x.k === b.dataset.t); if (t.noProject) return open(t.k);
+    $$('[data-t]', s).forEach(b => b.onclick = async () => { close(); const t = TYPES.find(x => x.k === b.dataset.t); if (t.noProject) return open(t.k);
+      if (t.k === 'issue') { const w = await myDayNow(); if (w) return issueSheet(w.project_id, null, null, w.id); }
       const again = () => pickProject(pid => open(t.k, pid, again), () => newReport()); again(); });
   });
 }
@@ -71,23 +74,40 @@ function dailyDate(pid, back) {
     };
   }, { back });
 }
+// יום השטח שלי עכשיו: המסך הפתוח (#/day/…), אחרת היום שלי היום (מהשרת, ובלי קליטה — מהמטמון)
+async function myDayNow() {
+  const me = state.user.id, t = isoDay();
+  const dayId = (location.hash.match(/^#\/day\/([0-9a-f-]{36})/) || [])[1];
+  if (dayId) { const c = await cache.get('day:' + dayId).catch(() => null); if (c?.day?.project_id) return { id: dayId, project_id: c.day.project_id }; }
+  try {
+    const { data, error } = await sb.from('work_days').select('id,project_id,status,work_day_crew!inner(user_id)').eq('day', t).eq('work_day_crew.user_id', me).neq('status', 'done').limit(1);
+    if (error) throw error; if (data?.[0]) return data[0];
+    const { data: led } = await sb.from('work_days').select('id,project_id').eq('day', t).eq('crew_lead_id', me).neq('status', 'done').limit(1);
+    return led?.[0] || null;
+  } catch {
+    const h = await cache.get('home2').catch(() => null);
+    return (h?.wdays || []).find(w => w.day === t && w.status !== 'done' && (w.crew_lead_id === me || (w.work_day_crew || []).some(c => c.user_id === me))) || null;
+  }
+}
 const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיחות': 'safety', 'כמעט תאונה': 'near_miss', 'אתר': 'site', 'לקוח': 'site', 'אחר': 'other' };
-export function issueSheet(pid, after, back) {
-  let kind = 'רחפן', crit = false, files = [];
-  sheet(`<h3>תקלה / אירוע בטיחות</h3><div class="chips">${Object.keys(ISSUE_KIND).map(k => `<button class="chip" data-k="${k}" aria-pressed="${k === kind}">${k}</button>`).join('')}</div>
+// dayId: יום השטח שאליו התקלה שייכת (לא חובה). מספיק סוג בלחיצה, מילים או תמונה
+export function issueSheet(pid, after, back, dayId = null) {
+  let kind = null, crit = false, files = [];
+  sheet(`<h3>תקלה / אירוע בטיחות</h3><div class="chips">${Object.keys(ISSUE_KIND).map(k => `<button class="chip" data-k="${k}" aria-pressed="false">${k}</button>`).join('')}</div>
     <textarea id="ib" rows="4" placeholder="מה קרה, איפה, מה נעשה"></textarea>
     <label class="tog"><span>קריטי — העבודה נעצרה / סכנה</span><span class="sw"><input type="checkbox" id="ic"><i></i></span></label>
     <label class="btn ghost block">${icon('photo', 18)} תמונות<input type="file" accept="image/*" multiple id="ip" hidden></label><div id="ipn" class="small muted"></div>
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="isend">דיווח</button></div>`, (s, close) => {
-    $$('[data-k]', s).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    $$('[data-k]', s).forEach(b => b.onclick = () => { kind = kind === b.dataset.k ? null : b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x.dataset.k === kind)); });
     $('#ic', s).onchange = e => crit = e.target.checked;
     $('#ip', s).onchange = e => { files = [...e.target.files]; $('#ipn', s).textContent = files.length ? `${files.length} תמונות יצורפו` : ''; };
     $('#isend', s).onclick = async () => {
-      const body = $('#ib', s).value.trim(); if (!body) return toast('כתבו מה קרה');
+      const text = $('#ib', s).value.trim(); if (!text && !kind && !files.length) { $('#ib', s).focus(); return toast('בחרו סוג, כתבו או צלמו'); }
       if ($('#isend', s).disabled) return; $('#isend', s).disabled = true;
-      const row = { id: uid(), project_id: pid, kind: ISSUE_KIND[kind], severity: crit ? 'critical' : 'normal', body: ['רחפן', 'לקוח'].includes(kind) ? `${kind}: ${body}` : body, opened_by: state.user.id };
+      const body = text ? (['רחפן', 'לקוח'].includes(kind) ? `${kind}: ${text}` : text) : kind || 'תקלה (בתמונה)';
+      const row = { id: uid(), project_id: pid, ...(dayId ? { work_day_id: dayId } : {}), kind: ISSUE_KIND[kind] || 'other', severity: crit ? 'critical' : 'normal', body, opened_by: state.user.id };
       await enqueue({ kind: 'insert', table: 'issues', row });
-      for (const f of files) await addFieldPhoto(f, { kind: 'issue', project_id: pid, issue_id: row.id });
+      for (const f of files) await addFieldPhoto(f, { kind: 'issue', project_id: pid, issue_id: row.id, ...(dayId ? { work_day_id: dayId } : {}) });
       close(); toast(crit ? 'דווח — המנהלים מקבלים התראה' : 'התקלה דווחה'); after && after(row);
     };
   }, { back });
@@ -101,7 +121,7 @@ export async function renderSignoff(el, pid) {
     sb.from('projects').select('id,name,client_name,cover_path,sites(contact_name)').eq('id', pid).single(),
     sb.from('work_days').select('day,status,work_types').eq('project_id', pid).eq('status', 'done').order('day'),
     sb.from('tasks').select('title,status').eq('project_id', pid).eq('status', 'done'),
-    sb.from('field_reports').select('report_date,work').eq('project_id', pid).order('report_date'),
+    sb.from('field_reports').select('report_date,work').eq('project_id', pid).eq('excluded', false).order('report_date'),
   ]);
   if (!p) { el.innerHTML = `<header class="phead">${backBtn('#/projects')}<h1>החתמת לקוח</h1></header><div class="empty-line">הפרויקט לא נמצא</div>`; return; }
   const dates = [...new Set([...(days || []).map(d => d.day), ...(reps || []).map(r => r.report_date)])].sort();
@@ -141,7 +161,7 @@ export async function renderSummary(el, pid) {
     sb.from('projects').select('id,name').eq('id', pid).single(),
     sb.from('project_summaries').select('*').eq('project_id', pid).maybeSingle(),
     sb.from('issues').select('body,created_at,resolution').eq('project_id', pid).order('created_at'),
-    sb.from('field_reports').select('report_date,issues').eq('project_id', pid).not('issues', 'is', null).order('report_date'),
+    sb.from('field_reports').select('report_date,issues').eq('project_id', pid).eq('excluded', false).not('issues', 'is', null).order('report_date'),
   ]);
   const auto = [...(reps || []).map(r => `${dm(r.report_date)}: ${r.issues}`), ...(iss || []).map(i => `${dm(i.created_at.slice(0, 10))}: ${i.body}${i.resolution ? ' → ' + i.resolution : ''}`)].join('\n');
   const F = { quality: s?.quality || 0, issues: s?.issues ?? auto, solutions: s?.solutions || (iss || []).filter(i => i.resolution).map(i => i.resolution).join('\n'), lessons: s?.lessons || '', notes: s?.notes || '' };

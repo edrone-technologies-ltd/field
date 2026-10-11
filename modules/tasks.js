@@ -1,7 +1,6 @@
 // משימות אישיות (מעקב): מנהל פותח לעובד משימה — לרוב מקושרת לליד/אתר — והעובד רואה אותה בראש מסך הבית,
 // עם חיוג / וואטסאפ / מייל לאיש הקשר וסימון "בוצע". כל פעולה נחתמת ביומן הפעולות.
-import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials, ask, signedUrls, zoom } from '../lib/core.js';
-import { shrink } from '../lib/store.js';
+import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials, ask, signedUrls, zoom, addFieldPhoto, enqueue, flush } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
 const SEL = 'id,title,instructions,due,status,assignee_id,created_by,site_id,project_id,done_at,photos,sites(name,slug,contact_name,contact_phone),projects(name)';
@@ -78,8 +77,9 @@ export async function newTask({ site, title = '', notes = '', project = null, on
   });
 }
 
-// סימון "טופל" עם תיעוד: תמונת "אחרי" (חובה כשיש תמונת "לפני" מהממצא) + מה נעשה. משמש בבית ובצ'קליסט הפרויקט
-export function completeTask(t, onDone) {
+// סימון "טופל" עם תיעוד: תמונת "אחרי" (חובה כשיש תמונת "לפני" מהממצא) + מה נעשה. משמש בבית, בצ'קליסט הפרויקט וביום השטח.
+// הכל נכנס לתור ונשלח כשיש קליטה (גם באתר בלי קליטה). meta.work_day_id = יום השטח שבו טופל (לא חובה)
+export function completeTask(t, onDone, meta = {}) {
   const before = t.photos?.before || [], after = [...(t.photos?.after || [])], urls = {};
   sheet(`<h3>${esc(t.title)}</h3>
     ${before.length ? `<div class="small muted">לפני</div><div class="fphs" id="cb"></div>` : ''}
@@ -89,19 +89,15 @@ export function completeTask(t, onDone) {
     const img = ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '';
     const draw = () => {
       if ($('#cb', s)) $('#cb', s).innerHTML = before.map(img).join('');
-      $('#ca', s).innerHTML = after.map(img).join('') + `<label class="fph add" aria-label="צילום אחרי">${icon('photo', 18)}<input type="file" accept="image/*" multiple id="cf" hidden></label>`;
+      $('#ca', s).innerHTML = after.map(img).join('') + `<label class="fph add" aria-label="צילום אחרי">${icon('photo', 18)}<input type="file" accept="image/*" capture="environment" multiple id="cf" hidden></label>`;
       $$('img.fph', s).forEach(i => i.onclick = () => zoom(i.src, ''));
       $('#cf', s).onchange = async e => {
-        const fl = [...e.target.files]; if (!fl.length) return; toast('מעלה…');
-        try {
-          for (const file of fl) {
-            const blob = await shrink(file), path = `${state.user.id}/fix/${crypto.randomUUID()}.jpg`;
-            const { error } = await sb.storage.from('field').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
-            await sb.from('photos').insert({ storage_path: path, project_id: t.project_id, kind: 'fix', uploaded_by: state.user.id, caption: t.title });
-            after.push(path);
-          }
-          Object.assign(urls, await signedUrls('field', after));
-        } catch (er) { toast(errText(er, 'התמונה לא עלתה — נסו שוב')); }
+        const fl = [...e.target.files]; if (!fl.length) return;
+        for (const file of fl) {
+          try { const ph = await addFieldPhoto(file, { kind: 'fix', project_id: t.project_id, caption: t.title, ...(meta.work_day_id ? { work_day_id: meta.work_day_id } : {}) });
+            after.push(ph.path); urls[ph.path] = ph.url;
+          } catch (er) { toast(errText(er, 'התמונה לא נשמרה — נסו שוב')); }
+        }
         draw();
       };
     };
@@ -110,9 +106,8 @@ export function completeTask(t, onDone) {
       if (before.length && !after.length) return toast('צריך תמונה של אחרי הטיפול');
       if ($('#cok', s).disabled) return; $('#cok', s).disabled = true;
       const patch = { status: 'done', done_by: state.user.id, done_at: new Date().toISOString(), done_note: $('#cn', s).value.trim() || null, photos: { before, after } };
-      const { error } = await sb.from('tasks').update(patch).eq('id', t.id);
-      if (error) { $('#cok', s).disabled = false; return toast(errText(error)); }
-      Object.assign(t, patch); close(); toast('סומן כטופל'); onDone && onDone();
+      await enqueue({ kind: 'update', table: 'tasks', rowId: t.id, patch });   // אחרי התמונות בתור — נשלח לפי הסדר
+      Object.assign(t, patch); close(); toast(navigator.onLine ? 'סומן כטופל' : 'סומן כטופל — יישלח כשתהיה קליטה'); await flush(); onDone && onDone();
     };
   });
 }

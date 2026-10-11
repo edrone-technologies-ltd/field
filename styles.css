@@ -1285,3 +1285,6 @@ button.back{flex:none;width:40px;height:40px;border-radius:50%;display:grid;plac
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .pill.pilot{color:#b89cf0}}
 :root[data-theme="dark"] .pill.pilot{color:#b89cf0}
 .row.tight{gap:6px}
+/* שדה חסר בסגירת יום */
+[aria-invalid="true"]{border-color:var(--bad)!important;box-shadow:0 0 0 2px var(--badbg)}
+.task .hbtn{width:34px;height:34px;box-shadow:none}

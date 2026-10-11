@@ -12,7 +12,7 @@ export async function renderSignoff(el, pid, dayId = null) {
   const [{ data: p }, wds, reps, phs, tasks, iss] = await Promise.all([
     sb.from('projects').select('id,name,client_name,client_id,site_id,sites(name,contact_name,contact_phone)').eq('id', pid).single(),
     q(sb.from('work_days').select('id,day,status,work_types,gallons,material,weather_stop').eq('project_id', pid).eq('status', 'done').order('day')),
-    q(sb.from('field_reports').select('monday_item_id,report_date,work,crew,gallons,notes,issues,photos').eq('project_id', pid).order('report_date')),
+    q(sb.from('field_reports').select('monday_item_id,report_date,work,crew,gallons,notes,issues,photos').eq('project_id', pid).eq('excluded', false).order('report_date')),
     q(sb.from('photos').select('id,storage_path,kind,work_day_id,created_at').eq('project_id', pid).in('kind', ['before', 'after', 'general']).order('created_at')),
     q(sb.from('tasks').select('id,title,buildings(name)').eq('project_id', pid).eq('status', 'done').order('seq')),
     q(sb.from('issues').select('id,body,resolution').eq('project_id', pid).eq('status', 'closed')),

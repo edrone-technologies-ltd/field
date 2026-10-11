@@ -129,19 +129,28 @@ async function printView(el, p, nums, dayCard, brief) {
   $('#print').onclick = () => window.print();
 }
 
-// בלוק "תכנית היום" למסך יום השטח
-export async function planForDay(box, day) {
-  if (!box || !day?.project_id) return;
-  const [{ data: ts }, { data: days }] = await Promise.all([
+// תכנית היום של יום שטח (נשמר במטמון של היום — עובד גם בלי קליטה). null = אין תכנית
+export async function dayPlan(day) {
+  if (!day?.project_id) return null;
+  const [{ data: ts, error: e1 }, { data: days, error: e2 }] = await Promise.all([
     sb.from('tasks').select('day_no,work_day_id').eq('project_id', day.project_id).neq('phase', 'מעקב').not('day_no', 'is', null),
     sb.from('work_days').select('id,day,kind').eq('project_id', day.project_id).order('day')]);
+  if (e1 || e2) throw e1 || e2;
   const n = (ts || []).find(t => t.work_day_id === day.id)?.day_no || ((days || []).filter(d => d.kind !== 'report').findIndex(d => d.id === day.id) + 1);
-  if (!n) return;
-  const { data: r } = await sb.from('plan_days').select('*').eq('project_id', day.project_id).eq('day_no', n).maybeSingle();
-  if (!r || (!r.body && !(r.photos || []).length)) return;
-  const U = await urlsFor(r.photos || []);
+  if (!n) return null;
+  const { data: r, error } = await sb.from('plan_days').select('body,photos').eq('project_id', day.project_id).eq('day_no', n).maybeSingle();
+  if (error) throw error;
+  return r && (r.body || (r.photos || []).length) ? { body: r.body || '', photos: r.photos || [] } : null;
+}
+// בלוק "תכנית היום" למסך יום השטח. r = תכנית מהמטמון (undefined = לטעון). מחזיר את התכנית שהוצגה
+export async function planForDay(box, day, r) {
+  if (!box || !day?.project_id) return r;
+  if (r === undefined) r = await dayPlan(day);
+  if (!r) { box.innerHTML = ''; return r; }
+  const U = await urlsFor(r.photos || []).catch(() => ({}));
   box.innerHTML = `<section class="stack"><div class="sh-row"><h3 class="sh">תכנית היום</h3><a class="more" href="#/plan/${day.project_id}">כל התכנית</a></div>
     <div class="card stack">${r.body ? `<div class="ptext">${esc(r.body).replace(/\n/g, '<br>')}</div>` : ''}
-    ${(r.photos || []).length ? `<div class="pphotos">${r.photos.map(x => U[x] ? `<img src="${esc(U[x])}" alt="" data-z>` : '').join('')}</div>` : ''}</div></section>`;
+    ${(r.photos || []).some(x => U[x]) ? `<div class="pphotos">${r.photos.map(x => U[x] ? `<img src="${esc(U[x])}" alt="" data-z>` : '').join('')}</div>` : ''}</div></section>`;
   $$('[data-z]', box).forEach(i => i.onclick = () => zoom(i.src, ''));
+  return r;
 }

@@ -21,14 +21,16 @@ export async function renderOps(el) {
   const extra = Promise.all([home.load().then(home.alerts).catch(() => []), attentionItems().catch(() => [])]);
   const t = isoDay(), tm = addDays(t, 1), y = addDays(t, -1), wk = addDays(t, 6);
   const q = async p => { try { const { data } = await p; return data || []; } catch { return []; } };
-  const [days, people, shifts, abs, sreq, oreq, preq, drones, ended, pulls] = await Promise.all([
+  const admin = state.profile.role === 'admin';
+  const [days, people, shifts, abs, sreq, oreq, preq, exq, drones, ended, pulls] = await Promise.all([
     q(sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,site_id,planned_from,planned_to),work_day_crew(user_id,role,confirmed_at)').gte('day', t).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
     q(sb.from('profiles').select('id,full_name,role,is_active,is_pilot').eq('is_active', true)),
     q(sb.from('shifts').select('id,user_id,start_at,end_at,status,start_dist_m,start_place,note').or(`status.eq.open,start_at.gte.${new Date(y + 'T00:00:00').toISOString()}`).order('start_at', { ascending: false }).limit(80)),
     q(sb.from('absences').select('id,user_id,kind,date_from,date_to,note,status').in('status', ['pending', 'approved']).gte('date_to', y)),
-    q(sb.from('shift_requests').select('id,user_id,shift_id,req_start,req_end,reason,created_at').eq('status', 'pending').order('created_at')),
-    q(sb.from('office_requests').select('id,user_id,category,body,status,created_at').neq('status', 'done').order('created_at')),
-    can('purchase') ? q(sb.from('purchase_requests').select('id,status,monday_item_id').in('status', ['submitted', 'pending'])) : [],
+    q(sb.from('shift_requests').select('id,user_id,shift_id,req_start,req_end,reason,created_at').eq('status', 'pending').order('created_at')).then(r => r.filter(x => admin || x.user_id !== state.user.id)),
+    q(sb.from('office_requests').select('id,user_id,category,body,status,created_at').neq('status', 'done').order('created_at')).then(r => r.filter(x => x.user_id !== state.user.id && (admin || x.category !== 'שכר'))),   // שכר = הנהלה בלבד
+    admin ? q(sb.from('purchase_requests').select('id,status,monday_item_id').in('status', ['submitted', 'pending'])) : [],   // רכש מאושר במאנדי ע״י ההנהלה
+    can('finance') ? q(sb.from('expenses').select('id').eq('status', 'pending')) : [],
     q(sb.from('equipment').select('id,name,health').eq('kind', 'drone')),
     q(sb.from('work_days').select('id,day,signoff,project_id,projects!inner(id,name,closed_summary,monday_group)').eq('is_last_day', true).eq('status', 'done').is('projects.closed_summary', null).gte('day', addDays(t, -30))),
     q(sb.from('sync_log').select('created_at,status').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(6)),
@@ -45,17 +47,18 @@ export async function renderOps(el) {
   for (const w of days) {
     const pn = (w.projects?.name || '').replace(/^[^—]*—\s*/, '') || w.projects?.name || '', when = w.day === t ? 'היום' : w.day === tm ? 'מחר' : `${HE_D1[new Date(w.day + 'T12:00:00').getDay()]} ${dm(w.day)}`, href = `#/day/${w.id}`;
     const crew = (w.work_day_crew || []), ppl = [...new Set([w.crew_lead_id, ...crew.map(c => c.user_id)].filter(Boolean))];
-    if (!w.crew_lead_id) issues.push({ tone: 'bad', ic: 'users', t: `אין ראש צוות · ${when}`, s: pn, href });
-    if (!crew.length) issues.push({ tone: 'bad', ic: 'users', t: `לא שובץ צוות · ${when}`, s: pn, href });
-    else if (!ppl.some(id => P.get(id)?.is_pilot)) issues.push({ tone: 'bad', ic: 'drone', t: `אין מטיס בצוות · ${when}`, s: pn, href });
-    if (busy.get(w.day + w.drone_id) > 1) issues.push({ tone: 'bad', ic: 'drone', t: `${D.get(w.drone_id)?.name || 'רחפן'} משובץ פעמיים · ${when}`, s: pn, href: `#/dispatch/${w.day}` });
-    if (w.weather_alerted && w.status === 'planned') issues.push({ tone: 'warn', ic: 'sun', t: `תחזית לא לטוס · ${when}`, s: `${pn}${w.gust_max != null ? ' · משבים עד ' + w.gust_max + ' קמ״ש' : ''}`, href });
+    const fix = w.status === 'planned' ? { act: () => import('./dayadmin.js').then(m => m.openDayAdmin(w.id, () => renderOps(el))) } : {};
+    if (!w.crew_lead_id) issues.push({ tone: 'bad', ic: 'users', t: `אין ראש צוות · ${when}`, s: pn, href , ...fix });
+    if (!crew.length) issues.push({ tone: 'bad', ic: 'users', t: `לא שובץ צוות · ${when}`, s: pn, href , ...fix });
+    else if (!ppl.some(id => P.get(id)?.is_pilot)) issues.push({ tone: 'bad', ic: 'drone', t: `אין מטיס בצוות · ${when}`, s: pn, href , ...fix });
+    if (busy.get(w.day + w.drone_id) > 1) issues.push({ tone: 'bad', ic: 'drone', t: `${D.get(w.drone_id)?.name || 'רחפן'} משובץ פעמיים · ${when}`, s: pn, href: `#/dispatch/${w.day}`, ...fix });
+    if (w.weather_alerted && w.status === 'planned') issues.push({ tone: 'warn', ic: 'sun', t: `תחזית לא לטוס · ${when}`, s: `${pn}${w.gust_max != null ? ' · משבים עד ' + w.gust_max + ' קמ״ש' : ''}`, href, ...fix });
     const pf = w.projects?.planned_from, pt = w.projects?.planned_to || pf;
     if (pf && w.status === 'planned' && (w.day < pf || w.day > pt)) issues.push({ tone: 'warn', ic: 'calendar', t: `במאנדי ${dm(pf)}${pt !== pf ? '–' + dm(pt) : ''}, משובץ ${when}`, s: pn, href: `#/p/${w.project_id}` });
     const un = crew.filter(c => c.role !== 'lead' && !c.confirmed_at && w.status === 'planned');
-    if (un.length && w.day === tm) issues.push({ tone: 'warn', ic: 'clock', t: `${un.length > 1 ? un.length + ' לא אישרו' : name(un[0].user_id) + ' לא אישר'} הגעה למחר`, s: pn + (un.length > 1 ? ' · ' + un.map(c => name(c.user_id)).join(', ') : ''), href });
-    for (const c of crew) { const a = absOn(c.user_id, w.day); if (a) issues.push({ tone: 'bad', ic: 'calendar', t: `${name(c.user_id)} ב${ABS[a.kind] || 'היעדרות'} ומשובץ ${when}`, s: pn, href }); }
-    const dr = D.get(w.drone_id); if (dr?.health === 'grounded') issues.push({ tone: 'bad', ic: 'drone', t: `רחפן ${dr.name} מקורקע ומשובץ ${when}`, s: pn, href: `#/equipment/${dr.id}` });
+    if (un.length && w.day === tm) issues.push({ tone: 'warn', ic: 'clock', t: `${un.length > 1 ? un.length + ' לא אישרו' : name(un[0].user_id) + ' לא אישר'} הגעה למחר`, s: pn + (un.length > 1 ? ' · ' + un.map(c => name(c.user_id)).join(', ') : ''), href, ...fix });
+    for (const c of crew) { const a = absOn(c.user_id, w.day); if (a) issues.push({ tone: 'bad', ic: 'calendar', t: `${name(c.user_id)} ב${ABS[a.kind] || 'היעדרות'} ומשובץ ${when}`, s: pn, href, ...fix }); }
+    const dr = D.get(w.drone_id); if (dr?.health === 'grounded') issues.push({ tone: 'bad', ic: 'drone', t: `רחפן ${dr.name} מקורקע ומשובץ ${when}`, s: pn, href: `#/equipment/${dr.id}`, ...fix });
   }
   for (const s of open) {
     const h = (Date.now() - new Date(s.start_at)) / 36e5;
@@ -65,7 +68,7 @@ export async function renderOps(el) {
   shifts.filter(s => isoDay(new Date(s.start_at)) === t && (s.start_dist_m || 0) > 800).forEach(s => issues.push({ tone: 'warn', ic: 'pin', t: `${name(s.user_id)} החתים ${s.start_dist_m >= 1000 ? (s.start_dist_m / 1000).toFixed(1) + ' ק״מ' : s.start_dist_m + ' מ׳'} מהאתר`, s: s.start_place || 'בדיקה', href: `#/attendance/${s.user_id}` }));
   // יום אחרון נסגר בלי חתימת לקוח — החתימה היא מה שמעביר את הפרויקט להנהלה (סיכום + חשבונית), אז חייבים להשיג אותה
   [...new Map(ended.filter(w => !w.signoff && w.projects?.monday_group !== 'group_mm5052gw').map(w => [w.project_id, w])).values()]
-    .forEach(w => issues.push({ tone: 'bad', ic: 'report', t: `חסרה חתימת לקוח · ${(w.projects.name || '').replace(/^[^—]*—\s*/, '') || w.projects.name}`, s: `היום האחרון נסגר ב-${dm(w.day)} — בלי חתימה הפרויקט לא עובר לחשבונית`, href: `#/day/${w.id}` }));
+    .forEach(w => issues.push({ tone: 'bad', ic: 'report', t: `חסרה חתימת לקוח · ${(w.projects.name || '').replace(/^[^—]*—\s*/, '') || w.projects.name}`, s: `היום האחרון נסגר ב-${dm(w.day)}`, href: `#/signoff/${w.project_id}/${w.id}` }));
   shifts.filter(s => /נסגרה אוטומטית/.test(s.note || '')).forEach(s => issues.push({ tone: 'warn', ic: 'clock', t: `יציאה אוטומטית · ${name(s.user_id)}`, s: `${dm(isoDay(new Date(s.start_at)))} · נרשמו 12 שעות — לוודא`, href: `#/attendance/${s.user_id}` }));
   // הסנכרון עם מאנדי הוא מה שמחזיק את הכל — אם הוא נתקע, זה הדבר הראשון שצריך לדעת
   const lastOk = pulls.find(x => x.status === 'ok');
@@ -73,7 +76,7 @@ export async function renderOps(el) {
   // רשימה אחת: בעיות שטח (שבוע קדימה) + מה שהמערכת מזהה (צי, פרויקטים, רישיונות, סנכרון) + מה שמחכה לי אישית
   const [sys, mineA] = await extra;
   const N = sortNeeds([
-    ...issues.map(i => ({ tone: i.tone, ic: icon(i.ic, 20), title: i.t, sub: i.s, href: i.href })),
+    ...issues.map(i => ({ tone: i.tone, ic: icon(i.ic, 20), title: i.t, sub: i.s, ...(i.act ? { act: i.act } : { href: i.href }) })),
     ...sys.filter(a => a.k !== 'shiftreq').map(a => ({ tone: a.tone, ic: icon(a.ic, 20), title: a.title, sub: a.sub, href: a.href, list: a.list, act: a.act })),
     ...mineA.filter(x => x.k !== 'push')]);
   const pushA = mineA.find(x => x.k === 'push');   // הגדרה אישית — לא חלק מתור הניהול
@@ -97,7 +100,7 @@ export async function renderOps(el) {
       <span class="tags">${w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${w.day}"></span>` : ''}${miss ? `<span class="pill warn">${miss} ${w.day === t ? 'לא החתימו' : 'לא אישרו'}</span>` : ''}</span></span></a>`; };
 
   // ---- לאישורך ----
-  const pendAbs = abs.filter(a => a.status === 'pending');
+  const pendAbs = abs.filter(a => a.status === 'pending' && (admin || a.user_id !== state.user.id));   // אין אישור עצמי
   const approvals = [
     ...sreq.map(r => `<div class="card stack opr"><div class="row"><b class="grow">${esc(name(r.user_id))} · תיקון שעות</b><small class="muted">${timeAgo(r.created_at)}</small></div>
       <small>${r.req_start ? dm(isoDay(new Date(r.req_start))) + ' · <bdi dir="ltr">' + hm(r.req_start) + (r.req_end ? '–' + hm(r.req_end) : '') + '</bdi>' : ''}${r.reason ? ' · ' + esc(r.reason) : ''}</small>
@@ -110,6 +113,7 @@ export async function renderOps(el) {
       <div class="row-btns"><a class="btn ghost sm" href="#/requests">פתיחה</a><button class="btn primary sm" data-or="${r.id}">טופל</button></div></div>`),
   ];
   const pHref = preq.length === 1 && preq[0].monday_item_id ? `https://edroneil-force.monday.com/boards/5099908084/pulses/${preq[0].monday_item_id}" target="_blank" rel="noopener` : '#/purchase';
+  if (exq.length) approvals.push(`<a class="lrow card" href="#/expenses"><span class="mic">${icon('receipt', 19)}</span><span class="grow"><b>${exq.length > 1 ? exq.length + ' הוצאות לאישור' : 'הוצאה לאישור'}</b></span><span class="chev">${icon('chev', 18)}</span></a>`);
   if (preq.length) approvals.push(`<a class="lrow card" href="${pHref}"><span class="mic">${icon('cart', 19)}</span><span class="grow"><b>${preq.length > 1 ? preq.length + ' בקשות רכש ממתינות' : 'בקשת רכש ממתינה'}</b><small>לאישור ושליחה לספק</small></span><span class="chev">${icon('chev', 18)}</span></a>`);
 
   const kpi = (n, l, k, tone = '') => n ? `<button class="kpi ${tone}" data-kpi="${k}" aria-haspopup="dialog"><b>${n}</b><span>${l}</span></button>` : `<div class="kpi zero"><b>0</b><span>${l}</span></div>`;   // 0 = שקט ולא לחיץ
@@ -153,7 +157,7 @@ export async function renderOps(el) {
     const done = (b, msg) => { toast(msg); const c = card(b); c.classList.add('leaving'); setTimeout(after, 220); };
     const fail = (b, e) => { lock(b, false); toast(errText(e)); };
     $$('[data-sr]', root).forEach(b => b.onclick = async e => { e.preventDefault(); if (b.disabled) return; const ok = b.dataset.ok === '1';
-      const reply = ok ? '' : await ask('סיבת הדחייה', { optional: true, ok: 'דחייה' }); if (reply === null) return; lock(b, true);
+      const reply = ok ? '' : await ask('סיבת הדחייה', { ok: 'דחייה' }); if (reply === null) return; lock(b, true);
       const { error } = await sb.rpc('decide_shift_request', { rid: b.dataset.sr, ok, reply: (reply || '').trim() }); if (error) return fail(b, error); done(b, ok ? 'אושר — השעות עודכנו' : 'נדחה — העובד קיבל הודעה'); });
     $$('[data-ab]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; const ok = b.dataset.ok === '1';
       const reply = ok ? '' : await ask('סיבת הדחייה', { optional: true, ok: 'דחייה' }); if (reply === null) return; lock(b, true);

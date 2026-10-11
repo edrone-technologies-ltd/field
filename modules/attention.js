@@ -26,11 +26,12 @@ async function onbRows() {
 async function kbRows() {
   const { kbDone } = await import('./knowledge.js');
   const [{ data: req }, { data: v }] = await Promise.all([
-    sb.from('kb_items').select('id,title,quiz,sign_required,cert_months,required,cert_required,auto_done').or('required.eq.true,cert_required.eq.true'),
+    sb.from('kb_items').select('id,title,quiz,sign_required,cert_months,required,cert_required,auto_done,roles').or('required.eq.true,cert_required.eq.true'),
     sb.from('kb_views').select('item_id,confirmed_at,passed_at,signed_at').eq('user_id', state.user.id)]);
   const vm = new Map((v || []).map(x => [x.item_id, x]));
   const pushOn = (await pushState().catch(() => '')) === 'on';
-  const due = (req || []).filter(x => !x.auto_done && !kbDone(x, vm.get(x.id)) && (x.required || ['crew', 'crew_lead'].includes(state.profile.role)));
+  const mine = x => !x.roles?.length || x.roles.includes(state.profile.role) || x.roles.includes(state.profile.field_role);   // הדרכה לתפקיד אחר — לא אצלי
+  const due = (req || []).filter(x => mine(x) && !x.auto_done && !kbDone(x, vm.get(x.id)) && (x.required || ['crew', 'crew_lead'].includes(state.profile.role)));
   return due.length ? [{ k: 'kb', tone: '', ic: icon('play', 18), title: due.length > 1 ? `${due.length} הדרכות לצפייה` : 'הדרכה לצפייה', sub: due[0].title, href: due.length > 1 ? '#/kb' : `#/kb/${due[0].id}` }] : [];
 }
 // הנהלה: פרויקט שמתוכנן במאנדי ל-10 הימים הקרובים ועוד לא שובץ לו צוות באפליקציה
@@ -53,6 +54,16 @@ async function tourRows() {
   const { data: v } = await sb.from('kb_views').select('item_id').eq('item_id', it.id).eq('user_id', state.user.id).maybeSingle();
   return v ? [] : [{ k: 'tour', tone: '', ic: icon('play', 18), title: 'הדרכה: 5 דקות להכרת האפליקציה', sub: 'לו״ז, שיבוץ, תכניות וביקורות', href: '#/tour/ops' }];
 }
+// הנהלה: מי בצוות לא מקבל התראות (אין מכשיר רשום) — התראות אליהם הולכות לאיבוד. מיומן ההתראות של השבוע האחרון
+async function noPushRows() {
+  if (state.profile.role !== 'admin') return [];
+  const { data: log } = await sb.from('notify_log').select('nosub').gte('at', new Date(Date.now() - 7 * 864e5).toISOString()).limit(500);
+  const ids = [...new Set((log || []).flatMap(x => x.nosub || []))]; if (!ids.length) return [];
+  const { data: ppl } = await sb.from('profiles').select('id,full_name').in('id', ids).eq('is_active', true);
+  if (!(ppl || []).length) return [];
+  return [{ k: 'nopush', tone: 'warn', ic: icon('chat', 18), title: ppl.length > 1 ? `${ppl.length} בצוות לא מקבלים התראות` : `${ppl[0].full_name.split(' ')[0]} לא מקבל התראות`, sub: ppl.map(x => x.full_name.split(' ')[0]).join(' · '),
+    list: ppl.map(x => ({ href: `#/staff/${x.id}`, t: x.full_name, s: '' })) }];
+}
 async function pushRows() {
   const st = await pushState();
   if (st === 'off') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'התראות כבויות', sub: '', btn: 'הפעלה' }];
@@ -62,7 +73,7 @@ async function pushRows() {
 
 // כל מה שמחכה למשתמש עצמו (הודעות, הדרכות, קליטה, התראות, שיבוץ שחסר)
 export async function attentionItems() {
-  const parts = await Promise.all([tourRows(), schedRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
+  const parts = await Promise.all([noPushRows(), tourRows(), schedRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   return items;

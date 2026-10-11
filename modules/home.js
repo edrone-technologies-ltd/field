@@ -1,6 +1,6 @@
 // בית: עונה רק על "מה קורה היום ומה צריך אותי". כל השאר בלשוניות.
 // מנהל → מסך הבקרה (ops.js). עובד שטח: שעון · מחכה לך · היום שלי · הימים הקרובים. יצירת כל דבר חדש — רק בכפתור +.
-import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel, toast, isOpenProject } from '../lib/core.js';
+import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel, toast, isOpenProject, enqueue, ask } from '../lib/core.js';
 import { needsList, bindNeeds } from './attention.js';
 import { errText } from '../lib/audit.js';
 
@@ -23,7 +23,7 @@ export async function load() {
     M ? q(sb.from('spec_visits').select('*')) : [],
     q(sb.from('equipment').select('id,name,health,health_detail,health_date').eq('kind', 'drone').order('name')),
     M ? q(sb.from('profiles').select('id,full_name,role,is_pilot,pilot_license_expiry,is_active')) : [],
-    q(sb.from('work_days').select('id,day,status,report_time,site_arrival,project_id,crew_lead_id,is_last_day,day_goal,gust_max,wind_max,weather_alerted,work_day_crew(user_id,confirmed_at,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
+    q(sb.from('work_days').select('id,day,status,report_time,site_arrival,project_id,crew_lead_id,is_last_day,day_goal,gust_max,wind_max,weather_alerted,work_day_crew(*,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
     M ? q(sb.from('sync_log').select('created_at').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)) : [],
     M ? q(sb.from('sync_log').select('entity,entity_id,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],
     q(sb.rpc('my_inbox')),
@@ -119,19 +119,75 @@ export async function renderHome(el) {
       <span class="ph-bottom"><b>${esc(pr.name || '')}</b><small>${w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) : ''}${w.day_goal ? ' · ' + esc(w.day_goal) : ''}</small>
       <span class="btn primary">${w.status === 'planned' ? 'פתיחת היום' : w.status === 'done' ? 'סיכום היום' : 'המשך היום'}</span></span></a>`; }).join('');
 
-  const next = (d.wdays || []).filter(w => w.day > t && mineDay(w)).slice(0, 4);
-  box.innerHTML = `<div id="attn"></div><div id="mytasks"></div>${myDay || `<div class="empty-line">${next.length ? 'אין לך יום שטח היום' : 'אין לך שיבוץ בימים הקרובים'}</div>`}
-    ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId)).join('')}</div></section>` : ''}`;
-  bindConfirm(box); extras();
+  const ahead = (d.wdays || []).filter(w => w.day > t && mineDay(w)).sort((a, b) => a.day < b.day ? -1 : 1), next = ahead.slice(0, 4);
+  await pendingConfirms();
+  box.innerHTML = `<div id="attn"></div><div id="mytasks"></div><div id="openpast"></div>${myDay || `<div class="empty-line">${next.length ? 'אין לך יום שטח היום' : 'אין לך שיבוץ בימים הקרובים'}</div>`}
+    ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId, ahead)).join('')}</div></section>` : ''}`;
+  bindConfirm(box); extras(); pastOpen($('#openpast'));
+  prefetchDays((d.wdays || []).filter(w => (w.day === t || w.day === addDays(t, 1)) && mineDay(w)).map(w => w.id));
 }
-const dayRow = (w, byId) => { const me = (w.work_day_crew || []).find(c => c.user_id === state.user.id);
-  const needConfirm = me && !me.confirmed_at && w.status === 'planned' && w.day > today();
+// ימים של היום ומחר נטענים מראש למטמון — כדי שיום השטח ייפתח באתר גם בלי קליטה
+async function prefetchDays(ids) {
+  if (!ids.length || !navigator.onLine) return;
+  try {
+    const [{ loadDay }, { outbox }] = await Promise.all([import('./today.js'), import('../lib/store.js')]);
+    const q = await outbox.all();
+    for (const id of ids) {
+      if (q.some(x => x.rowId === id || x.args?.d === id || x.row?.work_day_id === id || x.meta?.work_day_id === id)) continue;   // יש שינויים בתור — לא דורסים
+      const c = await cache.get('day:' + id).catch(() => null); if (c?.at && Date.now() - c.at < 15 * 6e4) continue;
+      await loadDay(id).catch(() => {});
+    }
+  } catch { /* */ }
+}
+// ימים שעברו ועוד לא נסגרו (שלי — בצוות או ראש צוות)
+async function pastOpen(box) {
+  if (!box) return;
+  const me = state.user.id, t = today(), from = addDays(t, -21), sel = 'id,day,status,kind,project_id,projects(name)';
+  let rows;
+  try {
+    const [a, b] = await Promise.all([
+      sb.from('work_days').select(sel + ',work_day_crew!inner(user_id)').eq('work_day_crew.user_id', me).lt('day', t).gte('day', from).neq('status', 'done'),
+      sb.from('work_days').select(sel).eq('crew_lead_id', me).lt('day', t).gte('day', from).neq('status', 'done')]);
+    if (a.error || b.error) throw a.error || b.error;
+    rows = [...new Map([...(a.data || []), ...(b.data || [])].map(w => [w.id, w])).values()].sort((x, y) => x.day < y.day ? 1 : -1);
+    await cache.set('home-past', rows);
+  } catch { rows = (await cache.get('home-past').catch(() => null)) || []; }
+  const open = [];
+  for (const w of rows) { const c = await cache.get('day:' + w.id).catch(() => null); if (c?.day?.status !== 'done') open.push(w); }   // נסגר בטלפון ועוד בתור — לא מציגים
+  if (!box.isConnected) return;
+  box.innerHTML = open.length ? `<section><div class="sh-row"><h3 class="sh">דוח שלא נסגר</h3><span class="count">${open.length}</span></div><div class="list">${open.map(w => `<a class="lrow" href="#/day/${w.id}"><span class="datebox"><b>${+w.day.slice(8)}</b><small>יום ${HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
+    <span class="grow"><b>${esc(w.projects?.name || '')}</b><small>${w.kind === 'report' ? 'דוח יומי' : 'יום שטח'} · ${DAY_ST[w.status] || ''}</small></span><span class="pill warn">לסגירה</span></a>`).join('')}</div></section>` : '';
+}
+// אישורי הגעה / "לא אוכל" שעוד בתור (בלי קליטה) — נחשבים כבר נשלחו
+const PQ = { ok: new Set(), no: new Set() };
+async function pendingConfirms() {
+  try { const { outbox } = await import('../lib/store.js'); const q = (await outbox.all()).filter(x => x.kind === 'rpc');
+    PQ.ok = new Set(q.filter(x => x.fn === 'confirm_day').map(x => x.args.d)); PQ.no = new Set(q.filter(x => x.fn === 'cant_come').map(x => x.args.d)); } catch { /* */ }
+}
+const meOn = w => (w.work_day_crew || []).find(c => c.user_id === state.user.id);
+const needsOk = w => { const me = meOn(w); return !!me && !me.confirmed_at && !me.cant_come_at && !PQ.ok.has(w.id) && !PQ.no.has(w.id) && w.status === 'planned' && w.day > today(); };
+// all = כל הימים הקרובים שלי — לאישור כל הימים של אותו פרויקט בלחיצה אחת (מוצג ביום הראשון שלו)
+const dayRow = (w, byId, all = []) => { const me = meOn(w);
+  const needConfirm = needsOk(w), no = me?.cant_come_at || PQ.no.has(w.id), okd = me?.confirmed_at || PQ.ok.has(w.id);
+  const same = needConfirm ? all.filter(x => x.project_id === w.project_id && needsOk(x)) : [];
+  const first = same.length > 1 && same.every(x => x.day >= w.day);
   return `<div class="dayrow"><a class="lrow" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
-  <span class="grow"><b>${esc(byId.get(w.project_id)?.name || '')}</b><small>${w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון' : ''}${me?.confirmed_at && w.status === 'planned' ? ' · אישרת הגעה ✓' : ''}</small></span><span class="pill ${w.status === 'done' ? 'ok' : w.status === 'planned' ? '' : 'lime'}">${DAY_ST[w.status]}</span></a>
-  ${needConfirm ? `<button class="btn primary sm block" data-confirm="${w.id}">מאשר הגעה</button>` : ''}</div>`; };
+  <span class="grow"><b>${esc(byId.get(w.project_id)?.name || '')}</b><small>${w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון' : ''}${okd && !no && w.status === 'planned' ? ' · אישרת הגעה ✓' : ''}</small></span>${no && w.status === 'planned' ? '<span class="pill bad">לא מגיע</span>' : `<span class="pill ${w.status === 'done' ? 'ok' : w.status === 'planned' ? '' : 'lime'}">${DAY_ST[w.status]}</span>`}</a>
+  ${needConfirm ? `<div class="stack tight" data-act="${w.id}"><div class="row-btns"><button class="btn ghost sm" data-cant="${w.id}">לא אוכל להגיע</button><button class="btn primary sm" data-confirm="${w.id}">מאשר הגעה</button></div>
+    ${first ? `<button class="btn ghost sm block" data-confirm-all="${same.map(x => x.id).join(',')}">מאשר את כל הימים (${same.length})</button>` : ''}</div>` : ''}</div>`; };
+// נשלח דרך התור — עובד גם בלי קליטה
 function bindConfirm(root) {
-  $$('[data-confirm]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true; const { error } = await sb.rpc('confirm_day', { d: b.dataset.confirm });
-    if (error) { b.disabled = false; return toast(errText(error, 'האישור לא נשלח — נסו שוב')); } toast('אישרת הגעה'); b.outerHTML = '<div class="acked" style="text-align:center">אישרת הגעה ✓</div>'; });
+  const done = (id, html) => { PQ.ok.add(id); $$(`[data-act="${id}"]`, root).forEach(x => x.outerHTML = html); };
+  $$('[data-confirm]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true; const id = b.dataset.confirm;
+    await enqueue({ kind: 'rpc', fn: 'confirm_day', args: { d: id } }); toast('אישרת הגעה'); done(id, '<div class="acked" style="text-align:center">אישרת הגעה ✓</div>');
+    $$('[data-confirm-all]', root).forEach(x => { const ids = x.dataset.confirmAll.split(',').filter(y => y !== id); if (ids.length < 2) x.remove(); else { x.dataset.confirmAll = ids.join(','); x.textContent = `מאשר את כל הימים (${ids.length})`; } }); });
+  $$('[data-confirm-all]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true; const ids = b.dataset.confirmAll.split(',');
+    for (const id of ids) { await enqueue({ kind: 'rpc', fn: 'confirm_day', args: { d: id } }); done(id, '<div class="acked" style="text-align:center">אישרת הגעה ✓</div>'); }
+    toast(`אישרת ${ids.length} ימים`); });
+  $$('[data-cant]', root).forEach(b => b.onclick = async () => { const id = b.dataset.cant;
+    const why = await ask('לא אוכל להגיע', { placeholder: 'סיבה (לא חובה)', ok: 'עדכון המנהל', optional: true }); if (why == null) return;
+    await enqueue({ kind: 'rpc', fn: 'cant_come', args: { d: id, reason: why.trim() || null } }); PQ.no.add(id);
+    $$(`[data-act="${id}"]`, root).forEach(x => x.outerHTML = '<div class="acked" style="text-align:center">המנהל עודכן שלא תגיע</div>'); toast('המנהל עודכן'); });
 }
 // ---------- כל מה שלטיפול ----------
 export async function renderAlerts(el) {
@@ -154,7 +210,8 @@ export async function renderSchedule(el) {
   const mine = (d.wdays || []).filter(w => w.day >= t && mineDay(w));
   const hasDay = new Set((d.wdays || []).filter(w => w.day >= t).map(w => w.project_id));
   const noDate = (d.projects || []).filter(isOpen).filter(p => ['קביעת מועד', 'תואם - ממתין לביצוע', 'אושר מול לקוח', 'בביצוע'].includes(p.status_label) && !hasDay.has(p.id) && !((p.planned_to || p.planned_from || '') >= t));
-  box.innerHTML = `${!M ? `<section><h3 class="sh">הימים שלי</h3>${mine.length ? `<div class="list">${mine.map(w => dayRow(w, by)).join('')}</div>` : '<div class="empty-line">אין לך ימי שטח משובצים</div>'}</section>` : ''}
+  await pendingConfirms(); mine.sort((a, b) => a.day < b.day ? -1 : 1);
+  box.innerHTML = `${!M ? `<section><h3 class="sh">הימים שלי</h3>${mine.length ? `<div class="list">${mine.map(w => dayRow(w, by, mine)).join('')}</div>` : '<div class="empty-line">אין לך ימי שטח משובצים</div>'}</section>` : ''}
     ${M && noDate.length ? `<section><div class="sh-row"><h3 class="sh">ממתינים לתאריך במאנדי</h3><span class="count">${noDate.length}</span></div>
       <div class="alist">${noDate.map(p => `<a class="arow" href="#/p/${p.id}"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.status_label, p.client_name].filter(Boolean).join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}`;
   bindConfirm(box);

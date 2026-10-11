@@ -12,7 +12,7 @@ export async function renderClientReport(el, pid) {
     sb.from('projects').select('*, sites(name,address,contact_name)').eq('id', pid).single(),
     sb.from('work_days').select('day,status,work_types,signoff,gallons').eq('project_id', pid).eq('status', 'done').order('day'),
     sb.from('tasks').select('title,status,phase').eq('project_id', pid).neq('status', 'dropped').order('day_no').order('seq'),
-    sb.from('field_reports').select('report_date,work,photos').eq('project_id', pid).order('report_date'),
+    sb.from('field_reports').select('report_date,work,photos').eq('project_id', pid).eq('excluded', false).order('report_date'),
     sb.from('photos').select('kind,storage_path').eq('project_id', pid).in('kind', ['before', 'after']).order('created_at'),
     sb.from('project_signoffs').select('*').eq('project_id', pid).order('created_at', { ascending: false }).limit(1),
     sb.from('app_settings').select('value').eq('key', 'company').maybeSingle(),

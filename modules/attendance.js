@@ -59,7 +59,8 @@ async function consent() {
     $('#cy', s).onclick = async () => { if ($('#cy', s).disabled) return; $('#cy', s).disabled = true; const t = new Date().toISOString(); state.profile.attendance_consent_at = t; await enqueue({ kind: 'update', table: 'profiles', rowId: state.user.id, patch: { attendance_consent_at: t } }); close(); res(true); };
   }));
 }
-export async function clockIn(after) {
+// opts.project_id: הפרויקט ידוע מראש (יציאה לאתר מיום השטח)
+export async function clockIn(after, { project_id: pid0 = null } = {}) {
   if (!(await consent())) return;
   const S = await settings(); const sh = inShabbat(new Date(), S);
   if (sh) return toast(`שבת — לא עובדים. אפשר להחתים מ-${tm(sh.end.toISOString())}`, 4000);
@@ -75,11 +76,24 @@ export async function clockIn(after) {
       note = note.trim() || null;
     }
   } catch { /* בלי קליטה — ממשיכים */ }
-  let project_id = null;
-  try { const { data } = await sb.from('work_days').select('project_id,work_day_crew!inner(user_id)').eq('day', ymd(new Date())).eq('work_day_crew.user_id', state.user.id).limit(1); project_id = data?.[0]?.project_id || null; } catch {}
+  let project_id = pid0;
+  if (!project_id) try { const { data, error } = await sb.from('work_days').select('project_id,work_day_crew!inner(user_id)').eq('day', ymd(new Date())).eq('work_day_crew.user_id', state.user.id).limit(1); if (error) throw error; project_id = data?.[0]?.project_id || null; }
+  catch { project_id = await cachedDayProject(); }   // בלי קליטה: מהימים השמורים בטלפון
   const row = { id: uid(), user_id: state.user.id, start_at: new Date().toISOString(), start_lat: loc?.lat ?? null, start_lng: loc?.lng ?? null, start_acc: loc?.acc ?? null, project_id, source: 'app', status: 'open', note };
   await enqueue({ kind: 'insert', table: 'shifts', row }); await cache.set('open-shift', row);
   toast(loc ? 'נכנסת למשמרת' : 'נכנסת למשמרת (בלי מיקום)'); after && after();
+}
+async function cachedDayProject() {
+  try { const t = ymd(new Date()), h = await cache.get('home2');
+    const w = (h?.wdays || []).find(w => w.day === t && (w.crew_lead_id === state.user.id || (w.work_day_crew || []).some(c => c.user_id === state.user.id)));
+    return w?.project_id || null; } catch { return null; }
+}
+// יציאה בלחיצה אחת (בלי חלון) — מסך סיום היום
+export async function clockOutNow(open, note = null, after) {
+  const loc = await locateOnce();
+  const patch = { end_at: new Date().toISOString(), end_lat: loc?.lat ?? null, end_lng: loc?.lng ?? null, end_acc: loc?.acc ?? null, status: 'closed', note: note || open.note || null };
+  await enqueue({ kind: 'update', table: 'shifts', rowId: open.id, patch }); await cache.set('open-shift', null);
+  toast('יצאת מהמשמרת'); after && after();
 }
 export async function clockOut(open, after) {
   const mins = Math.round((Date.now() - new Date(open.start_at)) / 6e4);
@@ -88,10 +102,8 @@ export async function clockOut(open, after) {
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="bo">יציאה</button></div>`, (s, close) => {
     $('#bo', s).onclick = async () => {
       $('#bo', s).disabled = true; $('#bo', s).textContent = 'מאתר מיקום…';
-      const loc = await locateOnce();
-      const patch = { end_at: new Date().toISOString(), end_lat: loc?.lat ?? null, end_lng: loc?.lng ?? null, end_acc: loc?.acc ?? null, status: 'closed', note: $('#bn', s).value.trim() || null };
-      await enqueue({ kind: 'update', table: 'shifts', rowId: open.id, patch }); await cache.set('open-shift', null);
-      close(); toast('יצאת מהמשמרת'); after && after();
+      const note = $('#bn', s).value.trim() || null;
+      await clockOutNow({ ...open, note: null }, note); close(); after && after();
     };
   });
 }

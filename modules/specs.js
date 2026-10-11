@@ -24,15 +24,24 @@ async function fetchSites() {
     await cache.set('sites', data); return data;
   } catch { return (await cache.get('sites')) || []; }
 }
+const SITE_FULL = '*,buildings(*,plan_images(*),specs(*))';   // כולל sites.service — מה מוצג בטופס
+const prepSite = data => { data.buildings.sort((a, b) => a.sort - b.sort);
+  data.buildings.forEach(b => { b.plan_images.sort((x, y) => x.sort - y.sort); b.spec = b.specs?.[0] || b.specs || null; }); return data; };
 async function fetchSite(slug) {
   try {
-    const { data, error } = await sb.from('sites')
-      .select('*,buildings(*,plan_images(*),specs(*))').eq('slug', slug).single();
+    const { data, error } = await sb.from('sites').select(SITE_FULL).eq('slug', slug).single();
     if (error) throw error;
-    data.buildings.sort((a, b) => a.sort - b.sort);
-    data.buildings.forEach(b => { b.plan_images.sort((x, y) => x.sort - y.sort); b.spec = b.specs?.[0] || b.specs || null; });
-    await cache.set('site:' + slug, data); return data;
+    prepSite(data); await cache.set('site:' + slug, data); return data;
   } catch { return await cache.get('site:' + slug); }
+}
+// עבודה בלי קליטה: פרטי הלידים שלפני סיור נשמרים בטלפון מראש (שאילתה אחת, אותו מטמון של fetchSite)
+async function prefetchSites(slugs) {
+  if (!navigator.onLine || !slugs.length) return;
+  try {
+    const { data, error } = await sb.from('sites').select(SITE_FULL).in('slug', slugs);
+    if (error) throw error;
+    for (const x of data || []) await cache.set('site:' + x.slug, prepSite(x));
+  } catch { /* בלי קליטה — נשאר מה שיש */ }
 }
 
 // ---------- רשימת אפיונים: כל ליד ממאנדי + אתרים מרובי מבנים ----------
@@ -58,8 +67,10 @@ export async function renderSites(el) {
     if (s.kind !== 'lead') return done === n || (done && (P.length || s.monday_spec_item_id)) ? 'done' : 'open';
     const g = s.lead_group || '';
     if (/הצעה נשלחה|לא אושרה|הומרו/.test(g)) return 'arch';
-    return done === n || /אפיון בוצע|קבלן משנה|פיילוט/.test(g) ? 'done' : 'open'; };
-  const GROUPS = [['open', 'לסיור ואפיון'], ['done', 'אפיון הושלם'], ['arch', 'ארכיון']];
+    if (done === n || /אפיון בוצע|קבלן משנה|פיילוט/.test(g)) return 'done';
+    return /לידים חדשים/.test(g) && !s.visit_date && !draft(s) ? 'new' : 'open'; };   // ליד חדש בלי סיור — לא "לסיור" עדיין
+  const draft = s => s.buildings.some(b => (b.specs?.[0] || b.specs)?.status === 'draft');
+  const GROUPS = [['open', 'לסיור ואפיון'], ['done', 'אפיון הושלם'], ['new', 'לידים חדשים'], ['arch', 'ארכיון']];
   const folder = s => { const { n, done, draft } = st(s), lead = s.kind === 'lead';
     return { href: lead && n === 1 ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, img: coverFor(s, s.cover_path && urls[s.cover_path]), title: s.name,
       sub: lead ? [s.contact_name, s.visit_date ? 'סיור ' + dm(s.visit_date) : null].filter(Boolean).join(' · ') : `${n} מבנים`,
@@ -68,12 +79,15 @@ export async function renderSites(el) {
     const list = sites.filter(s => !q || (s.name + ' ' + (s.contact_name || '')).includes(q));
     $('#sl').innerHTML = GROUPS.map(([k, t]) => { const g = list.filter(s => STAGE(s) === k); if (!g.length) return '';
       const body = folderGrid(g.map(folder));
-      return k === 'arch' && !q ? `<details class="fold"><summary><span class="sh">${t}</span><span class="count">${g.length}</span></summary>${body}</details>`
+      return (k === 'arch' || k === 'new') && !q ? `<details class="fold"><summary><span class="sh">${t}</span><span class="count">${g.length}</span></summary>${body}</details>`
         : `<section class="stack"><div class="sh-row"><h3 class="sh">${t}</h3><span class="count">${g.length}</span></div>${body}</section>`; }).join('')
       || `<div class="empty-line">לא נמצא</div>`;
   };
   $('#sq').oninput = e => draw(e.target.value.trim());
   draw('');
+  // הקרובים לסיור קודם (עם תאריך סיור), עד 15
+  const near = sites.filter(s => s.kind === 'lead' && STAGE(s) === 'open').sort((a, b) => (a.visit_date || '9') < (b.visit_date || '9') ? -1 : 1).slice(0, 15);
+  setTimeout(() => prefetchSites(near.map(s => s.slug)), 1200);
 }
 
 
@@ -301,6 +315,8 @@ export async function renderBuilding(el, slug, bid) {
   if (!b) { el.innerHTML = `<header class="phead">${backBtn(s ? '#/site/' + slug : '#/specs')}<h1 class="grow">אפיון</h1></header><div class="empty-line">המבנה לא נמצא</div>`; return; }
   const spec = b.spec; let form = { ...spec, floors: spec.floors ?? (b.floors != null ? Math.round(b.floors) : null) }; let dirty = false;
   const editable = can('specs');
+  // מה רלוונטי לפי השירות באתר: מידול ומיפוי — בלי שדות שטיפה; פנלים/יריעות — בלי ספירה לפי חזיתות
+  const svc = s.service || '', WASH = !/מידול|מיפוי/.test(svc);
   const plans = await signedUrls('plans', b.plan_images.map(p => p.storage_path));
   const chips = (k, opts) => `<div class="chips">${opts.map(o => `<button type="button" class="chip" data-g="${k}" data-v="${esc(o)}" aria-pressed="${form[k] === o}">${esc(o)}</button>`).join('')}</div>`;
   const [sc, st] = STAT[spec.status];
@@ -310,15 +326,24 @@ export async function renderBuilding(el, slug, bid) {
   const FAC = imgs.length ? imgs.map(p => ({ id: p.id, title: p.title, dir: dirOf(p.title), img: true })) : FACES.map(f => ({ id: f, title: 'חזית ' + f, dir: f }));
   const FD = new Map((Array.isArray(spec.facade_days) ? spec.facade_days : []).map(x => [x.k, { ...x }]));  // k → {k,t,dir,d}
   const fget = k => FD.get(k)?.d || 0;
+  const FACON = !/פנלים|סולאר|יריעות|הצללה/.test(svc) || [...FD.values()].some(x => x.d > 0);
   const titleOf = k => FAC.find(f => f.id === k)?.title || (FACES.includes(k) ? 'חזית ' + k : 'חזית מצילום');
   const dirOfKey = k => FAC.find(f => f.id === k)?.dir || FD.get(k)?.dir || (FACES.includes(k) ? k : null);
   const counter = k => `<div class="fcount${fget(k) ? ' set' : ''}" data-fk="${esc(k)}"><button type="button" data-d="-0.5" aria-label="פחות">−</button><b>${fmtD(fget(k))}</b><button type="button" data-d="0.5" aria-label="יותר">+</button></div>`;
   const dirChips = k => `<div class="fdir" data-fk="${esc(k)}">${FACES.map(f => `<button type="button" data-v="${f}" aria-pressed="${FD.get(k)?.dir === f}">${f}</button>`).join('')}</div>`;
   const one = s.kind === 'lead' && s.buildings.length === 1;
+  // ברירות מחדל מההיקף בליד: "מבנים A+B+C" / "3 מבנים" → יצירת המבנים בלחיצה; "15 קומות" → מילוי מראש (לא נשמר עד שמירה)
+  const scope = one ? String(s.scope_text || '') : '';
+  const bl = scope.match(/(?:מבנים|בניינים)\s*:?\s*([A-Za-zא-ת0-9]{1,2}(?![A-Za-zא-ת0-9])(?:\s*[+,\/&]\s*[A-Za-zא-ת0-9]{1,2}(?![A-Za-zא-ת0-9]))+)/);
+  const bn = +(scope.match(/(\d{1,2})\s*(?:מבנים|בניינים)/)?.[1] || 0);
+  const NAMES = bl ? bl[1].split(/\s*[+,\/&]\s*/).map(x => 'מבנה ' + x.trim()) : bn >= 2 && bn <= 30 ? Array.from({ length: bn }, (_, i) => 'מבנה ' + (i + 1)) : [];
+  const fl0 = +(scope.match(/(\d{1,3})\s*קומות/)?.[1] || 0);
+  if (editable && form.floors == null && fl0 > 0 && fl0 <= 200) { form.floors = fl0; dirty = true; }
   const ctx = [one ? null : s.name + (b.group_label ? ' · ' + s.group_word + ' ' + b.group_label : ''), b.subtitle].filter(Boolean).join(' · ');
   el.innerHTML = `<header class="phead"><a class="back" id="bk" data-hard="1" href="javascript:void 0" aria-label="חזרה ל${esc(s.name)}">${icon('back', 20)}</a><h1 class="grow">${esc(one ? s.name : b.name)}</h1><span class="pill ${sc}" id="stp">${st}</span></header>
     ${ctx ? `<div class="muted">${esc(ctx)}</div>` : ''}
     ${s.kind === 'lead' ? `<div class="menu">${[['שלב', s.lead_stage], ['היקף', s.scope_text], ['אחראי', s.lead_owner], ['תאריך סיור', s.visit_date ? dm(s.visit_date) : null], ['הערות מהליד', s.lead_notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}
+      ${NAMES.length > 1 && editable ? `<button class="lrow" type="button" id="splitb"><span class="grow"><b>יצירת ${NAMES.length} מבנים</b><small>${esc(NAMES.join(' · '))}</small></span><span class="chev">${icon('plus', 18)}</span></button>` : ''}
       <a class="lrow" href="#/site/${esc(slug)}"><span class="grow"><b>${s.buildings.length > 1 ? `כל המבנים בליד (${s.buildings.length})` : 'הוספת מבנה'}</b></span><span class="chev">${icon('chev', 18)}</span></a></div>` : `
     <div class="kpis"><div class="kpi"><b>${b.facade_area_m2 ? nf(b.facade_area_m2) : 'למדידה'}</b><span>${b.facade_area_m2 ? 'מ"ר לפי התכנית' : 'שטח חזיתות'}</span></div>
       <div class="kpi"><b>${b.floors ? nf(b.floors) : '—'}</b><span>קומות</span></div><div class="kpi"><b>${b.plan_source === 'plans' ? b.plan_images.length : 'סקיצה'}</b><span>${b.plan_source === 'plans' ? 'חזיתות בתכנית' : 'מקור'}</span></div></div>`}
@@ -328,21 +353,22 @@ export async function renderBuilding(el, slug, bid) {
     ${s.kind === 'lead' && s.buildings.length === 1 ? siteTools(s) : ''}
     ${b.plan_images.length ? `<h3 class="sh">${b.plan_source === 'plans' ? 'החזיתות מהתכנית' : 'מיקום בסקיצה'}</h3>
       <div class="facades">${b.plan_images.map((p, i) => `<div class="fc"><button class="fcimg" data-i="${i}"><img loading="lazy" src="${esc(plans[p.storage_path])}" alt="${esc(p.title)}"></button><div><b>${esc(p.title)}</b>${esc(p.dims_text || '')}${p.area_m2 ? ' · ' + nf(p.area_m2) + ' מ"ר' : ''}</div>${FAC.some(f => f.id === p.id) ? counter(p.id) : ''}</div>`).join('')}</div>` : ''}
-    ${!imgs.length ? `<h3 class="sh">ימים לפי חזית</h3>
+    ${!imgs.length && FACON ? `<h3 class="sh">ימים לפי חזית</h3>
       <div class="facades" id="facs"></div>` : ''}
     <fieldset class="fset" ${editable ? '' : 'disabled'}>
     <div class="sec"><h3>הערכת ביצוע</h3>
       <div class="field">קומות במבנה
         <div class="stepper"><button type="button" id="fm" aria-label="פחות קומות">−</button><input class="days grow" id="floors" type="number" inputmode="numeric" step="1" min="0" max="200" value="${esc(form.floors ?? '')}"><button type="button" id="fp" aria-label="יותר קומות">+</button></div></div>
+      ${'area_m2' in spec && (!b.facade_area_m2 || spec.area_m2 != null) ? `<label class="field" for="area">שטח חזיתות (מ״ר)<input id="area" type="number" inputmode="decimal" step="1" min="0" value="${esc(form.area_m2 ?? '')}"></label>` : ''}
       <div class="field">ימי עבודה צפויים למבנה<small id="dsrc"></small>
         <div class="stepper"><button type="button" id="dm">−</button><input class="days grow" id="days" type="number" inputmode="decimal" step="0.5" min="0" value="${esc(form.days_expected ?? '')}"><button type="button" id="dp">+</button></div></div>
       <div class="small muted" id="rate"></div>
       <div class="field">שעות עבודה באתר ${chips('work_window', WINDOW)}</div>
       <div class="field">שיטת ביצוע ${chips('method', METHOD)}</div>
-      <div class="field">מתי נשטף לאחרונה ${chips('washed_last', WASHED)}</div>
+      ${WASH ? `<div class="field">מתי נשטף לאחרונה ${chips('washed_last', WASHED)}</div>
       <div class="field">רמת לכלוך וצפיפות ${chips('density', DENS)}</div>
       <div class="field">חומר ניקוי ${chips('material', MAT)}</div>
-      <div class="note" id="dirtNote" ${['מעל שנתיים', 'לא נשטף מעולם'].includes(form.washed_last) ? '' : 'hidden'}>לא נשטף מעל שנתיים — כדאי להוסיף ימים</div>
+      <div class="note" id="dirtNote" ${['מעל שנתיים', 'לא נשטף מעולם'].includes(form.washed_last) ? '' : 'hidden'}>לא נשטף מעל שנתיים — כדאי להוסיף ימים</div>` : ''}
     </div>
     <div class="sec"><h3>באתר</h3>
       <div class="field">מה יש באתר
@@ -364,7 +390,23 @@ export async function renderBuilding(el, slug, bid) {
 
   $$('.fcimg', el).forEach(f => f.onclick = () => { const p = b.plan_images[+f.dataset.i]; zoom(plans[p.storage_path], p.title + ' · ' + (p.dims_text || '')); });
   bindCopy(el);
-  const set = (k, v) => { form[k] = v; dirty = true; };
+  // שמירה אוטומטית (כמו בתכנית): כל שינוי נשמר בתור אחרי הפסקה קצרה
+  let tm = null;
+  const auto = () => { clearTimeout(tm); tm = setTimeout(() => { tm = null; if (dirty && editable) save(false, true); }, 900); };
+  const set = (k, v) => { form[k] = v; dirty = true; auto(); };
+  const NPH = { site: 0, obstacle: 0, facade: 0 };
+  // מיקום האתר נשמר לבד מהשטח (צילום / סיום) כשהדיוק טוב — בלי "אני באתר"
+  const geoSilent = (wait = 0) => new Promise(res => {
+    if (s.lat || !editable || !navigator.geolocation) return res(false);
+    const t = wait ? setTimeout(() => res(false), wait) : 0; if (!wait) res(false);
+    navigator.geolocation.getCurrentPosition(async pos => {
+      const { latitude: la, longitude: ln, accuracy } = pos.coords;
+      if (s.lat || !(accuracy < 100) || la < 29 || la > 34 || ln < 34 || ln > 36) { clearTimeout(t); return res(false); }
+      await enqueue({ kind: 'rpc', fn: 'set_site_location', args: { s: s.id, la, ln, acc: Math.round(accuracy) } });
+      Object.assign(s, { lat: la, lng: ln, geo_source: 'manual', geo_at: new Date().toISOString() }); await cache.set('site:' + slug, s);
+      clearTimeout(t); res(true);
+    }, () => { clearTimeout(t); res(false); }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  });
   $$('.chip[data-g]', el).forEach(c => c.onclick = () => {
     const g = c.dataset.g; set(g, form[g] === c.dataset.v ? null : c.dataset.v);
     $$(`.chip[data-g="${g}"]`, el).forEach(x => x.setAttribute('aria-pressed', x.dataset.v === form[g]));
@@ -372,7 +414,7 @@ export async function renderBuilding(el, slug, bid) {
   });
   const days = $('#days');
   // בדיקת מציאות: קצב שנגזר מהמספרים של הסוקר עצמו (שטח ÷ ימים) — לא מספר מומצא
-  const rate = () => { const a = Number(b.facade_area_m2), d = Number(days.value); $('#rate').textContent = a && d ? `≈ ${nf(Math.round(a / d))} מ"ר חזית ליום עבודה` : ''; };
+  const rate = () => { const a = Number(b.facade_area_m2 || form.area_m2), d = Number(days.value); $('#rate').textContent = a && d ? `≈ ${nf(Math.round(a / d))} מ"ר חזית ליום עבודה` : ''; };
   days.oninput = () => { set('days_expected', days.value === '' ? null : Number(days.value)); rate(); }; rate();
   // מונה ימים על כל חזית: הסה״כ למבנה = סכום החזיתות (כשסופרים לפי חזיתות, הסה״כ נעול)
   const syncTotal = (init = false) => {
@@ -385,16 +427,16 @@ export async function renderBuilding(el, slug, bid) {
     // נשמר כמערך מסודר לפי סדר הכרטיסים, עם כותרת וכיוון — מנוע התכנית קורא אותו כמו שהוא
     form.facade_days = [...FD.values()].filter(x => x.d > 0 || x.dir).map(x => ({ k: x.k, t: titleOf(x.k), dir: dirOfKey(x.k), d: x.d || 0 }));
   };
-  const bindFac = root => {
+  const bindFac = (root, onDir) => {
     $$('.fcount', root).forEach(c => $$('button', c).forEach(btn => btn.onclick = e => {
       e.stopPropagation(); if (!editable) return; const k = c.dataset.fk;
       const v = Math.max(0, fget(k) + Number(btn.dataset.d));
       if (v) FD.set(k, { ...(FD.get(k) || { k }), d: v }); else if (FD.has(k)) FD.get(k).d = 0;
-      $('b', c).textContent = fmtD(v); c.classList.toggle('set', v > 0); dirty = true; syncTotal();
+      $('b', c).textContent = fmtD(v); c.classList.toggle('set', v > 0); dirty = true; syncTotal(); auto(); onDir?.();
     }));
     $$('.fdir', root).forEach(c => $$('button', c).forEach(btn => btn.onclick = () => {
       if (!editable) return; const k = c.dataset.fk; FD.set(k, { ...(FD.get(k) || { k, d: 0 }), dir: btn.dataset.v });
-      $$('button', c).forEach(x => x.setAttribute('aria-pressed', x === btn)); dirty = true; syncTotal();
+      $$('button', c).forEach(x => x.setAttribute('aria-pressed', x === btn)); dirty = true; syncTotal(); auto(); onDir?.();
     }));
   };
   bindFac(el); syncTotal(true);
@@ -406,12 +448,15 @@ export async function renderBuilding(el, slug, bid) {
     const urls = await thumbUrls('field', rows.map(r => r.storage_path));
     const pend = await pendingPhotos(m => m.spec_id === spec.id && m.kind === 'facade');
     const cards = [...rows.map(r => ({ id: r.id, src: urls[r.storage_path].t, full: urls[r.storage_path].f })), ...pend.map(p => ({ id: p.photoId, src: URL.createObjectURL(p.blob) }))];
-    const comp = cards.length ? FACES.filter(f => fget(f) > 0) : FACES;
+    NPH.facade = cards.length;
+    // כרטיס מצפן לכל כיוון שעוד אין לו צילום — סופרים ימים גם בלי צילום לכל חזית
+    const covered = () => new Set(cards.map(c => FD.get(c.id)?.dir).filter(Boolean)), cv = covered();
+    const hideC = (f, cs) => cs.has(f) && !(fget(f) > 0);
     box.innerHTML = (editable ? `<label class="fc addfc">${icon('plus', 22)}<b>צילום חזית</b><input type="file" accept="image/*" capture="environment" multiple></label>` : '')
       + cards.map(c => `<div class="fc"><button class="fcimg" type="button" data-z="${esc(c.full || c.src)}"><img src="${esc(c.src)}" data-full="${esc(c.full || c.src)}" alt=""></button>${dirChips(c.id)}${counter(c.id)}</div>`).join('')
-      + comp.map(f => `<div class="fc compass"><div class="cmp">${esc(f)}</div><div><b>חזית ${esc(f)}</b></div>${counter(f)}</div>`).join('');
+      + FACES.map(f => `<div class="fc compass" data-cf="${esc(f)}" ${hideC(f, cv) ? 'hidden' : ''}><div class="cmp">${esc(f)}</div><div><b>חזית ${esc(f)}</b></div>${counter(f)}</div>`).join('');
     $$('[data-z]', box).forEach(i => i.onclick = () => zoom(i.dataset.z, b.name));
-    bindFac(box);
+    bindFac(box, () => { const c2 = covered(); $$('[data-cf]', box).forEach(x => x.hidden = hideC(x.dataset.cf, c2)); });
     const inp = $('input[type=file]', box);
     if (inp) inp.onchange = async () => {
       for (const f of [...inp.files]) {
@@ -420,7 +465,7 @@ export async function renderBuilding(el, slug, bid) {
           FD.set(photoId, { k: photoId, d: 0 });
         } catch { toast('תמונה אחת לא נשמרה'); }
       }
-      dirty = true; if (spec.status === 'new') form.status = 'draft'; await save(false, true); drawFacades();
+      dirty = true; if (spec.status === 'new') form.status = 'draft'; await save(false, true); drawFacades(); geoSilent();
     };
   }
   drawFacades();
@@ -431,6 +476,15 @@ export async function renderBuilding(el, slug, bid) {
   $('#fm').onclick = () => { fl.value = Math.max(0, (Number(fl.value) || 0) - 1); fl.oninput(); };
   $('#fp').onclick = () => { fl.value = Math.min(200, (Number(fl.value) || 0) + 1); fl.oninput(); };
   ['obstacles_text', 'notes', 'highlights'].forEach(k => $('#' + k).oninput = e => set(k, e.target.value));
+  const ar = $('#area'); if (ar) ar.oninput = () => { set('area_m2', ar.value === '' ? null : Math.max(0, Number(ar.value))); rate(); };
+  const spb = $('#splitb'); if (spb) spb.onclick = async () => {
+    if (!navigator.onLine) return toast('יצירת מבנים דורשת קליטה');
+    if (spb.disabled || !(await confirmBox(`ליצור ${NAMES.length} מבנים?`, { body: NAMES.join(' · '), ok: 'יצירה' }))) return;
+    spb.disabled = true; if (dirty) await save(false, true);
+    await sb.rpc('rename_building', { b: b.id, n: NAMES[0] });   // 088 — בלעדיו המבנה הקיים נשאר בשמו
+    for (const n of NAMES.slice(1)) { const { error } = await sb.rpc('add_building', { s: s.id, n, fl: form.floors ?? null }); if (error) { spb.disabled = false; return toast(errText(error, 'המבנים לא נוספו — נסו שוב')); } }
+    location.hash = '#/site/' + slug;
+  };
   TOGS.forEach(([k]) => $('#t_' + k).onchange = e => { set(k, e.target.checked); if (k === 'obstacles') $('#obstBox').hidden = !e.target.checked; });
 
   // תמונות: קיימות מהשרת + ממתינות בתור
@@ -440,6 +494,7 @@ export async function renderBuilding(el, slug, bid) {
     try { const { data } = await sb.from('photos').select('id,storage_path').eq('spec_id', spec.id).eq('kind', kind).order('created_at'); rows = data || []; } catch {}
     const urls = await thumbUrls('field', rows.map(r => r.storage_path));
     const pend = await pendingPhotos(m => m.spec_id === spec.id && m.kind === kind);
+    NPH[kind] = rows.length + pend.length;
     box.innerHTML = rows.map(r => `<div class="ph"><img src="${esc(urls[r.storage_path].t)}" alt="" data-full="${esc(urls[r.storage_path].f)}" data-z="${esc(urls[r.storage_path].f)}"></div>`).join('')
       + pend.map(p => `<div class="ph"><img src="${URL.createObjectURL(p.blob)}" alt=""><span class="q">ממתין</span></div>`).join('')
       + (editable ? `<label class="addph">${icon('plus', 18)} תמונה<input type="file" accept="image/*" multiple data-k="${kind}"></label>` : '');
@@ -456,15 +511,17 @@ export async function renderBuilding(el, slug, bid) {
         } catch { toast('תמונה אחת לא נשמרה. נסו תמונה אחרת'); }
       }
       if (spec.status === 'new') { form.status = 'draft'; await save(false, true); }
-      drawPhotos(kind);
+      drawPhotos(kind); geoSilent();
     };
   }
   drawPhotos('site'); drawPhotos('obstacle');
 
   async function save(done, quiet) {
+    clearTimeout(tm); tm = null;
     const patch = {};
     ['days_expected', 'facades', 'facade_days', 'work_window', 'method', 'washed_last', 'density', 'material', 'obstacles', 'obstacles_text', 'docking', 'hydrants', 'power', 'secure_storage', 'notes', 'highlights', 'floors'].forEach(k => patch[k] = form[k] ?? null);
     ['obstacles', 'docking', 'hydrants', 'power', 'secure_storage'].forEach(k => patch[k] = !!patch[k]);
+    if ('area_m2' in spec) patch.area_m2 = form.area_m2 ?? null;   // העמודה מ-088; לפני כן לא נשלחת
     patch.status = done ? 'done' : (spec.status === 'done' ? 'done' : 'draft');
     patch.surveyor_id = spec.surveyor_id || state.user.id;
     await enqueue({ kind: 'update', table: 'specs', rowId: spec.id, patch });
@@ -476,8 +533,23 @@ export async function renderBuilding(el, slug, bid) {
     $('#sv').onclick = () => save(false);
     $('#dn').onclick = async () => {
       if (!(Number(form.days_expected) > 0)) { toast('חסר: ימי עבודה צפויים (יותר מ-0)'); days.focus(); return; }
-      await save(true); goUp(s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug);
+      const dn = $('#dn'); if (dn.disabled) return; dn.disabled = true;
+      await geoSilent(6000);
+      const miss = [!(NPH.site + NPH.facade + NPH.obstacle) && 'אין תמונות', !s.lat && 'אין מיקום'].filter(Boolean);
+      if (miss.length && !(await confirmBox(miss.join(' · ') + ' — לסיים בכל זאת?', { ok: 'סיום' }))) { dn.disabled = false; return; }
+      const at = Date.now(); await save(true, true); dn.disabled = false; doneSheet(at);
     };
+  }
+  // סיכום קצר אחרי סיום: ימים · חזיתות · מצב השליחה למאנדי
+  function doneSheet(at) {
+    const up = () => goUp(s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug);
+    const fac = (form.facade_days || []).filter(x => x.d > 0), dirs = [...new Set(fac.map(x => x.dir).filter(Boolean))];
+    const pushed = !!s.spec_pushed_at && +new Date(s.spec_pushed_at) > at;
+    const push = !navigator.onLine ? 'יישלח כשתחזור קליטה' : pushed ? 'נשלח למאנדי' : 'יישלח אוטומטית';
+    sheet(`<h3>האפיון הושלם</h3>
+      <div class="kpis"><div class="kpi"><b>${nf(Number(form.days_expected))}</b><span>ימי עבודה</span></div>${fac.length ? `<div class="kpi"><b>${fac.length}</b><span>${dirs.length ? esc(dirs.join(' · ')) : 'חזיתות'}</span></div>` : ''}</div>
+      <div class="list"><div class="lrow"><span class="mic ${pushed ? 'ok' : ''}">${icon('send', 19)}</span><span class="grow"><b>${push}</b></span></div></div>
+      <button class="btn primary block" id="dnok">סגירה</button>`, (sh, close) => { $('#dnok', sh).onclick = () => { close(); up(); }; });
   }
   bindSiteTools(s);
   import('../lib/audit.js').then(m => m.signature($('#sig'), { building_id: b.id }, { surveyor: spec.surveyor_id }));
