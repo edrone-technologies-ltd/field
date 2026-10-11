@@ -14,7 +14,7 @@ async function markRead(id, patch = {}) {
 // ---------- לוח הודעות ----------
 export async function renderNews(el) {
   const M = isManager();
-  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">הודעות הנהלה</h1>${M ? `<button class="hbtn" id="nk" aria-label="כל הכבוד">${icon('star', 20)}</button><button class="hbtn" id="nn" aria-label="הודעה חדשה">${icon('plus', 20)}</button>` : ''}</header><div class="skel"></div>`;
+  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">עדכוני הנהלה</h1>${M ? `<button class="hbtn" id="nk" aria-label="כל הכבוד">${icon('star', 20)}</button><button class="hbtn" id="nn" aria-label="הודעה חדשה">${icon('plus', 20)}</button>` : ''}</header><div class="skel"></div>`;
   const [{ data: list }, { data: reads }, { data: people }] = await Promise.all([
     sb.from('announcements').select('*').order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(60),
     sb.from('announcement_reads').select('ann_id,user_id,read_at,ack_at').in('user_id', M ? [] : [state.user.id]).then(r => r, () => ({ data: [] })),
@@ -79,7 +79,7 @@ export async function newsHome(box) {
     const due = (list || []).filter(a => a.created_by !== state.user.id && (!R.has(a.id) || (a.require_ack && !R.get(a.id).ack_at)));
     const kudo = due.find(a => a.kind === 'kudos' && a.recipient_id === state.user.id);
     box.innerHTML = kudo ? `<a class="promo kudos" href="#/news"><span class="mic">${icon('star', 20)}</span><span class="grow"><b>כל הכבוד!</b><small>${esc(kudo.title)}</small></span></a>`
-      : due.length ? `<a class="promo" href="#/news"><span class="mic">${icon('inbox', 20)}</span><span class="grow"><b>${due.length > 1 ? `${due.length} הודעות הנהלה חדשות` : 'הודעת הנהלה'}</b><small>${esc(due[0].title)}</small></span><span class="chev">${icon('chev', 18)}</span></a>` : '';
+      : due.length ? `<a class="promo" href="#/news"><span class="mic">${icon('inbox', 20)}</span><span class="grow"><b>${due.length > 1 ? `${due.length} עדכוני הנהלה חדשים` : 'עדכון מההנהלה'}</b><small>${esc(due[0].title)}</small></span><span class="chev">${icon('chev', 18)}</span></a>` : '';
   } catch { box.innerHTML = ''; }
 }
 

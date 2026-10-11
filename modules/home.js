@@ -12,12 +12,21 @@ export const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'הסתיים �
 const DAY_ST = { planned: 'מתוכנן', en_route: 'בדרך', on_site: 'באתר', working: 'בעבודה', issue: 'תקלה', done: 'נסגר' };
 const RANK = { 'בביצוע': 0, 'תואם - ממתין לביצוע': 1, 'אושר מול לקוח': 2, 'קביעת מועד': 3, 'תקוע': 4 };
 const isOpen = isOpenProject;
+// סיור אפיון → היעד הנכון: ליד שאוחד → האתר; אפיון בתהליך (מבנה אחד) → ישר לטופס; הושלם / כמה מבנים → עמוד האתר
+export function visitHref(v, sites) {
+  let s = (sites || []).find(x => x.monday_lead_id === String(v.monday_item_id));
+  if (s?.merged_into) s = sites.find(x => x.id === s.merged_into) || s;
+  if (!s) return '#/specs';
+  const B = s.buildings || [], st = b => (b.specs?.[0] || b.specs)?.status;
+  return s.kind === 'lead' && B.length === 1 && st(B[0]) !== 'done' ? `#/b/${s.slug}/${B[0].id}` : `#/site/${s.slug}`;
+}
+const vHref = v => v.href || `#/site/lead-${v.monday_item_id}`;
 const mineDay = w => w.crew_lead_id === state.user.id || (w.work_day_crew || []).some(c => c.user_id === state.user.id);
 
 export async function load() {
   const q = async (p) => { try { const { data, error } = await p; if (error) throw error; return data || []; } catch { return null; } };
   const t = today(), since = addDays(t, -14), M = isManager();
-  const [projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq] = await Promise.all([
+  const [projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq, vsites] = await Promise.all([
     q(sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id,closed_summary,lat,lng,sites(lat,lng)')),
     q(sb.from('field_reports').select('monday_item_id,project_id,project_label,report_date,crew,work,had_issues,issues,photos').gte('report_date', since).order('report_date', { ascending: false })),
     M ? q(sb.from('spec_visits').select('*')) : [],
@@ -28,7 +37,9 @@ export async function load() {
     M ? q(sb.from('sync_log').select('entity,entity_id,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],
     q(sb.rpc('my_inbox')),
     M ? q(sb.from('shift_requests').select('id,user_id').eq('status', 'pending')) : [],
+    M ? q(sb.from('sites').select('id,slug,kind,monday_lead_id,merged_into,buildings(id,specs(status))').or('kind.eq.lead,merged_into.is.null')) : [],
   ]);
+  if (visits && vsites) visits.forEach(v => v.href = visitHref(v, vsites));
   const data = { projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq };
   if (projects) await cache.set('home2', data); else Object.assign(data, (await cache.get('home2')) || {});
   return data;
@@ -65,7 +76,7 @@ export function alerts(d) {
     out.push({ tone: 'warn', ic: 'alert', title: PE.length > 1 ? `${PE.length} פריטים לא עברו למאנדי` : 'שליחה למאנדי נכשלה', sub: [...new Set(PE.map(e => ENT_HE[e.entity] || 'עדכון'))].join(' · '),
       href: one || (can('admin') ? '#/admin/sync' : ''), list: !one && !can('admin') && PE.some(errHref) ? PE.filter(errHref).map(e => ({ href: errHref(e), t: ENT_HE[e.entity] || 'עדכון', s: '' })) : null }); }
   // סיור בלי תאריך: לליד עצמו (איש קשר + משימה לצוות לתיאום); כמה — רשימה של בדיוק אותם לידים
-  const nd = (d.visits || []).filter(v => !v.visit_date), lead = v => `#/site/lead-${v.monday_item_id}`;
+  const nd = (d.visits || []).filter(v => !v.visit_date), lead = vHref;
   if (nd.length) out.push({ tone: '', ic: 'calendar', title: nd.length > 1 ? `${nd.length} סיורי אפיון בלי תאריך` : `סיור אפיון בלי תאריך · ${nd[0].lead_name}`, sub: nd.length > 1 ? nd.map(v => v.lead_name).join(' · ') : nd[0].owner || '',
     ...(nd.length > 1 ? { list: nd.map(v => ({ href: lead(v), t: v.lead_name, s: v.owner || '' })) } : { href: lead(nd[0]) }) });
   const rank = { bad: 0, warn: 1, '': 2 };
@@ -93,7 +104,7 @@ export function evRow(it) {
   if (it.kind === 'w') { const w = it.w; const crew = (w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', ');
     return `<a class="ev ${w.status === 'done' ? 'ok' : 'lime'}" href="#/day/${w.id}"><b>${esc(it.p?.name || 'יום שטח')}</b><small>יום שטח${w.report_time ? ' · ' + w.report_time.slice(0, 5) : ''}${crew ? ' · ' + esc(crew) : ''}${w.status !== 'planned' ? ' · ' + DAY_ST[w.status] : ''}${w.gust_max != null ? ` · ${w.weather_alerted ? '⚠ ' : ''}משבים ${w.gust_max}` : ''}</small></a>`; }
   if (it.kind === 'p') return `<a class="ev ${TONE[it.p.status_label] ?? ''}" href="#/p/${it.p.id}"><b>${esc(it.p.name)}</b><small>${esc(stLabel(it.p.status_label))}${it.p.client_name ? ' · ' + esc(it.p.client_name) : ''}</small></a>`;
-  return `<a class="ev blue" href="#/site/lead-${esc(it.v.monday_item_id)}"><b>סיור אפיון · ${esc(it.v.lead_name)}</b><small>${esc(it.v.owner || '')}</small></a>`;
+  return `<a class="ev blue" href="${esc(vHref(it.v))}"><b>סיור אפיון · ${esc(it.v.lead_name)}</b><small>${esc(it.v.owner || '')}</small></a>`;
 }
 const dayWord = s => s === addDays(today(), 1) ? 'מחר' : `יום ${HE_DOW[new Date(s + 'T12:00').getDay()]} ${dm(s)}`;
 const empty = (ic, title, sub, tone = '') => `<div class="empty-card ${tone}"><span class="ei">${icon(ic, 26)}</span><span><b>${title}</b><small>${sub}</small></span></div>`;

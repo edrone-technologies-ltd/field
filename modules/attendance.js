@@ -3,6 +3,19 @@ import { sb, state, isManager, can, cache, enqueue, sheet, uid, icon, $, $$, esc
 import { computeMonth, inShabbat, CATS, hhmm, ymd, DEFAULTS } from '../lib/labor.js';
 import { estimatePay, PAY_TYPES } from '../lib/pay.js';
 import { errText } from '../lib/audit.js';
+const nis = v => '₪' + Math.round(v || 0).toLocaleString('he-IL');
+// שכר מצטבר "עד עכשיו": משמרת פתוחה נספרת עד הרגע, ומשכורת חודשית בחודש הנוכחי — לפי חלק החודש שעבר
+function livePay(shifts, month, S, rate) {
+  if (!rate) return null;
+  const now = new Date().toISOString(), R = computeMonth((shifts || []).map(x => x.end_at ? x : { ...x, end_at: now }), month, S);
+  const E = estimatePay(R.totals, rate); if (!E) return null;
+  const today = ymd(new Date());
+  if (E.type !== 'hourly' && today.startsWith(month)) {
+    const [y, m] = month.split('-').map(Number), frac = +today.slice(8) / new Date(y, m, 0).getDate(), cut = E.base * (1 - frac);
+    E.base -= cut; E.total -= cut; E.partial = true;
+  }
+  return E;
+}
 // כפתור ששולח לשרת: נועל עד שמסתיים (בלי לחיצה כפולה), משחרר בשגיאה
 const lock = (b, on) => { if (b) b.disabled = on; };
 
@@ -240,19 +253,22 @@ export async function renderHours(el, userId, month) {
   const { data: abs } = await sb.from('absences').select('*').eq('user_id', userId).lt('date_from', monthStart(nextMonth(month))).gte('date_to', `${month}-01`).order('date_from');
   const R0 = reqs || [], pendingNew = R0.filter(r => !r.shift_id), byShift = id => R0.filter(r => r.shift_id === id);
   if (!me) $('#ht').textContent = who?.full_name || '';
-  const R = computeMonth(shifts || [], month, S);
+  const nowIso = new Date().toISOString(), R = computeMonth((shifts || []).map(x => x.end_at ? x : { ...x, end_at: nowIso, _open: true }), month, S);   // משמרת פתוחה נספרת עד עכשיו
   await geoFlags(R);
   const T = R.totals, M = isManager() && !me || (isManager() && me);
+  const { data: rate } = !me && can('finance') ? await sb.from('employee_rates').select('*').eq('user_id', userId).maybeSingle() : { data: null };
+  const E = livePay(shifts, month, S, rate);
   const locked = am?.locked;
   const box = $('#hb'); if (!box) return;
   const any = R.days.length > 0;
   box.innerHTML = `
     ${any ? `<div class="kpis"><div class="kpi"><b>${T.days}</b><span>ימי עבודה</span></div><div class="kpi"><b>${hhmm(T.net)}</b><span>סה״כ שעות</span></div><div class="kpi"><b>${hhmm(T.ot125 + T.ot150)}</b><span>שעות נוספות</span></div></div>
-    <div class="menu">${CATS.filter(([k]) => T[k] > 0 || ['reg', 'ot125', 'ot150'].includes(k)).map(([k, l]) => `<div class="lrow kv"><span class="grow"><small>${l}</small><b>${hhmm(T[k])} שעות</b></span></div>`).join('')}
-      ${T.nights ? `<div class="lrow kv"><span class="grow"><small>משמרות לילה</small><b>${T.nights}</b></span></div>` : ''}</div>` : ''}
+    ${T.net ? `<div class="menu">${CATS.filter(([k]) => T[k] > 0 || ['reg', 'ot125', 'ot150'].includes(k)).map(([k, l]) => `<div class="lrow kv"><span class="grow"><small>${l}</small><b>${hhmm(T[k])} שעות</b></span></div>`).join('')}
+      ${T.nights ? `<div class="lrow kv"><span class="grow"><small>משמרות לילה</small><b>${T.nights}</b></span></div>` : ''}</div>` : ''}` : ''}
+    ${E ? `<section><h3 class="sh">שכר מצטבר</h3><div class="menu"><div class="lrow kv"><span class="grow"><small>${E.type === 'hourly' ? 'רגיל' : E.partial ? 'משכורת · עד היום' : 'משכורת'}</small><b>${nis(E.base)}</b></span></div>${E.ot ? `<div class="lrow kv"><span class="grow"><small>${E.type === 'global' ? 'גלובלי / נוספות' : 'נוספות ושבת/חג'}</small><b>${nis(E.ot)}</b></span></div>` : ''}${E.travel ? `<div class="lrow kv"><span class="grow"><small>נסיעות</small><b>${nis(E.travel)}</b></span></div>` : ''}<div class="lrow kv"><span class="grow"><small>סה״כ עד עכשיו · לפני ניכויים</small><b>${nis(E.total)}</b></span></div>${E.notes.map(n => `<div class="lrow kv"><span class="grow"><small class="fl">${esc(n)}</small></span></div>`).join('')}</div></section>` : ''}
     ${R.flags.length ? `<section><h3 class="sh">לתשומת לב</h3><div class="alist">${R.flags.map(f => `<div class="arow warn"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small class="fl">${esc(f)}</small></span></div>`).join('')}</div></section>` : ''}
     <section><h3 class="sh">לפי ימים</h3><div class="list">${R.days.map(d => `<div class="lrow dayline"><span class="datebox"><b>${+d.date.slice(8)}</b><small>יום ${HE_D1[new Date(d.date + 'T12:00').getDay()]}</small></span>
-      <span class="grow"><b>${d.shifts.map(s => `${tm(s.start_at)}–${s.end_at ? tm(s.end_at) : 'פתוחה'}${s.start_lat == null && s.source === 'app' ? `<span class="muted nogeo" title="בלי מיקום" aria-label="בלי מיקום">${icon('pin', 14)}</span>` : ''}`).join(' · ')}</b>
+      <span class="grow"><b>${d.shifts.map(s => `${tm(s.start_at)}–${s._open ? 'עכשיו' : tm(s.end_at)}${s.start_lat == null && s.source === 'app' ? `<span class="muted nogeo" title="בלי מיקום" aria-label="בלי מיקום">${icon('pin', 14)}</span>` : ''}`).join(' · ')}</b>
       <small>${hhmm(d.netH)} שעות${d.ot125 + d.ot150 ? ` · נוספות ${hhmm(d.ot125 + d.ot150)}` : ''}${d.isNight ? ' · לילה' : ''}${d.holiday ? ' · ' + d.holiday : ''}${!me && d.shifts.some(x => x.late_sync_min) ? ` · <span class="pill warn">כניסה נשלחה באיחור ${Math.max(...d.shifts.map(x => x.late_sync_min || 0))} דק׳</span>` : ''}${!me ? d.shifts.filter(x => x.start_dist_m > (S.geofence_m || 500) || x.end_dist_m > (S.geofence_m || 500)).map(x => ` · <span class="pill warn" title="${esc(x.note || '')}">${x.start_dist_m > (S.geofence_m || 500) ? 'כניסה' : 'יציאה'} ${km(x.start_dist_m > (S.geofence_m || 500) ? x.start_dist_m : x.end_dist_m)} מ${esc(x.start_dist_m > (S.geofence_m || 500) ? x.start_place : x.end_place)}</span>${x.note ? ` <small>"${esc(x.note)}"</small>` : ''}`).join('') : ''}</small></span>
       ${me && !locked && !d.shifts.some(x => byShift(x.id).some(r => r.status === 'pending')) ? `<button class="chip" data-req="${d.shifts[0].id}">עריכה</button>` : !me && isManager() && !locked ? `<button class="chip" data-edit="${d.shifts[0].id}">תיקון</button>` : ''}</div>
       ${d.shifts.flatMap(x => byShift(x.id).filter(r => r.status === 'pending' || Date.now() - new Date(r.decided_at) < 30 * 864e5).map(r => reqLine(r, x) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : ''))).join('')}`).join('') || '<div class="empty-line">אין משמרות בחודש הזה</div>'}
@@ -261,17 +277,17 @@ export async function renderHours(el, userId, month) {
       ${!me && isManager() && !locked ? `<button class="btn ghost block" id="addsh">${icon('plus', 18)} הוספת משמרת (מנהל)</button>` : ''}</section>
     <section><div class="sh-row"><h3 class="sh">היעדרויות</h3>${me && !locked ? `<button class="more" type="button" id="absadd">${icon('plus', 16)} דיווח היעדרות</button>` : ''}</div>
       ${(abs || []).map(a => absLine(a) + (!me && isManager() && a.status === 'pending' ? absBtns(a) : '')).join('') || '<div class="empty-line">אין היעדרויות בחודש הזה</div>'}</section>
-    <section><h3 class="sh">אישור החודש</h3><div class="menu">
+    ${any || am ? `<section><h3 class="sh">אישור החודש</h3><div class="menu">
       <div class="lrow kv"><span class="grow"><small>העובד</small><b>${am?.worker_ok_at ? 'אישר ' + new Date(am.worker_ok_at).toLocaleDateString('he-IL') : 'עוד לא אישר'}</b></span>${me && !am?.worker_ok_at && !locked ? `<button class="btn primary sm" id="wok"${any ? '' : ' disabled'}>אישור השעות</button>` : ''}</div>
       <div class="lrow kv"><span class="grow"><small>המנהל</small><b>${locked ? 'אושר ונעל ' + new Date(am.manager_ok_at).toLocaleDateString('he-IL') : 'עוד לא אושר'}</b></span>${isManager() && !me && !locked ? '<button class="btn primary sm" id="mok">אישור ונעילה</button>' : ''}</div></div>
-</section>
+</section>` : ''}
     ${isManager() && (edits || []).length ? `<details class="fold"><summary><span class="sh">יומן תיקונים</span><span class="count">${edits.length}</span></summary><div class="list">${edits.map(e => `<div class="lrow kv"><span class="grow"><small>${new Date(e.at).toLocaleString('he-IL')}</small><b>${esc(e.reason || '')}</b></span></div>`).join('')}</div></details>` : ''}`;
   const reload = () => renderHours(el, me ? null : userId, month);
   $('#wok')?.addEventListener('click', async e => { const w = e.currentTarget; if (w.disabled) return; lock(w, true); const { error } = await sb.rpc('worker_approve_month', { m: monthStart(month) }); if (error) { lock(w, false); return toast(errText(error)); } toast('אישרת את השעות'); reload(); });
   $('#mok')?.addEventListener('click', async e => {
     const mk = e.currentTarget; if (mk.disabled) return;
-    if (R.days.some(d => d.shifts.some(s => !s.end_at))) return toast('יש משמרת פתוחה — מתקנים לפני אישור');
-    if (!(await confirmBox(`לאשר ולנעול את ${monthName(month)}?`, { body: 'אחרי הנעילה אי אפשר לשנות שעות בחודש הזה.', ok: 'אישור ונעילה' }))) return;
+    const open = R.days.some(d => d.shifts.some(s => s._open)), pend = R0.some(r => r.status === 'pending');
+    if (!(await confirmBox(`לאשר ולנעול את ${monthName(month)}?`, { body: [open && 'יש משמרת פתוחה.', pend && 'יש בקשה שלא טופלה.', 'אחרי הנעילה אי אפשר לשנות שעות בחודש הזה.'].filter(Boolean).join(' '), ok: 'אישור ונעילה' }))) return;
     lock(mk, true); const { error } = await sb.from('attendance_months').upsert({ user_id: userId, month: monthStart(month), manager_ok_at: new Date().toISOString(), manager_id: state.user.id, locked: true }); if (error) { lock(mk, false); return toast(errText(error)); } toast('החודש אושר ונעל'); reload();
   });
   $$('[data-req]').forEach(b => b.onclick = () => requestSheet((shifts || []).find(x => x.id === b.dataset.req), month, reload));
@@ -322,6 +338,9 @@ export async function renderAttendance(el, month) {
     sb.from('employee_rates').select('*'),
   ]);
   const rows = (people || []).map(p => ({ p, R: computeMonth((shifts || []).filter(s => s.user_id === p.id), month, S), am: (ams || []).find(a => a.user_id === p.id) }));
+  const fin = can('finance') && (rates || []).length, payOf = id => (rates || []).find(r => r.user_id === id) || null;
+  rows.forEach(r => { r.E = fin ? livePay((shifts || []).filter(x => x.user_id === r.p.id), month, S, payOf(r.p.id)) : null; });
+  const payTotal = rows.reduce((a, r) => a + (r.E?.total || 0), 0);
   const nowOn = (shifts || []).filter(s => s.status === 'open');
   const box = $('#ab'); if (!box) return;
   const { data: pShifts } = (pend || []).some(r => r.shift_id) ? await sb.from('shifts').select('*').in('id', pend.filter(r => r.shift_id).map(r => r.shift_id)) : { data: [] };
@@ -330,10 +349,11 @@ export async function renderAttendance(el, month) {
       <div class="list">${(pabs || []).map(a => `<div class="card stack reqcard"><b>${esc(people.find(x => x.id === a.user_id)?.full_name || '')}</b>${absLine(a)}${absBtns(a)}</div>`).join('')}${(pend || []).map(r => `<div class="card stack reqcard"><b>${esc(people.find(x => x.id === r.user_id)?.full_name || '')} · ${new Date(r.req_start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}</b>${reqLine(r, (pShifts || []).find(x => x.id === r.shift_id))}${decideBtns(r)}</div>`).join('')}</div></section>` : ''}
     <section><div class="sh-row"><h3 class="sh">במשמרת עכשיו</h3><span class="count">${nowOn.length}</span></div>
       ${nowOn.length ? `<div class="list">${nowOn.map(s => { const p = people.find(x => x.id === s.user_id); return `<a class="lrow" href="#/attendance/${s.user_id}"><span class="cl-dot"></span><span class="grow"><b>${esc(p?.full_name || '')}</b><small>מ-${tm(s.start_at)} · ${hhmm((Date.now() - new Date(s.start_at)) / 36e5)} שעות${s.start_lat != null ? ` · <span class="maplink" data-ll="${s.start_lat},${s.start_lng}">מיקום כניסה</span>` : ' · בלי מיקום'}</small></span></a>`; }).join('')}</div>` : '<div class="empty-line">אף אחד לא במשמרת כרגע</div>'}</section>
+    ${fin ? `<div class="kpis"><div class="kpi"><b>${nis(payTotal)}</b><span>שכר מצטבר</span></div><div class="kpi"><b>${hhmm(rows.reduce((a, r) => a + r.R.totals.net, 0))}</b><span>שעות</span></div><div class="kpi"><b>${hhmm(rows.reduce((a, r) => a + r.R.totals.ot125 + r.R.totals.ot150, 0))}</b><span>נוספות</span></div></div>` : ''}
     <section><div class="sh-row"><h3 class="sh">סיכום חודשי</h3>${can('finance') ? '<button class="more" type="button" id="exp">ייצוא לחשבת השכר</button>' : ''}</div>
-      <div class="list">${rows.map(({ p, R, am }) => `<a class="lrow" href="#/attendance/${p.id}/${month}"><span class="avatar sm">${esc(p.full_name.split(' ').map(w => w[0]).slice(0, 2).join(''))}</span><span class="grow"><b>${esc(p.full_name)}</b>
+      <div class="list">${rows.map(({ p, R, am, E }) => `<a class="lrow" href="#/attendance/${p.id}/${month}"><span class="avatar sm">${esc(p.full_name.split(' ').map(w => w[0]).slice(0, 2).join(''))}</span><span class="grow"><b>${esc(p.full_name)}</b>
         <small>${R.totals.days} ימים · ${hhmm(R.totals.net)} שעות${R.totals.ot125 + R.totals.ot150 ? ` · נוספות ${hhmm(R.totals.ot125 + R.totals.ot150)}` : ''}${R.flags.length ? ` · ${R.flags.length} הערות` : ''}</small></span>
-        ${am?.locked ? '<span class="pill ok">נעול</span>' : am?.worker_ok_at ? '<span class="pill lime">העובד אישר</span>' : R.totals.days ? '<span class="pill">פתוח</span>' : ''}</a>`).join('')}</div></section>`;
+        ${E ? `<b class="amt">${nis(E.total)}</b>` : ''}${am?.locked ? '<span class="pill ok">נעול</span>' : am?.worker_ok_at ? '<span class="pill lime">העובד אישר</span>' : R.totals.days ? '<span class="pill">פתוח</span>' : ''}</a>`).join('')}</div></section>`;
   bindDecide(box, () => renderAttendance(el, month)); bindAbsDecide(box, () => renderAttendance(el, month));
   $$('.maplink', box).forEach(m => m.onclick = e => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.google.com/maps?q=${m.dataset.ll}`, '_blank'); });
   const xb = $('#exp'); if (xb) xb.onclick = () => exportXlsx(month, rows, mabs || [], rates || [], S);

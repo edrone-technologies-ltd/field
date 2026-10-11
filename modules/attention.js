@@ -12,7 +12,7 @@ async function newsRows() {
   const out = [], kudo = due.find(a => a.kind === 'kudos' && a.recipient_id === state.user.id);
   if (kudo) out.push({ k: 'kudos', tone: 'gold', ic: '★', title: 'כל הכבוד!', sub: kudo.title, href: '#/news' });
   const news = due.filter(a => a !== kudo && a.kind === 'news');
-  if (news.length) out.push({ k: 'news', tone: news.some(a => a.require_ack) ? 'warn' : '', ic: icon('inbox', 18), title: news.length > 1 ? `${news.length} הודעות הנהלה` : 'הודעת הנהלה' + (news[0].require_ack ? ' — לאישור' : ''), sub: news[0].title, href: '#/news' });
+  if (news.length) out.push({ k: 'news', tone: news.some(a => a.require_ack) ? 'warn' : '', ic: icon('inbox', 18), title: news.length > 1 ? `${news.length} עדכוני הנהלה` : 'עדכון מההנהלה' + (news[0].require_ack ? ' — לאישור' : ''), sub: news[0].title, href: '#/news' });
   return out;
 }
 async function onbRows() {
@@ -44,9 +44,29 @@ async function schedRows() {
     .sort((a, b) => a.planned_from < b.planned_from ? -1 : 1);
   if (!need.length) return [];
   const dm = d => `${+d.slice(8)}.${+d.slice(5, 7)}`;
-  return need.length === 1 ? [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `לשבץ צוות · ${dm(need[0].planned_from)}`, sub: need[0].name, href: `#/p/${need[0].id}` }]
+  const go = p => `#/p/${p.id}/sch/${p.planned_from >= today ? p.planned_from : today}`;   // ישר לגיליון השיבוץ
+  return need.length === 1 ? [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `לשבץ צוות · ${dm(need[0].planned_from)}`, sub: need[0].name, href: go(need[0]) }]
     : [{ k: 'sched', tone: 'warn', ic: icon('calendar', 18), title: `${need.length} פרויקטים לשיבוץ צוות`, sub: need.map(p => `${dm(p.planned_from)} ${p.name.split(' — ')[0]}`).join(' · '),
-        list: need.map(p => ({ href: `#/p/${p.id}`, t: p.name, s: dm(p.planned_from) + (p.planned_to && p.planned_to !== p.planned_from ? '–' + dm(p.planned_to) : '') })) }];
+        list: need.map(p => ({ href: go(p), t: p.name, s: dm(p.planned_from) + (p.planned_to && p.planned_to !== p.planned_from ? '–' + dm(p.planned_to) : '') })) }];
+}
+// הנהלה: תעודות והסמכות של העובדים (עבודה בגובה, רישיונות) שפגות ב-30 הימים הקרובים או כבר פגו. רישיון מטיס מהפרופיל — בהתראות המערכת
+async function certRows() {
+  if (!['admin', 'ops_manager'].includes(state.profile.role)) return [];
+  const today = new Date().toISOString().slice(0, 10), lim = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
+  const [{ data: docs }, { data: ppl }] = await Promise.all([
+    sb.from('employee_docs').select('user_id,kind,title,expires_on').in('kind', ['certificate', 'license']).not('expires_on', 'is', null),
+    sb.from('profiles').select('id,full_name,is_pilot,pilot_license_expiry').eq('is_active', true)]);
+  const P = new Map((ppl || []).map(p => [p.id, p]));
+  const last = new Map(); (docs || []).forEach(d => { const k = d.user_id + '|' + d.kind + '|' + (d.title || '').trim(); if (!last.has(k) || last.get(k).expires_on < d.expires_on) last.set(k, d); });   // חודש = רק האחרון קובע
+  const due = [...last.values()].filter(d => P.has(d.user_id) && d.expires_on <= lim && !(/מטיס/.test(d.title || '') && P.get(d.user_id).pilot_license_expiry))
+    .sort((a, b) => a.expires_on < b.expires_on ? -1 : 1);
+  if (!due.length) return [];
+  const dm = d => `${+d.slice(8)}.${+d.slice(5, 7)}`, who = d => (P.get(d.user_id).full_name || '').split(' ')[0];
+  const line = d => `${who(d)} · ${d.title || 'תעודה'}`, when = d => d.expires_on < today ? `פגה ב-${dm(d.expires_on)}` : `בתוקף עד ${dm(d.expires_on)}`;
+  const tone = due.some(d => d.expires_on < today) ? 'bad' : 'warn';
+  return due.length === 1 ? [{ k: 'cert', tone, ic: icon('shield', 18), title: `${line(due[0])} — ${due[0].expires_on < today ? 'פגה' : 'פגה בקרוב'}`, sub: when(due[0]), href: `#/staff/${due[0].user_id}/docs` }]
+    : [{ k: 'cert', tone, ic: icon('shield', 18), title: `${due.length} תעודות פגות או עומדות לפוג`, sub: due.map(line).join(' · '),
+        list: due.map(d => ({ href: `#/staff/${d.user_id}/docs`, t: line(d), s: when(d) })) }];
 }
 async function tourRows() {
   if (state.profile.role !== 'ops_manager') return [];
@@ -73,7 +93,7 @@ async function pushRows() {
 
 // כל מה שמחכה למשתמש עצמו (הודעות, הדרכות, קליטה, התראות, שיבוץ שחסר)
 export async function attentionItems() {
-  const parts = await Promise.all([noPushRows(), tourRows(), schedRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
+  const parts = await Promise.all([noPushRows(), tourRows(), schedRows(), certRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   return items;

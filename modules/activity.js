@@ -4,7 +4,7 @@ import { sb, state, $, $$, esc, backBtn, ROLE_HE, timeAgo } from '../lib/core.js
 const ROUTE = { 'בית': 'בית', schedule: 'לו״ז', today: 'יום השטח', 'day/:id': 'יום שטח', projects: 'פרויקטים', 'p/:id': 'פרויקט', specs: 'אפיונים', 'site/:id': 'אתר', 'b/:id': 'מבנה',
   reports: 'דוחות שטח', menu: 'עוד', kb: 'מרכז ידע', 'kb/:id': 'הדרכה', inbox: 'הודעות', c: 'צ׳אט', 'c/:id': 'צ׳אט', alerts: 'לטיפול', attendance: 'נוכחות צוות', hours: 'השעות שלי',
   expenses: 'הוצאות', purchase: 'רכש', requests: 'בקשות', staff: 'עובדים', 'staff/:id': 'עובד', dispatch: 'לוח שיבוץ', equipment: 'ציוד', 'plan/:id': 'תכנית עבודה',
-  'visit/:id': 'דוח ביקור', 'visit/new': 'דוח ביקור חדש', 'tour/ops': 'הדרכה', news: 'הודעות הנהלה', myfile: 'התיק שלי', admin: 'הרשאות', activity: 'פעילות', onboarding: 'לפני שמתחילים' };
+  'visit/:id': 'דוח ביקור', 'visit/new': 'דוח ביקור חדש', 'tour/ops': 'הדרכה', news: 'עדכוני הנהלה', myfile: 'התיק שלי', admin: 'הרשאות', activity: 'פעילות', onboarding: 'לפני שמתחילים' };
 const TBL = { photos: 'תמונות', specs: 'אפיונים', tasks: 'משימות', project_visits: 'דוחות ביקור', work_days: 'ימי שטח', projects: 'פרויקטים', field_reports: 'דוחות',
   issues: 'תקלות', expenses: 'הוצאות', shifts: 'משמרות', buildings: 'מבנים', sites: 'אתרים', purchase_requests: 'רכש', messages: 'הודעות צ׳אט', plan_days: 'תכניות עבודה' };
 const ACT = { insert: 'הוסיף', update: 'עדכן', delete: 'מחק' };

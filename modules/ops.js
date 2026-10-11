@@ -23,7 +23,7 @@ export async function renderOps(el) {
   const q = async p => { try { const { data } = await p; return data || []; } catch { return []; } };
   const admin = state.profile.role === 'admin';
   const [days, people, shifts, abs, sreq, oreq, preq, exq, drones, ended, pulls] = await Promise.all([
-    q(sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,site_id,planned_from,planned_to),work_day_crew(user_id,role,confirmed_at)').gte('day', t).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
+    q(sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,site_id,planned_from,planned_to),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', t).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
     q(sb.from('profiles').select('id,full_name,role,is_active,is_pilot').eq('is_active', true)),
     q(sb.from('shifts').select('id,user_id,start_at,end_at,status,start_dist_m,start_place,note').or(`status.eq.open,start_at.gte.${new Date(y + 'T00:00:00').toISOString()}`).order('start_at', { ascending: false }).limit(80)),
     q(sb.from('absences').select('id,user_id,kind,date_from,date_to,note,status').in('status', ['pending', 'approved']).gte('date_to', y)),
@@ -55,7 +55,9 @@ export async function renderOps(el) {
     if (w.weather_alerted && w.status === 'planned') issues.push({ tone: 'warn', ic: 'sun', t: `תחזית לא לטוס · ${when}`, s: `${pn}${w.gust_max != null ? ' · משבים עד ' + w.gust_max + ' קמ״ש' : ''}`, href, ...fix });
     const pf = w.projects?.planned_from, pt = w.projects?.planned_to || pf;
     if (pf && w.status === 'planned' && (w.day < pf || w.day > pt)) issues.push({ tone: 'warn', ic: 'calendar', t: `במאנדי ${dm(pf)}${pt !== pf ? '–' + dm(pt) : ''}, משובץ ${when}`, s: pn, href: `#/p/${w.project_id}` });
-    const un = crew.filter(c => c.role !== 'lead' && !c.confirmed_at && w.status === 'planned');
+    // "לא יכול להגיע" — הכי דחוף: צריך מחליף. לחיצה = ניהול היום (הסרה / הוספת אדם)
+    crew.filter(c => c.cant_come_at && w.status === 'planned').forEach(c => issues.push({ tone: 'bad', ic: 'users', t: `${name(c.user_id)} לא יכול להגיע · ${when}`, s: [pn, c.cant_come_reason].filter(Boolean).join(' · '), href, ...fix }));
+    const un = crew.filter(c => c.role !== 'lead' && !c.confirmed_at && !c.cant_come_at && w.status === 'planned');
     if (un.length && w.day === tm) issues.push({ tone: 'warn', ic: 'clock', t: `${un.length > 1 ? un.length + ' לא אישרו' : name(un[0].user_id) + ' לא אישר'} הגעה למחר`, s: pn + (un.length > 1 ? ' · ' + un.map(c => name(c.user_id)).join(', ') : ''), href, ...fix });
     for (const c of crew) { const a = absOn(c.user_id, w.day); if (a) issues.push({ tone: 'bad', ic: 'calendar', t: `${name(c.user_id)} ב${ABS[a.kind] || 'היעדרות'} ומשובץ ${when}`, s: pn, href, ...fix }); }
     const dr = D.get(w.drone_id); if (dr?.health === 'grounded') issues.push({ tone: 'bad', ic: 'drone', t: `רחפן ${dr.name} מקורקע ומשובץ ${when}`, s: pn, href: `#/equipment/${dr.id}`, ...fix });
@@ -85,7 +87,7 @@ export async function renderOps(el) {
   const dayCard = w => {
     const crew = (w.work_day_crew || []).slice().sort((a, b) => (a.user_id === w.crew_lead_id ? -1 : 0) - (b.user_id === w.crew_lead_id ? -1 : 0));
     const chip = c => { const lead = c.user_id === w.crew_lead_id, onShift = openBy.has(c.user_id), was = inToday.has(c.user_id);
-      const st = w.day === t ? (onShift ? ['on', 'במשמרת'] : was ? ['done', 'סיים'] : ['off', 'לא החתים']) : (c.confirmed_at || lead ? ['on', 'אישר'] : ['off', 'לא אישר']);
+      const st = c.cant_come_at ? ['off', 'לא יגיע'] : w.day === t ? (onShift ? ['on', 'במשמרת'] : was ? ['done', 'סיים'] : ['off', 'לא החתים']) : (c.confirmed_at || lead ? ['on', 'אישר'] : ['off', 'לא אישר']);
       return `<span class="opc ${st[0]}" title="${st[1]}"><i></i>${esc(name(c.user_id))}${lead ? leadMark() : ''}<small>${st[1]}</small></span>`; };
     const site = w.projects?.site_id;
     return `<a class="card opday" href="#/day/${w.id}"><div class="row"><b class="grow">${esc(w.projects?.name || '')}</b>${site ? `<span data-wx="${site}|${w.day}"></span>` : ''}</div>
@@ -95,9 +97,11 @@ export async function renderOps(el) {
   const dToday = days.filter(w => w.day === t), dTom = days.filter(w => w.day === tm);
   // בבית: שורה אחת לכל יום שטח (שעה · מקום · צוות · רק חריגים). הכרטיס המלא — בפירוט
   const dayRow = w => { const ppl = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
-    const miss = w.day === t ? ppl.filter(u => !openBy.has(u) && !inToday.has(u)).length : ppl.filter(u => u !== w.crew_lead_id && !(w.work_day_crew || []).find(c => c.user_id === u)?.confirmed_at).length;
-    return `<a class="lrow" href="#/day/${w.id}"><span class="timebox"><b>${w.report_time ? w.report_time.slice(0, 5) : '—'}</b></span><span class="grow"><b>${esc(shortName(w.projects?.name))}</b><small>${ppl.map(u => esc(name(u)) + (u === w.crew_lead_id ? leadMark() : '')).join(' · ') || 'לא שובץ צוות'}</small>
-      <span class="tags">${w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${w.day}"></span>` : ''}${miss ? `<span class="pill warn">${miss} ${w.day === t ? 'לא החתימו' : 'לא אישרו'}</span>` : ''}</span></span></a>`; };
+    const cc = u => (w.work_day_crew || []).find(c => c.user_id === u)?.cant_come_at, nc = ppl.filter(cc).length;
+    const miss = w.day === t ? ppl.filter(u => !cc(u) && !openBy.has(u) && !inToday.has(u)).length : ppl.filter(u => u !== w.crew_lead_id && !cc(u) && !(w.work_day_crew || []).find(c => c.user_id === u)?.confirmed_at).length;
+    const fixIt = nc && w.status === 'planned', tag = fixIt ? 'button' : 'a';   // מישהו לא יגיע → הלחיצה פותחת ישר את ניהול היום
+    return `<${tag} class="lrow" ${fixIt ? `type="button" data-da="${w.id}"` : `href="#/day/${w.id}"`}><span class="timebox"><b>${w.report_time ? w.report_time.slice(0, 5) : '—'}</b></span><span class="grow"><b>${esc(shortName(w.projects?.name))}</b><small>${ppl.map(u => (cc(u) ? `<s>${esc(name(u))}</s>` : esc(name(u))) + (u === w.crew_lead_id ? leadMark() : '')).join(' · ') || 'לא שובץ צוות'}</small>
+      <span class="tags">${w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${w.day}"></span>` : ''}${nc ? `<span class="pill bad">${nc > 1 ? nc + ' לא יגיעו' : 'לא יגיע'}</span>` : ''}${miss ? `<span class="pill warn">${miss} ${w.day === t ? 'לא החתימו' : 'לא אישרו'}</span>` : ''}</span></span></${tag}>`; };
 
   // ---- לאישורך ----
   const pendAbs = abs.filter(a => a.status === 'pending' && (admin || a.user_id !== state.user.id));   // אין אישור עצמי
@@ -144,6 +148,7 @@ export async function renderOps(el) {
   $$('[data-kpi]', el).forEach(b => b.onclick = () => KPI[b.dataset.kpi]());
 
   bindNeeds(el, N, () => renderOps(el));
+  $$('[data-da]', el).forEach(b => b.onclick = () => import('./dayadmin.js').then(m => m.openDayAdmin(b.dataset.da, () => renderOps(el))));
   const po = $('#pushOn', el); if (po) po.onclick = async () => { if (po.disabled) return; po.disabled = true; const { enablePush } = await import('../lib/core.js');
     try { await enablePush(); toast('ההתראות הופעלו'); $('#pushA', el)?.remove(); } catch (e) { po.disabled = false; toast(errText(e, 'ההתראות לא הופעלו — בדקו את הרשאות הטלפון')); } };
   $$('[data-nmore]', el).forEach(b => b.onclick = KPI.needs);   // "עוד" בבית = אותו פירוט מלא

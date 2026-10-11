@@ -1288,3 +1288,10 @@ button.back{flex:none;width:40px;height:40px;border-radius:50%;display:grid;plac
 /* שדה חסר בסגירת יום */
 [aria-invalid="true"]{border-color:var(--bad)!important;box-shadow:0 0 0 2px var(--badbg)}
 .task .hbtn{width:34px;height:34px;box-shadow:none}
+.lrow .amt{font-variant-numeric:tabular-nums;white-space:nowrap;margin-inline-start:8px}
+.dayline small .pill{white-space:normal;display:inline;line-height:1.5}
+/* שיבוץ: סיבת אי-זמינות בתוך הצ׳יפ */
+.chip .why{font-size:.75rem;color:var(--muted);font-weight:400} .chip .why:empty{display:none}
+.lrow small.bad{color:var(--bad);font-weight:600}
+.dchip.no{background:var(--badbg);color:var(--bad);text-decoration:none} .dneed{display:grid;gap:6px;margin-bottom:10px}
+.cgrid:has(> :nth-child(4):last-child){grid-template-columns:repeat(2,1fr)}

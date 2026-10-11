@@ -1,6 +1,6 @@
 // תכנית עבודה כמסמך: יום אחרי יום — מה עושים (כתוב) + תמונות מהאפיון, מדוחות קודמים ומהשטח.
 // המנהל כותב ומשבץ תמונות; הצוות רואה את אותו מסמך (ובמסך היום — את היום שלו). ניתן להדפסה כ-PDF מטעם E-Drone.
-import { sb, state, isManager, sheet, icon, $, $$, esc, toast, signedUrls, zoom, dm, dayLabel, isoDay } from '../lib/core.js';
+import { sb, state, isManager, sheet, icon, $, $$, esc, toast, signedUrls, zoom, dm, dayLabel, isoDay, confirmBox } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { errText } from '../lib/audit.js';
 
@@ -33,6 +33,13 @@ export async function renderPlan(el, pid, print = false) {
     sb.from('work_days').select('id,day,status,report_time,kind').eq('project_id', pid).neq('kind', 'report').order('day'),
     sb.from('plan_days').select('*').eq('project_id', pid).order('day_no')]);
   if (!p) { el.innerHTML = `<header class="phead"><a class="back" href="#/p/${pid}" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">תכנית עבודה</h1></header><div class="empty-line">הפרויקט לא נמצא</div>`; return; }
+  // אין תכנית ויש אתר עם אפיון שהושלם → נבנית לבד (בדרך כלל השרת כבר בנה אותה בשיוך/בסיום האפיון); הטקסט נשאר לעריכה
+  if (M && !print && p.site_id && !(tasks || []).some(t => t.day_no) && !(rows || []).length && !el.dataset.autoplan) {
+    el.dataset.autoplan = pid;
+    let n = 0; try { n = (await sb.rpc('generate_work_plan', { p: pid })).data; } catch { /* בלי קליטה — מוצג מה שיש */ }
+    if (n > 0) return renderPlan(el, pid, print);
+  }
+  delete el.dataset.autoplan;
   const P = await pool(p);
   const R = new Map((rows || []).map(r => [r.day_no, r]));
   const nums = [...new Set([...(tasks || []).map(t => t.day_no).filter(Boolean), ...R.keys()])].sort((a, b) => a - b);
@@ -65,7 +72,7 @@ export async function renderPlan(el, pid, print = false) {
       ${nums.length ? `<a class="hbtn" href="#/plan/${pid}/print" aria-label="PDF">${icon('file', 20)}</a>` : ''}</header>
     <div class="stack lg plan">${head}
       ${brief}${nums.length ? nums.map(dayCard).join('') : '<div class="empty-line">אין תכנית עדיין</div>'}
-      ${M ? `<div class="row-btns">${p.site_id ? `<button class="btn ghost" id="pgen">${nums.length ? 'בנייה מחדש מהאפיון' : 'בנייה מהאפיון'}</button>` : ''}<button class="btn ghost" id="padd">${icon('plus', 18)} יום</button></div>` : ''}
+      ${M ? `<div class="row-btns">${p.site_id && nums.length ? `<button class="btn ghost" id="pgen">עדכון מהאפיון</button>` : ''}<button class="btn ghost" id="padd">${icon('plus', 18)} יום</button></div>` : ''}
     </div>`;
   if (print) return printView(el, p, nums, dayCard, brief);
 
@@ -83,7 +90,9 @@ export async function renderPlan(el, pid, print = false) {
   $$('[data-pick]', el).forEach(b => b.onclick = () => picker(+b.dataset.pick));
   $('#padd').onclick = async e => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; const n = (nums.at(-1) || 0) + 1; if (await save(n, { body: '', photos: [] })) renderPlan(el, pid); else b.disabled = false; };
   const g = $('#pgen'); if (g) g.onclick = async () => {
-    if (g.disabled) return; g.disabled = true; const { data, error } = await sb.rpc('generate_work_plan', { p: pid }); if (error) { g.disabled = false; return toast(errText(error, 'התכנית לא נבנתה — נסו שוב'), 4000); }
+    if (g.disabled) return;
+    if ((rows || []).length && !(await confirmBox('לבנות מחדש מהאפיון?', { body: 'הטקסט והתמונות שנכתבו לכל יום נשארים', ok: 'עדכון' }))) return;
+    g.disabled = true; const { data, error } = await sb.rpc('generate_work_plan', { p: pid }); if (error) { g.disabled = false; return toast(errText(error, 'התכנית לא נבנתה — נסו שוב'), 4000); }
     toast(`נבנו ${data} ימי עבודה`); renderPlan(el, pid);
   };
 

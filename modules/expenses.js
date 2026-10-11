@@ -1,5 +1,5 @@
 // הוצאות שטח: צילום קבלה → קטגוריה, סכום, פרויקט → אישור מנהל → נכנס לעלות הפרויקט (ולמאנדי) ולייצוא להנהלת החשבונות.
-import { sb, state, isManager, can, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, ask, dm, signedUrls, isoDay, backBtn, replaceHash } from '../lib/core.js';
+import { sb, state, isManager, can, cache, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, ask, dm, signedUrls, isoDay, backBtn, replaceHash } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { errText } from '../lib/audit.js';
 
@@ -9,7 +9,7 @@ const nis = x => '₪' + Number(x || 0).toLocaleString('he-IL', { maximumFractio
 
 export async function renderExpenses(el) {
   const M = can('finance');   // הוצאות של אחרים ואישורן = כספים בלבד
-  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">הוצאות</h1>${M ? '<button class="btn ghost sm" id="xls">ייצוא</button>' : ''}</header>
+  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">הוצאות</h1>${M ? '<button class="btn ghost sm" id="xls">ייצוא</button>' : ''}<button class="hbtn" id="xadd" aria-label="הוצאה חדשה">${icon('plus', 20)}</button></header>
     <div id="xb" class="stack lg"><div class="skel"></div></div>`;
   const since = isoDay(new Date(Date.now() - 60 * 864e5));
   const { data: rows } = await sb.from('expenses').select('*, profiles:user_id(full_name), projects(name)').gte('day', since).order('day', { ascending: false }).order('created_at', { ascending: false });
@@ -22,9 +22,10 @@ export async function renderExpenses(el) {
       ${decide ? `<span class="stack tight"><button class="chip" data-ok="${r.id}">אישור</button><button class="chip" data-no="${r.id}">דחייה</button></span>` : `<span class="pill ${c}">${t}</span>`}</div>`; };
   const monthTot = mine.filter(r => r.day.slice(0, 7) === isoDay().slice(0, 7) && r.status !== 'rejected').reduce((t, r) => t + Number(r.amount), 0);
   $('#xb').innerHTML = `${pend.length ? `<section><div class="sh-row"><h3 class="sh">לאישור</h3><span class="count">${pend.length}</span></div><div class="list">${pend.map(r => row(r, true)).join('')}</div></section>` : ''}
-    <section><div class="sh-row"><h3 class="sh">שלי</h3><span class="more">החודש ${nis(monthTot)}</span></div>${mine.length ? `<div class="list">${mine.map(r => row(r, false)).join('')}</div>` : '<div class="empty-line">אין הוצאות</div>'}</section>
+    <section><div class="sh-row"><h3 class="sh">שלי</h3>${monthTot ? `<span class="more">החודש ${nis(monthTot)}</span>` : ''}</div>${mine.length ? `<div class="list">${mine.map(r => row(r, false)).join('')}</div>` : `<button class="btn ghost block" id="xadd2">${icon('plus', 18)} הוצאה חדשה</button>`}</section>
     ${M ? `<details class="fold"><summary><span class="sh">כל ההוצאות (60 יום)</span><span class="count">${(rows || []).length}</span></summary><div class="list">${(rows || []).map(r => row(r, false).replace('</b><small>', `</b><small>${esc(r.profiles?.full_name || '')} · `)).join('')}</div></details>` : ''}`;
   const reload = () => renderExpenses(el);
+  ['#xadd', '#xadd2'].forEach(k => { const b = $(k); if (b) b.onclick = () => newExpense(null, reload); });
   if (/^#\/expenses\/new/.test(location.hash)) { replaceHash('#/expenses', false); newExpense(null, reload); }   // מה"+" — בלי כפתור במסך
   $$('[data-z]', el).forEach(i => i.onclick = async () => (await import('../lib/core.js')).zoom(i.dataset.z, 'קבלה'));
   // אישור/דחייה: נועלים את שני הכפתורים של השורה עד תשובת השרת
@@ -38,6 +39,10 @@ export async function renderExpenses(el) {
 
 export async function newExpense(projectId, done, back) {
   let cat = 'fuel', file = null;
+  if (!projectId) {   // ברירת מחדל: הפרויקט של המשמרת הפתוחה / של יום השטח היום
+    projectId = (await cache.get('open-shift').catch(() => null))?.project_id || null;
+    if (!projectId) try { const { data } = await sb.from('work_days').select('project_id,work_day_crew!inner(user_id)').eq('day', isoDay()).eq('work_day_crew.user_id', state.user.id).limit(1); projectId = data?.[0]?.project_id || null; } catch { /* */ }
+  }
   const [{ data: projects }, { data: vehicles }] = await Promise.all([sb.rpc('reportable_projects'), sb.from('equipment').select('id,name').eq('kind', 'vehicle')]);
   sheet(`<h3>הוצאה חדשה</h3>
     <label class="btn ghost block">${icon('photo', 18)} <span id="rcn">צילום קבלה</span><input type="file" accept="image/*" capture="environment" id="rc" hidden></label>

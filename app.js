@@ -11,7 +11,7 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch']);
+const WITH_NAV = new Set(['kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -83,7 +83,7 @@ function renderMenu() {
       ['#/hours', 'clock', 'השעות שלי', 'כניסה, יציאה ובקשות תיקון'],
       ['#/myfile', 'file', 'התיק שלי', 'תלושים ומסמכים'],
       ['#/expenses', 'receipt', 'הוצאות', 'דלק, חניה, אוכל ולינה'],
-      ['#/news', 'inbox', 'הודעות הנהלה', 'עדכונים והוקרה'],
+      ['#/news', 'inbox', 'עדכוני הנהלה', 'עדכונים והוקרה'],
       !isManager() && ['#/requests', 'send', 'בקשה למשרד', 'שכר, ציוד, מסמכים'],
     ]],
     ['שטח', [
@@ -193,7 +193,7 @@ async function routeInner() {
   $('#sheet').hidden = true;
   // מסך שורש של לשונית (בלי תת-נתיב) — בלי כפתור חזרה בכותרת
   if (h.length === 1 && TABS.some(t => t.k === h[0] && t.ok())) document.body.dataset.root = ''; else delete document.body.dataset.root;
-  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' ? '' : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses'].includes(h[0]) ? 'menu' : h[0]);
+  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' ? '' : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'kb', 'news', 'requests', 'weather'].includes(h[0]) ? 'menu' : h[0]);
   const guard = m => { if (!can(m)) { app.innerHTML = `<div class="empty-card"><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; } return true; };
   const home = () => import('./modules/home.js');
   switch (h[0]) {

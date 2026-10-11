@@ -113,45 +113,7 @@ export function issueSheet(pid, after, back, dayId = null) {
   }, { back });
 }
 
-// ---------- החתמת לקוח ----------
-export async function renderSignoff(el, pid) {
-  el.innerHTML = `<div class="skel"></div>`;
-  try { await sb.rpc('join_project', { p: pid }); } catch {}
-  const [{ data: p }, { data: days }, { data: tasks }, { data: reps }] = await Promise.all([
-    sb.from('projects').select('id,name,client_name,cover_path,sites(contact_name)').eq('id', pid).single(),
-    sb.from('work_days').select('day,status,work_types').eq('project_id', pid).eq('status', 'done').order('day'),
-    sb.from('tasks').select('title,status').eq('project_id', pid).eq('status', 'done'),
-    sb.from('field_reports').select('report_date,work').eq('project_id', pid).eq('excluded', false).order('report_date'),
-  ]);
-  if (!p) { el.innerHTML = `<header class="phead">${backBtn('#/projects')}<h1>החתמת לקוח</h1></header><div class="empty-line">הפרויקט לא נמצא</div>`; return; }
-  const dates = [...new Set([...(days || []).map(d => d.day), ...(reps || []).map(r => r.report_date)])].sort();
-  const works = [...new Set([...(days || []).flatMap(d => d.work_types || []), ...(reps || []).flatMap(r => (r.work || '').split(', ').filter(Boolean))])];
-  const summary = [works.join(' · '), dates.length ? `${dates.length === 1 ? 'יום עבודה אחד' : dates.length + ' ימי עבודה'}${dates.length ? ` (${dm(dates[0])}${dates.length > 1 ? '–' + dm(dates.at(-1)) : ''})` : ''}` : '', (tasks || []).length ? `${tasks.length} משימות בוצעו` : ''].filter(Boolean).join('\n');
-  const F = { name: p.sites?.contact_name || '', role: '', full: true, rating: 5, works: summary, notes: '' };
-  el.innerHTML = `<header class="phead">${backBtn(`#/p/${pid}/d`)}<h1>החתמת לקוח</h1></header>
-    <div class="stack">
-      <div class="muted">${esc(p.name)}</div>
-      <div class="sec"><h3>מה בוצע</h3><textarea id="sw" rows="4">${esc(F.works)}</textarea></div>
-      <div class="sec"><label class="field">שם החותם<input type="text" id="sn" value="${esc(F.name)}"></label>
-        <label class="field">תפקיד<input type="text" id="sr" placeholder="מנהל אחזקה, מנהל אתר…"></label>
-        <label class="tog"><span>העבודה בוצעה במלואה ולשביעות רצוני</span><span class="sw"><input type="checkbox" id="sf" checked><i></i></span></label>
-        <b>שביעות רצון</b><div class="stars" id="st">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-q="${n}" aria-pressed="${F.rating >= n}">★</button>`).join('')}</div>
-        <label class="field">הערות הלקוח<textarea id="snt" rows="2"></textarea></label>
-        <div class="row"><b class="grow">חתימה</b><button class="chip" id="sclr" type="button">ניקוי</button></div><canvas id="sig" class="sig"></canvas></div>
-    </div>`;
-  const bar = document.createElement('div'); bar.className = 'bar'; bar.innerHTML = '<button class="btn primary" id="sgo">אישור וחתימה</button>'; document.body.appendChild(bar);
-  $$('#st [data-q]').forEach(b => b.onclick = () => { F.rating = +b.dataset.q; $$('#st [data-q]').forEach(x => x.setAttribute('aria-pressed', +x.dataset.q <= F.rating)); });
-  const { pad } = await import('./today.js'); const sig = pad($('#sig')); $('#sclr').onclick = () => sig.clear();
-  $('#sgo').onclick = async () => {
-    const name = $('#sn').value.trim(); if (!name) return toast('חסר שם החותם');
-    if (sig.empty()) return toast('חסרה חתימה');
-    const id = uid(), path = `${state.user.id}/signoff/${id}.png`;
-    $('#sgo').disabled = true;
-    await enqueue({ kind: 'file', path, blob: await sig.blob(), type: 'image/png' });
-    await enqueue({ kind: 'insert', table: 'project_signoffs', row: { id, project_id: pid, signer_name: name, signer_role: $('#sr').value.trim() || null, full_ok: $('#sf').checked, rating: F.rating, works: $('#sw').value.trim() || null, notes: $('#snt').value.trim() || null, signature_path: path, created_by: state.user.id } });
-    toast('נחתם ונשלח למשרד'); goUp('#/p/' + pid + '/d');
-  };
-}
+// החתמת לקוח — modules/signoff.js
 
 // ---------- סיכום פרויקט פנימי ----------
 export async function renderSummary(el, pid) {
@@ -182,7 +144,7 @@ export async function renderSummary(el, pid) {
 }
 
 // ---------- לשונית "דוחות" בפרויקט ----------
-export async function reportsTab(box, D, { reload, schedule }) {
+export async function reportsTab(box, D, { reload }) {
   const M = isManager(), pid = D.p.id, t = isoDay();
   box.innerHTML = `<div id="rlist" class="stack"><div class="skel"></div></div>`;
   const [{ data: sos }, { data: sum }, { data: ph }, { data: vis }] = await Promise.all([
@@ -196,7 +158,6 @@ export async function reportsTab(box, D, { reload, schedule }) {
   const thumbs = {}; (ph || []).forEach(x => { if (!thumbs[x.work_day_id]) thumbs[x.work_day_id] = x.storage_path; });
   const urls = await thumbUrls('field', Object.values(thumbs)).then(m => Object.fromEntries(Object.entries(m).map(([k, v]) => [k, v.t]))).catch(() => ({}));
   const mUrls = await signedUrls('media', D.reps.map(r => (r.photos || []).find(Boolean)).filter(Boolean)).catch(() => ({}));
-  const upcoming = D.days.filter(d => d.status !== 'done' && d.day >= t && d.kind !== 'report');
   const feed = [
     ...D.days.filter(d => d.status === 'done' || d.kind === 'report').map(d => ({ at: d.day, html: `<a class="lrow" href="#/day/${d.id}">${thumb(thumbs[d.id] && urls[thumbs[d.id]], 'report')}<span class="grow"><b>דוח יומי · ${dayLabel(d.day)}</b><small>${esc((d.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', '))}${d.gallons != null ? ` · ${nf(d.gallons)} גל׳` : ''}</small></span><span class="pill ${d.status === 'done' ? (d.monday_item_id ? 'ok' : '') : 'warn'}">${d.status === 'done' ? 'נשלח' : 'טיוטה'}</span></a>` })),
     ...D.reps.filter(r => !pushed.has(r.monday_item_id)).map(r => { const p1 = (r.photos || []).find(Boolean); return { at: r.report_date, html: `<button class="lrow" data-mr="${r.monday_item_id}">${thumb(p1 && mUrls[p1], 'report')}<span class="grow"><b>דוח יומי · ${dm(r.report_date)}</b><small>${esc([r.crew, r.work].filter(Boolean).join(' · '))}</small>${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}</span></button>` }; }),
@@ -207,10 +168,8 @@ export async function reportsTab(box, D, { reload, schedule }) {
     ...(sum ? [{ at: sum.updated_at.slice(0, 10), html: `<a class="lrow" href="#/summary/${pid}">${thumb(null, 'shield')}<span class="grow"><b>סיכום פרויקט פנימי</b><small>${sum.quality ? rating(sum.quality) + ' · ' : ''}עודכן ${dm(sum.updated_at.slice(0, 10))}</small></span><span class="pill">נשמר</span></a>` }] : []),
   ].sort((a, b) => a.at < b.at ? 1 : -1);
   $('#rlist').innerHTML = `
-    ${M ? `<div class="list"><button class="lrow" id="sch" type="button"><span class="mic">${icon('calendar', 20)}</span><span class="grow"><b>${D.days.length ? 'שיבוץ מחדש' : 'שיבוץ ימים'}</b>${upcoming.length ? `<small>${upcoming.length === 1 ? 'יום אחד מתוכנן' : upcoming.length + ' ימים מתוכננים'}</small>` : ''}</span><span class="chev">${icon('chev', 18)}</span></button></div>` : ''}
     <section><div class="sh-row"><h3 class="sh">כל הדוחות</h3>${feed.length ? `<span class="count">${feed.length}</span>` : ''}</div>
       ${feed.length ? `<div class="list">${feed.map(f => f.html).join('')}</div>` : '<div class="empty-line">אין דוחות</div>'}</section>`;
-  const s = $('#sch'); if (s) s.onclick = schedule;
   $$('[data-mr]').forEach(b => b.onclick = async () => { const r = D.reps.find(x => x.monday_item_id === b.dataset.mr); const u = await signedUrls('media', (r.photos || []).filter(Boolean));
     sheet(`<h3>דוח יומי · ${dm(r.report_date)}</h3><div class="small muted">${esc(r.crew || '')}</div>
       <div class="menu">${[['עבודה', r.work], ['שעות', r.hours], ['גלונים', r.gallons], ['בעיות', r.issues], ['הערות', r.notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(String(v))}</b></span></div>`).join('')}</div>

@@ -1,27 +1,30 @@
 // ניהול יום שטח מתוכנן (מנהל תפעול ומעלה): כל מה שמתקנים בבעיה של יום — במקום אחד, בלי לעבור למסך הביצוע של העובד.
 // העברת תאריך · ראש צוות · רחפן · שעת יציאה · הוספה/הסרה של אנשים · ביטול היום. כל שינוי = התראה לצוות (בצד השרת).
 import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, dm, dayLabel, leadMark } from '../lib/core.js';
+import { availability } from '../lib/avail.js';
 
 export async function openDayAdmin(id, after) {
   if (!isManager()) return;
   const [{ data: w, error }, { data: people }, { data: drones }] = await Promise.all([
-    sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,projects(name),work_day_crew(user_id,role)').eq('id', id).single(),
+    sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,projects(name),work_day_crew(user_id,role,cant_come_at,cant_come_reason)').eq('id', id).single(),
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).in('role', ['crew', 'crew_lead', 'ops_manager', 'admin']).order('full_name'),
     sb.from('equipment').select('id,name,health').eq('kind', 'drone').order('name')]);
   if (error || !w) return toast('היום לא נמצא');
   if (w.status !== 'planned') { location.hash = '#/day/' + id; return; }   // יום שכבר התחיל — מסך הביצוע
+  const av = await availability(w.day, w.day, { exceptDay: id, drones: drones || [] }).catch(() => ({ person: () => '', drone: id2 => (drones || []).find(d => d.id === id2)?.health === 'grounded' ? 'מקורקע' : '' }));
+  const no = u => (w.work_day_crew || []).find(c => c.user_id === u && c.cant_come_at);
   const P = new Map((people || []).map(p => [p.id, p])), nm = u => (P.get(u)?.full_name || '').split(' ')[0];
   const crew = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
-  const free = (people || []).filter(p => !crew.includes(p.id));
+  const free = (people || []).filter(p => !crew.includes(p.id)).sort((a, b) => !!av.person(a.id) - !!av.person(b.id));
   const done = (msg, close) => { close(); toast(msg, 2200, 'success'); after?.(); };
   sheet(`<div class="stack tight"><h3 class="sh">${esc(w.projects?.name || '')}</h3><small class="muted">${dayLabel(w.day)}</small></div>
     <div class="list">
-      ${crew.map(u => `<div class="lrow"><span class="avatar sm">${esc(nm(u).slice(0, 2))}</span><span class="grow"><b>${esc(P.get(u)?.full_name || '')}${u === w.crew_lead_id ? leadMark() : ''}</b>${P.get(u)?.is_pilot ? '<small>מטיס</small>' : ''}</span>
-        ${u !== w.crew_lead_id ? `<button class="chip" data-lead="${u}">ראש צוות</button>` : ''}<button class="chip" data-rm="${u}">הסרה</button></div>`).join('') || '<div class="empty-line">לא שובץ צוות</div>'}
-      ${free.length ? `<label class="lrow"><span class="mic">${icon('plus', 18)}</span><select id="da-add" class="grow"><option value="">הוספת אדם…</option>${free.map(p => `<option value="${p.id}">${esc(p.full_name)}${p.is_pilot ? ' · מטיס' : ''}</option>`).join('')}</select></label>` : ''}
+      ${crew.map(u => `<div class="lrow"><span class="avatar sm">${esc(nm(u).slice(0, 2))}</span><span class="grow"><b>${esc(P.get(u)?.full_name || '')}${u === w.crew_lead_id ? leadMark() : ''}</b>${no(u) ? `<small class="bad">לא יכול להגיע${no(u).cant_come_reason ? ' · ' + esc(no(u).cant_come_reason) : ''}</small>` : P.get(u)?.is_pilot ? '<small>מטיס</small>' : ''}</span>
+        ${u !== w.crew_lead_id && !no(u) ? `<button class="chip" data-lead="${u}">ראש צוות</button>` : ''}<button class="chip" data-rm="${u}">הסרה</button></div>`).join('') || '<div class="empty-line">לא שובץ צוות</div>'}
+      ${free.length ? `<label class="lrow"><span class="mic">${icon('plus', 18)}</span><select id="da-add" class="grow"><option value="">הוספת אדם…</option>${free.map(p => { const why = av.person(p.id); return `<option value="${p.id}" ${why ? 'disabled' : ''}>${esc(p.full_name)}${p.is_pilot ? ' · מטיס' : ''}${why ? ' — ' + esc(why) : ''}</option>`; }).join('')}</select></label>` : ''}
     </div>
     <div class="row"><label class="field grow">תאריך<input type="date" id="da-day" value="${w.day}"></label><label class="field grow">יציאה<input type="time" id="da-time" value="${(w.report_time || '').slice(0, 5)}"></label></div>
-    <label class="field">רחפן<select id="da-drone"><option value="">בלי רחפן</option>${(drones || []).map(d => `<option value="${d.id}" ${d.id === w.drone_id ? 'selected' : ''} ${d.health === 'grounded' ? 'disabled' : ''}>${esc(d.name)}${d.health === 'grounded' ? ' — מקורקע' : d.health === 'warning' ? ' — במעקב' : ''}</option>`).join('')}</select></label>
+    <label class="field">רחפן<select id="da-drone"><option value="">בלי רחפן</option>${(drones || []).map(d => { const why = av.drone(d.id); return `<option value="${d.id}" ${d.id === w.drone_id ? 'selected' : ''} ${why ? 'disabled' : ''}>${esc(d.name)}${why ? ' — ' + esc(why) : d.health === 'warning' ? ' — במעקב' : ''}</option>`; }).join('')}</select></label>
     <div class="row-btns"><button class="btn ghost" id="da-cancel">ביטול היום</button><button class="btn primary" id="da-save">שמירה</button></div>`, (s, close) => {
     const busy = b => { b.disabled = true; return () => { b.disabled = false; }; };
     $$('[data-rm]', s).forEach(b => b.onclick = async () => {

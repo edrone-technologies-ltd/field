@@ -72,7 +72,8 @@ export async function renderSites(el) {
   const draft = s => s.buildings.some(b => (b.specs?.[0] || b.specs)?.status === 'draft');
   const GROUPS = [['open', 'לסיור ואפיון'], ['done', 'אפיון הושלם'], ['new', 'לידים חדשים'], ['arch', 'ארכיון']];
   const folder = s => { const { n, done, draft } = st(s), lead = s.kind === 'lead';
-    return { href: lead && n === 1 ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, img: coverFor(s, s.cover_path && urls[s.cover_path]), title: s.name,
+    // בתהליך → ישר לטופס; הושלם → סיכום האתר
+    return { href: lead && n === 1 && !done ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, img: coverFor(s, s.cover_path && urls[s.cover_path]), title: s.name,
       sub: lead ? [s.contact_name, s.visit_date ? 'סיור ' + dm(s.visit_date) : null].filter(Boolean).join(' · ') : `${n} מבנים`,
       pill: n > 1 ? `${done}/${n}` : done === n && n ? 'בוצע' : draft || done ? 'בתהליך' : '', tone: done === n && n ? 'ok' : done || draft ? 'warn' : '' }; };
   const draw = q => {
@@ -290,7 +291,7 @@ export async function renderSite(el, slug, tab = 'b') {
     <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
     <div id="tabbody"></div>`;
   bindCopy(el); bindSiteTools(s, { days: Math.ceil(days - 1e-3) });
-  import('../lib/contacts.js').then(m => m.renderContacts($('#sctc'), { siteId: s.id, clientId: s.client_id, org: s.name }));
+  import('../lib/contacts.js').then(async m => { await m.renderContacts($('#sctc'), { siteId: s.id, clientId: s.client_id, org: s.name, empty: s.contact_name || s.contact_phone ? contactCard(s.contact_name, s.contact_phone) : '' }); const c = $('#sctc'); if (c) bindCopy(c); });
   import('../lib/audit.js').then(m => m.signature($('#sig'), { site_id: s.id }));
   $$('.tabs button', el).forEach(b => b.onclick = () => replaceHash(`#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`));
   const body = $('#tabbody');
@@ -336,7 +337,8 @@ export async function renderBuilding(el, slug, bid) {
   const scope = one ? String(s.scope_text || '') : '';
   const bl = scope.match(/(?:מבנים|בניינים)\s*:?\s*([A-Za-zא-ת0-9]{1,2}(?![A-Za-zא-ת0-9])(?:\s*[+,\/&]\s*[A-Za-zא-ת0-9]{1,2}(?![A-Za-zא-ת0-9]))+)/);
   const bn = +(scope.match(/(\d{1,2})\s*(?:מבנים|בניינים)/)?.[1] || 0);
-  const NAMES = bl ? bl[1].split(/\s*[+,\/&]\s*/).map(x => 'מבנה ' + x.trim()) : bn >= 2 && bn <= 30 ? Array.from({ length: bn }, (_, i) => 'מבנה ' + (i + 1)) : [];
+  // "מבנים A+B, 12 קומות" — המספר שאחריו "קומות" אינו מבנה
+  const NAMES = bl ? bl[1].split(/\s*[+,\/&]\s*/).map(x => x.trim()).filter(x => !new RegExp(`(^|[^\\w])${x}\\s*קומות`).test(scope)).map(x => 'מבנה ' + x) : bn >= 2 && bn <= 30 ? Array.from({ length: bn }, (_, i) => 'מבנה ' + (i + 1)) : [];
   const fl0 = +(scope.match(/(\d{1,3})\s*קומות/)?.[1] || 0);
   if (editable && form.floors == null && fl0 > 0 && fl0 <= 200) { form.floors = fl0; dirty = true; }
   const ctx = [one ? null : s.name + (b.group_label ? ' · ' + s.group_word + ' ' + b.group_label : ''), b.subtitle].filter(Boolean).join(' · ');
@@ -546,10 +548,14 @@ export async function renderBuilding(el, slug, bid) {
     const fac = (form.facade_days || []).filter(x => x.d > 0), dirs = [...new Set(fac.map(x => x.dir).filter(Boolean))];
     const pushed = !!s.spec_pushed_at && +new Date(s.spec_pushed_at) > at;
     const push = !navigator.onLine ? 'יישלח כשתחזור קליטה' : pushed ? 'נשלח למאנדי' : 'יישלח אוטומטית';
+    // המבנה הבא שעוד לא הושלם — ממשיכים אליו בלחיצה, בלי לחזור לרשימה
+    const nx = s.buildings.length > 1 ? [...s.buildings.slice(s.buildings.indexOf(b) + 1), ...s.buildings.slice(0, s.buildings.indexOf(b))].find(x => x.spec?.status !== 'done') : null;
     sheet(`<h3>האפיון הושלם</h3>
       <div class="kpis"><div class="kpi"><b>${nf(Number(form.days_expected))}</b><span>ימי עבודה</span></div>${fac.length ? `<div class="kpi"><b>${fac.length}</b><span>${dirs.length ? esc(dirs.join(' · ')) : 'חזיתות'}</span></div>` : ''}</div>
       <div class="list"><div class="lrow"><span class="mic ${pushed ? 'ok' : ''}">${icon('send', 19)}</span><span class="grow"><b>${push}</b></span></div></div>
-      <button class="btn primary block" id="dnok">סגירה</button>`, (sh, close) => { $('#dnok', sh).onclick = () => { close(); up(); }; });
+      ${nx ? `<button class="btn primary block" id="dnnx">המשך ל${esc(nx.name)}</button>` : ''}
+      <button class="btn ${nx ? 'ghost' : 'primary'} block" id="dnok">סגירה</button>`, (sh, close) => { $('#dnok', sh).onclick = () => { close(); up(); };
+        const n2 = $('#dnnx', sh); if (n2) n2.onclick = () => { close(); location.hash = `#/b/${slug}/${nx.id}`; }; });
   }
   bindSiteTools(s);
   import('../lib/audit.js').then(m => m.signature($('#sig'), { building_id: b.id }, { surveyor: spec.surveyor_id }));

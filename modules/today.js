@@ -60,11 +60,14 @@ export async function renderDay(el, id) {
   const go = () => draw();
 
   const REPORT = D.day.kind === 'report';
+  // סגירת היום = ראש הצוות (או מנהל). שאר הצוות ממשיכים לעבוד ורואים שראש הצוות סוגר
+  const canClose = () => isManager() || !D.day.crew_lead_id || D.day.crew_lead_id === state.user.id;
+  const leadName = () => (D.day.work_day_crew.find(c => c.user_id === D.day.crew_lead_id)?.profiles?.full_name || '').split(' ')[0];
   function stage() {
     const d = D.day;
     if (d.status === 'done') return 5;
     if (REPORT) return 4;
-    if (D.local.stage === 4 || d.finished_at) return 4;
+    if ((D.local.stage === 4 && canClose()) || d.finished_at) return 4;
     if (['working', 'issue'].includes(d.status)) return 3;
     if (d.arrived_at || d.status === 'on_site' || d.departed_at) return 2;
     return D.local.stage === 1 ? 1 : 0;
@@ -394,6 +397,7 @@ export async function renderDay(el, id) {
       const row = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, title, phase: 'תוספת', is_extra: true, status: 'todo', seq: 999, planned_date: D.day.day };
       D.tasks.push(row); await insert('tasks', row); draw();
     };
+    if (!canClose()) { bar.innerHTML = `<button class="btn ghost" type="button" disabled>ראש הצוות סוגר${leadName() ? ' · ' + esc(leadName()) : ''}</button>`; return; }
     bar.innerHTML = `<button class="btn primary" id="fin">סיום יום</button>`;
     bar.querySelector('#fin').onclick = () => { D.local.stage = 4; keep(); draw(); };
   }
@@ -434,6 +438,7 @@ export async function renderDay(el, id) {
       sig = pad($('#sig'), C.sign.img, url => { setC('sign', url, 'img'); why(); }); $('#sclr').onclick = () => { sig.clear(); setC('sign', null, 'img'); why(); };
     }
     why();
+    if (!canClose()) { bar.innerHTML = `<button class="btn ghost" type="button" disabled>ראש הצוות סוגר${leadName() ? ' · ' + esc(leadName()) : ''}</button>`; return; }
     bar.innerHTML = REPORT ? `<button class="btn primary" id="close">שליחת הדוח</button>` : `<button class="btn ghost" id="bk">חזרה לעבודה</button><button class="btn primary" id="close">סגירת יום ושליחה</button>`;
     if (!REPORT) bar.querySelector('#bk').onclick = () => { D.local.stage = null; keep(); draw(); };
     bar.querySelector('#close').onclick = async () => {
@@ -514,6 +519,22 @@ export async function renderDay(el, id) {
     e.querySelector('.undo').onclick = () => { e.hidden = true; fn(); };
     clearTimeout(undo.h); undo.h = setTimeout(() => e.hidden = true, 5000);
   }
+  // שני טלפונים על אותו יום: מה שקרה בטלפון השני (יצאו, הגיעו, ראש הצוות סגר) מגיע לבד — בלי רענון ידני
+  const SYNC = ['status', 'departed_at', 'arrived_at', 'opened_at', 'finished_at', 'closed_at', 'monday_item_id', 'signoff', 'crew_lead_id'];
+  const tok = el.dataset.dayView = uid();
+  const here = () => el.isConnected && el.dataset.dayView === tok && location.hash.includes(D.day.id) && $('#dstage', el);   // עברו למסך אחר (או נפתח שוב) — מפסיקים
+  const poll = setInterval(async () => {
+    if (!here() || stage() === 5) return clearInterval(poll);
+    if (document.hidden || !navigator.onLine || (stage() === 4 && canClose())) return;   // באמצע טופס הסגירה — לא נוגעים
+    try {
+      const { data } = await sb.from('work_days').select(SYNC.join(',')).eq('id', D.day.id).maybeSingle(); if (!data || !here()) return;
+      const { outbox } = await import('../lib/store.js'); if ((await outbox.all()).some(mineQ)) return;   // שינויים שלי עוד בתור — הם הקובעים
+      const same = (a, b) => a === b || (a && b && typeof a === 'string' && +new Date(a) === +new Date(b)) || JSON.stringify(a) === JSON.stringify(b);
+      if (SYNC.every(k => same(data[k], D.day[k]))) return;
+      const before = stage(); Object.assign(D.day, data); await keep();
+      if (stage() !== before) draw(); else $('#dhead', el).innerHTML = header();
+    } catch { /* בלי קליטה — בפעם הבאה */ }
+  }, 45000);
   draw();
 }
 
