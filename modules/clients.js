@@ -11,7 +11,7 @@ const tel = p => String(p || '').replace(/\D/g, '');
 const works = n => n === 1 ? 'עבודה אחת' : `${n} עבודות`;
 
 export async function renderClients(el) {
-  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין גישה</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין לך גישה למסך הזה</div>'; return; }
   el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1>לקוחות</h1></header><div class="skel tall"></div>`;
   const { data } = await sb.from('clients').select('id,name,grp,monday_group,projects(id,monday_group,status_label,closed_summary,planned_from,actual_from),sites(id)').neq('monday_group', 'group_mm56d34v').order('name');
   const C = (data || []).filter(c => (c.projects || []).length || (c.sites || []).length);
@@ -29,7 +29,7 @@ export async function renderClients(el) {
 }
 
 export async function renderClient(el, id) {
-  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין גישה</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין לך גישה למסך הזה</div>'; return; }
   el.innerHTML = `<header class="phead">${backBtn('#/clients')}<h1>תיק לקוח</h1></header><div class="skel tall"></div>`;
   const { data: c } = await sb.from('clients').select('*').eq('id', id).maybeSingle();
   if (!c) { el.innerHTML = `<header class="phead">${backBtn('#/clients')}<h1>תיק לקוח</h1></header><div class="empty-line">הלקוח לא נמצא</div>`; return; }

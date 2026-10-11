@@ -79,7 +79,7 @@ async function infoTab(box, p) {
     ${F.map(([k, l, t]) => `<label class="field">${l}${t === 'long' ? `<textarea data-f="${k}" rows="2">${esc(e?.[k] || '')}</textarea>` : `<input type="${t === 'date' ? 'date' : 'text'}" ${IM[k] ? `inputmode="${IM[k]}"` : ''} data-f="${k}" value="${esc(e?.[k] || '')}"${k === 'emergency_contact' ? ' placeholder="שם וטלפון"' : ''}>`}</label>`).join('')}
     ${isAdmin() ? `<label class="tog"><span>מטיס</span><span class="sw"><input type="checkbox" id="ipl" ${p.is_pilot ? 'checked' : ''}><i></i></span></label>
       <div class="row" id="plr" ${p.is_pilot ? '' : 'hidden'}><label class="field grow">מס׳ רישיון<input data-p="pilot_license_no" value="${esc(p.pilot_license_no || '')}"></label><label class="field grow">בתוקף עד<input type="date" data-p="pilot_license_expiry" value="${p.pilot_license_expiry || ''}"></label></div>` : ''}
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="sv">שמירה</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="sv">שמירת הפרטים</button></div>`, (s, close) => {
     const f = focus === '__phone' ? $('[data-p="phone"]', s) : $(`[data-f="${focus}"]`, s); if (f) setTimeout(() => { f.focus(); f.scrollIntoView?.({ block: 'center' }); }, 120);
     const ip = $('#ipl', s); if (ip) ip.onchange = () => { $('#plr', s).hidden = !ip.checked; };
     $('#sv', s).onclick = async () => {

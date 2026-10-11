@@ -98,7 +98,7 @@ export async function renderEquipment(el) {
     let kind = k0;
     sheet(`<h3>פריט ציוד חדש</h3><div class="chips">${Object.entries(KIND1).filter(([k]) => k !== 'drone').map(([k, t]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === kind}">${t}</button>`).join('')}</div>
       <input type="text" id="an" placeholder="שם"><input type="text" id="as" placeholder="מספר סידורי / רישוי">
-      <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="ago">הוספה</button></div>`, (s, close) => {
+      <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="ago">הוספת פריט</button></div>`, (s, close) => {
       const ph = () => { const n = (rows.filter(r => r.kind === kind).length || 0) + 1; $('#an', s).placeholder = `${KIND1[kind]} ${n}`; };
       $$('[data-k]', s).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); ph(); });
       ph(); setTimeout(() => $('#an', s).focus(), 80);
@@ -206,7 +206,7 @@ function serviceSheet(r, C, done, pre = {}) {
     <textarea id="sb" rows="2" placeholder="מה נעשה (לא חובה)"></textarea>
     <div class="row"><label class="field grow">תאריך<input type="date" id="sd" value="${isoDay()}" max="${isoDay()}"></label>
       <label class="btn ghost grow sph">${icon('photo', 18)} <span id="spn">תמונה</span><input type="file" accept="image/*" capture="environment" id="sf" hidden></label></div>
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="sgo">שמירה</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="sgo">שמירת הטיפול</button></div>`, (s, close) => {
     $$('[data-k]', s).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#scomp', s).hidden = kind !== 'component'; });
     $$('[data-t]', s).forEach(b => b.onclick = () => { const t = b.dataset.t; tags.has(t) ? tags.delete(t) : tags.add(t); b.setAttribute('aria-pressed', tags.has(t)); });
     $$('[data-cp]', s).forEach(b => b.onclick = () => { comp = b.dataset.cp; $$('[data-cp]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#sns', s).focus(); });
@@ -235,7 +235,7 @@ function compSheet(r, c, done) {
     <label class="field">מספר סידורי<input id="cse" value="${esc(c?.serial || '')}"></label>
     <div class="row"><label class="field grow">הותקן<input type="date" id="cin" value="${c?.installed_on || isoDay()}"></label><label class="field grow">שעות שכבר היו עליו<input type="number" inputmode="decimal" id="cbm" value="${c ? Math.round((c.base_minutes || 0) / 6) / 10 : ''}" placeholder="0"></label></div>
     <div class="row"><label class="field grow">להחליף אחרי (שעות)<input type="number" inputmode="decimal" id="crh" value="${c?.replace_hours ?? ''}"></label><label class="field grow">או אחרי (טיסות)<input type="number" inputmode="numeric" id="crc" value="${c?.replace_cycles ?? ''}"></label></div>
-    <div class="row-btns">${c ? '<button class="btn ghost" id="crm">הוסר</button>' : '<button class="btn ghost" data-close>ביטול</button>'}<button class="btn primary" id="cgo">שמירה</button></div>`, (s, close) => {
+    <div class="row-btns">${c ? '<button class="btn ghost" id="crm">הוסר</button>' : '<button class="btn ghost" data-close>ביטול</button>'}<button class="btn primary" id="cgo">שמירת הרכיב</button></div>`, (s, close) => {
     const val = () => ({ kind: $('#ck', s).value, position: $('#cpo', s).value.trim() || null, serial: $('#cse', s).value.trim() || null, installed_on: $('#cin', s).value || isoDay(),
       base_minutes: Math.round(Number($('#cbm', s).value || 0) * 60), replace_hours: $('#crh', s).value === '' ? null : +$('#crh', s).value, replace_cycles: $('#crc', s).value === '' ? null : +$('#crc', s).value });
     $('#cgo', s).onclick = async () => { const go = $('#cgo', s); if (go.disabled) return; go.disabled = true;
@@ -248,7 +248,7 @@ function batSheet(r, b, B, done, est) {
   sheet(`<h3>${b ? esc(b.name) : 'סוללה חדשה'}</h3>
     <div class="row"><label class="field grow">שם<input id="bn" value="${esc(b?.name || `סוללה ${B.length + 1} · ${r.name.split(' ')[0]}`)}"></label><label class="field grow">מספר סידורי<input id="bs" value="${esc(b?.serial || '')}"></label></div>
     <div class="row"><label class="field grow">מחזורים עכשיו<input type="number" inputmode="numeric" id="bc" value="${b ? est : 0}"></label><label class="field grow">להחליף אחרי<input type="number" inputmode="numeric" id="br" value="${b?.replace_cycles ?? 300}"></label></div>
-    <div class="row-btns">${b ? '<button class="btn ghost" id="bx">הוצאה מהכלי</button>' : '<button class="btn ghost" data-close>ביטול</button>'}<button class="btn primary" id="bgo">שמירה</button></div>`, (s, close) => {
+    <div class="row-btns">${b ? '<button class="btn ghost" id="bx">הוצאה מהכלי</button>' : '<button class="btn ghost" data-close>ביטול</button>'}<button class="btn primary" id="bgo">שמירת הסוללה</button></div>`, (s, close) => {
     $('#bgo', s).onclick = async () => { const go = $('#bgo', s); if (go.disabled) return; go.disabled = true;
       const v = { name: $('#bn', s).value.trim() || 'סוללה', serial: $('#bs', s).value.trim() || null, cycles: +$('#bc', s).value || 0, cycles_at: isoDay(), replace_cycles: $('#br', s).value === '' ? null : +$('#br', s).value };
       if (b) await enqueue({ kind: 'update', table: 'equipment', rowId: b.id, patch: v });
@@ -261,7 +261,7 @@ function issueSheet(r, ctx, done) {
   sheet(`<h3>תקלה · ${esc(r.name)}</h3>
     <div class="row qtag">${['לא ממריא', 'רעידות', 'מנוע', 'סוללה', 'משאבה / ריסוס', 'צינור / דליפה', 'מצלמה', 'נזק פיזי'].map(t => `<button type="button" class="chip" data-q="${t}">${t}</button>`).join('')}</div>
     <textarea id="eb" rows="2" placeholder="מה התקלה?"></textarea>
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="es">דיווח</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="es">דיווח תקלה</button></div>`, (s, close) => {
     $$('[data-q]', s).forEach(b => b.onclick = () => { const t = $('#eb', s); t.value = t.value ? t.value + ', ' + b.dataset.q : b.dataset.q; t.focus(); });
     $('#es', s).onclick = async () => {
       const body = $('#eb', s).value.trim(); if (!body) return $('#eb', s).focus();

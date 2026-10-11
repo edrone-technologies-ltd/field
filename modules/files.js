@@ -87,7 +87,7 @@ function uploadSheet(p, done) {
     <label class="field" id="ft" hidden>שם המסמך<input type="text" id="ut" placeholder="למשל: רישיון מטיס, תעודת עבודה בגובה"></label>
     <label class="field" id="fx" hidden>בתוקף עד (לא חובה)<input type="date" id="ux"></label>
     <label class="btn ghost block">${icon('plus', 18)} <span id="un">בחירת קובץ (PDF או תמונה)</span><input type="file" accept="application/pdf,image/*" id="uf" hidden></label>
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="ugo">העלאה</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="ugo">העלאת המסמך</button></div>`, (s, close) => {
     const sync = () => { $('#fm', s).hidden = kind !== 'payslip'; $('#ft', s).hidden = kind === 'payslip'; $('#fx', s).hidden = !['license', 'id', 'certificate'].includes(kind); };
     $$('[data-k]', s).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); sync(); });
     $('#uf', s).onchange = e => { file = e.target.files[0]; $('#un', s).textContent = file ? file.name : 'בחירת קובץ'; }; sync();
@@ -96,7 +96,7 @@ function uploadSheet(p, done) {
       const title = kind === 'payslip' ? `תלוש ${$('#um', s).value}` : ($('#ut', s).value.trim() || KINDS[kind]);
       $('#ugo', s).disabled = true; $('#ugo', s).textContent = 'מעלה…';
       const err = await uploadDoc(p.id, kind, file, { title, month: kind === 'payslip' ? $('#um', s).value + '-01' : null, expires_on: $('#ux', s).value || null });
-      if (err) { $('#ugo', s).disabled = false; $('#ugo', s).textContent = 'העלאה'; return toast(err, 4000); }
+      if (err) { $('#ugo', s).disabled = false; $('#ugo', s).textContent = 'העלאת המסמך'; return toast(err, 4000); }
       close(); toast(kind === 'payslip' ? 'התלוש עלה — העובד קיבל הודעה' : 'המסמך נשמר בתיק'); done();
     };
   });
@@ -120,7 +120,7 @@ function bulkPayslips(people, done) {
     <label class="field">חודש<input type="month" id="bm" value="${isoDay(prev).slice(0, 7)}"></label>
     <label class="btn ghost block">${icon('plus', 18)} בחירת קבצים<input type="file" accept="application/pdf,image/*" multiple id="bf" hidden></label>
     <div id="bl" class="list"></div>
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="bgo">העלאה</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="bgo">העלאת הקבצים</button></div>`, (s, close) => {
     $('#bf', s).onchange = e => {
       files = [...e.target.files];
       $('#bl', s).innerHTML = files.map((f, i) => `<div class="lrow"><span class="grow"><small>${esc(f.name)}</small></span><select data-i="${i}" class="sel-auto"><option value="">— עובד —</option>${people.map(p => `<option value="${p.id}" ${guess(f) === p.id ? 'selected' : ''}>${esc(p.full_name)}</option>`).join('')}</select></div>`).join('');

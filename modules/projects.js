@@ -1,7 +1,8 @@
-// פרויקטים: מרכז הביצוע. סקירה ממאנדי + אתר ואפיון, תכנית עבודה מהאפיון, שיבוץ ימים, צ'אט צוות, תקלות וסיכום.
+// פרויקטים: מרכז הביצוע. סקירה ממאנדי + אתר ואפיון, תכנית עבודה מהאפיון, שיבוץ ימים, צ׳אט צוות, תקלות וסיכום.
 import { navButtons, replaceHash, thumbUrls , stLabel } from '../lib/core.js';
 import { availability } from '../lib/avail.js';
 import { facadeOrder } from '../lib/sun.js';
+import { errText } from '../lib/audit.js';
 import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, folderGrid, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, backBtn, HE_D1, leadMark, coverFor, skeleton } from '../lib/core.js';
 
 const ARCHIVE = 'group_mm5052gw';
@@ -75,8 +76,8 @@ export async function renderProject(el, id, tab = 'o') {
   } catch { D = await cache.get(ck); }
   if (!D) { el.innerHTML = `<div class="empty-line">הפרויקט לא נמצא</div>`; return; }
   const p = D.p, M = isManager();
-  // הפרויקט = תיקייה אחת: סקירה · אפיון · תכנית · דוחות · צ'אט · סיכום
-  const TABS = [['o', 'סקירה'], ...(p.site_id && (M || can('specs')) ? [['a', 'אפיון']] : []), ['t', 'משימות'], ['d', 'דוחות'], ['c', "צ'אט"], ['s', 'סיכום']];
+  // הפרויקט = תיקייה אחת: סקירה · אפיון · תכנית · דוחות · צ׳אט · סיכום
+  const TABS = [['o', 'סקירה'], ...(p.site_id && (M || can('specs')) ? [['a', 'אפיון']] : []), ['t', 'משימות'], ['d', 'דוחות'], ['c', "צ׳אט"], ['s', 'סיכום']];
   const openIss = D.issues.filter(i => i.status === 'open').length;
 
   const coverUrl = p.cover_path ? (await signedUrls('media', [p.cover_path]).catch(() => ({})))[p.cover_path] : null;
@@ -105,15 +106,15 @@ export async function renderProject(el, id, tab = 'o') {
     const done = B.filter(b => b.sp?.status === 'done'), days = done.reduce((t, b) => t + Number(b.sp.days_expected || 0), 0);
     const ST = { done: ['ok', 'הושלם'], draft: ['warn', 'טיוטה'] };
     box.innerHTML = `<div class="kpis"><div class="kpi"><b>${done.length}/${B.length}</b><span>מבנים אופיינו</span></div><div class="kpi"><b>${days ? nf(Math.ceil(days - 1e-3)) : '—'}</b><span>ימי עבודה</span></div></div>
-      <div class="list">${B.map(b => `<a class="lrow" href="#/b/${esc(st.slug)}/${b.id}"><span class="grow"><b>${esc(b.name)}</b><small>${[b.sp?.days_expected ? nf(b.sp.days_expected) + ' ימים' : null, b.facade_area_m2 ? nf(b.facade_area_m2) + ' מ"ר' : null].filter(Boolean).join(' · ')}</small></span>
+      <div class="list">${B.map(b => `<a class="lrow" href="#/b/${esc(st.slug)}/${b.id}"><span class="grow"><b>${esc(b.name)}</b><small>${[b.sp?.days_expected ? nf(b.sp.days_expected) + ' ימים' : null, b.facade_area_m2 ? nf(b.facade_area_m2) + ' מ״ר' : null].filter(Boolean).join(' · ')}</small></span>
         ${ST[b.sp?.status] ? `<span class="pill ${ST[b.sp.status][0]}">${ST[b.sp.status][1]}</span>` : '<span class="pill">לא מולא</span>'}</a>`).join('')}</div>
       <a class="btn ghost block" href="#/site/${esc(st.slug)}">${icon('clipboard', 18)} האפיון המלא</a>`;
   }
 
   // ----- סקירה -----
-  // לו"ז דו-כיווני: מה שמתוכנן במאנדי מול מה ששובץ באפליקציה
+  // לו״ז דו-כיווני: מה שמתוכנן במאנדי מול מה ששובץ באפליקציה
   const wdays = (a, b) => { let n = 0; for (let d = new Date(a + 'T12:00'); isoDay(d) <= b; d.setDate(d.getDate() + 1)) if (d.getDay() < 5) n++; return n || 1; };
-  // לו"ז הפרויקט: הטווח (מסונכרן עם מאנדי בשני הכיוונים) + ימי השטח. מנהל: שינוי תאריכים, שיבוץ, העברת יום
+  // לו״ז הפרויקט: הטווח (מסונכרן עם מאנדי בשני הכיוונים) + ימי השטח. מנהל: שינוי תאריכים, שיבוץ, העברת יום
   function schedSection() {
     const t = isoDay(), up = D.days.filter(d => d.status !== 'done' && d.day >= t).sort((a, b) => a.day < b.day ? -1 : 1), done = D.days.filter(d => d.status === 'done').length;
     const out = up.length && p.planned_from && (up[0].day < p.planned_from || up.at(-1).day > (p.planned_to || p.planned_from));
@@ -133,21 +134,21 @@ export async function renderProject(el, id, tab = 'o') {
   function bindSched(box) {
     const ds = $('#dates', box); if (ds) ds.onclick = () => sheet(`<h3 class="sh">תאריכי הפרויקט</h3>
       <div class="row"><label class="field grow">התחלה<input type="date" id="df" value="${p.planned_from || ''}"></label><label class="field grow">סיום<input type="date" id="dt" value="${p.planned_to || p.planned_from || ''}"></label></div>
-      <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="dgo">שמירה</button></div>`, (s2, close) => {
+      <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="dgo">שמירת התאריכים</button></div>`, (s2, close) => {
       $('#df', s2).onchange = e => { const to = $('#dt', s2); if (!to.value || to.value < e.target.value) to.value = e.target.value; };
       $('#dgo', s2).onclick = async e => { const f = $('#df', s2).value, to = $('#dt', s2).value || f; if (!f) return toast('בחרו תאריך');
         e.target.disabled = true; const { data: n, error } = await sb.rpc('set_project_dates', { p: id, d_from: f, d_to: to });
-        if (error) { e.target.disabled = false; return toast(error.message); }
+        if (error) { e.target.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); }
         close(); toast(n ? `התאריכים עודכנו · ${n} ימי שטח הוזזו` : 'התאריכים עודכנו'); reload('o'); };
     });
     const sm = $('#schm', box); if (sm) sm.onclick = () => openSched();
     $$('[data-mv]', box).forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation();
       sheet(`<h3 class="sh">העברת יום שטח</h3><label class="field">לתאריך<input type="date" id="md" value="${b.dataset.day}"></label>
-        <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="mgo">העברה</button></div>`, (s2, close) => {
+        <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="mgo">העברת היום</button></div>`, (s2, close) => {
         $('#mgo', s2).onclick = async e2 => { const d = $('#md', s2).value; if (!d || d === b.dataset.day) return close();
           const dow = new Date(d + 'T12:00').getDay(); if (dow === 6 && !(await confirmBox('שבת — להעביר בכל זאת?', { ok: 'העברה' }))) return;
           e2.target.disabled = true; const { error } = await sb.rpc('move_day', { w: b.dataset.mv, d });
-          if (error) { e2.target.disabled = false; return toast(error.message); }
+          if (error) { e2.target.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); }
           close(); toast(`הועבר ל${dayLabel(d)} · הצוות קיבל עדכון`); reload('o'); };
       }); });
   }
@@ -192,7 +193,7 @@ export async function renderProject(el, id, tab = 'o') {
       if (x.act?.startsWith('day:')) return import('./dayadmin.js').then(m => m.openDayAdmin(x.act.slice(4), () => reload('o')));
       if (x.tog) { b.disabled = true;
         const { data, error } = await sb.rpc('set_readiness', { p: id, k: x.tog, on_: !x.ok, days: r.up });
-        if (error) { b.disabled = false; return toast(error.message); }
+        if (error) { b.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); }
         p.readiness = data || {}; D.ready = (await sb.rpc('project_readiness', { p: id })).data || D.ready; cache.set(ck, D).catch(() => {}); toast(x.ok ? `${x.t} — בוטל` : `${x.t} — תואם`, 1600, x.ok ? 'light' : 'success');
         const sec = $('#ready', box); if (sec) { sec.outerHTML = readySection(); bindReady(box); } }
     });
@@ -211,7 +212,7 @@ export async function renderProject(el, id, tab = 'o') {
     box.innerHTML = `${schedSection()}${readySection()}${p.site_id && wxDay ? `<span data-wxcard="${p.site_id}|${wxDay}|תחזית ל${dayLabel(wxDay)}"></span>` : ''}
       ${kpiRow(appPlan
         ? [[done && Math.round(done / tot * 100) + '%', 'מהתכנית בוצע'], [dDone && `${dDone}/${D.days.length}`, 'ימי שטח']]
-        : [[range, 'לו"ז'], [fdays && `${fdays}${p.field_days_planned ? '/' + nf(p.field_days_planned) : ''}`, 'ימי שטח'], [D.reps.length, 'דוחות שטח']])}
+        : [[range, 'לו״ז'], [fdays && `${fdays}${p.field_days_planned ? '/' + nf(p.field_days_planned) : ''}`, 'ימי שטח'], [D.reps.length, 'דוחות שטח']])}
       ${open.length ? `<section><h3 class="sh">תקלות פתוחות</h3><div class="alist">${open.map(i => `<div class="arow ${i.severity === 'critical' ? 'bad' : 'warn'}"><span class="aic">${icon('alert', 20)}</span><span class="grow"><b>${esc(i.body)}</b><small>${KIND_HE[i.kind] || ''} · ${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span>${M ? `<button class="chip" data-x="${i.id}">טופל</button>` : ''}</div>`).join('')}</div></section>` : ''}
       <div class="menu">
         ${M && p.client_id ? `<a class="lrow kv" href="#/client/${p.client_id}"><span class="mic">${icon('users', 19)}</span><span class="grow"><small>לקוח</small><b>${esc(p.client_name || '')}</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
@@ -245,14 +246,14 @@ export async function renderProject(el, id, tab = 'o') {
       const copy = async t => { try { if (navigator.share) await navigator.share({ title: p.name, url: url(t) }); else { await navigator.clipboard.writeText(url(t)); toast('הקישור הועתק'); } } catch { } };
       $$('[data-cp]', s2).forEach(b => b.onclick = () => copy(b.dataset.cp));
       $$('[data-rv]', s2).forEach(b => b.onclick = async () => { await sb.from('project_shares').update({ revoked: true }).eq('token', b.dataset.rv); close(); toast('הקישור בוטל'); });
-      $('#mk', s2).onclick = async () => { const { data, error } = await sb.from('project_shares').insert({ project_id: id, created_by: state.user.id }).select().single(); if (error) return toast(error.message); close(); copy(data.token); shareSheet(); };
+      $('#mk', s2).onclick = async () => { const { data, error } = await sb.from('project_shares').insert({ project_id: id, created_by: state.user.id }).select().single(); if (error) return toast(errText(error, 'הקישור לא נוצר — נסו שוב')); close(); copy(data.token); shareSheet(); };
     });
   }
   function siteSheet() {
     sheet(`<h3>שיוך לאתר</h3>
       <div class="list">${D.sites.map(x => `<button class="lrow" data-s="${x.id}"><span class="grow"><b>${esc(x.name)}</b></span>${x.id === p.site_id ? '<span class="pill lime">משויך</span>' : ''}</button>`).join('')}</div>
       <button class="btn ghost block" data-close>ביטול</button>`, (sh, close) => {
-      $$('[data-s]', sh).forEach(b => b.onclick = async () => { const { error } = await sb.from('projects').update({ site_id: b.dataset.s }).eq('id', id); if (error) return toast(error.message); close(); toast('שויך לאתר'); reload('o'); });
+      $$('[data-s]', sh).forEach(b => b.onclick = async () => { const { error } = await sb.from('projects').update({ site_id: b.dataset.s }).eq('id', id); if (error) return toast(errText(error, 'השיוך לא נשמר — נסו שוב')); close(); toast('שויך לאתר'); reload('o'); });
     });
   }
   function notesSheet() {
@@ -277,7 +278,7 @@ export async function renderProject(el, id, tab = 'o') {
     const href = st.kind === 'lead' && B.length === 1 && B[0].id && specOf(B[0])?.status !== 'done' ? `#/b/${sl}/${B[0].id}` : '#/site/' + sl;
     return `<div class="list"><a class="lrow" href="${esc(href)}"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>אפיון חסר</b></span><span class="chev">${icon('chev', 18)}</span></a></div>`; };
   function plan(box) {
-    const all = D.tasks; D.tasks = all.filter(t => t.phase !== 'מעקב');   // התכנית = משימות ימי העבודה; הצ'קליסט בנפרד למעלה
+    const all = D.tasks; D.tasks = all.filter(t => t.phase !== 'מעקב');   // התכנית = משימות ימי העבודה; הצ׳קליסט בנפרד למעלה
     const chk = all.filter(t => t.phase === 'מעקב' && t.status !== 'dropped');
     const by = new Map(); D.tasks.forEach(t => { const k = t.day_no ?? 0; if (!by.has(k)) by.set(k, []); by.get(k).push(t); });
     const dayOf = n => D.days.find(d => D.tasks.some(t => t.day_no === n && t.work_day_id === d.id));
@@ -293,14 +294,14 @@ export async function renderProject(el, id, tab = 'o') {
       ${D.tasks.length ? '</div></details>' : ''}`;
     const g = $('#gen'); if (g) g.onclick = async () => {
       if (D.tasks.length && !(await confirmBox('לבנות את התכנית מחדש?', { body: 'משימות שכבר התחילו או בוצעו נשארות כמו שהן.', ok: 'בנייה מחדש' }))) return;
-      g.disabled = true; const { data, error } = await sb.rpc('generate_work_plan', { p: id }); if (error) { g.disabled = false; return toast(error.message, 4000); }
+      g.disabled = true; const { data, error } = await sb.rpc('generate_work_plan', { p: id }); if (error) { g.disabled = false; return toast(errText(error, 'התכנית לא נבנתה — נסו שוב'), 4000); }
       toast(`נבנתה תכנית ל-${data} ימי עבודה`); location.hash = `#/plan/${id}`;
     };
     bindTasks(box, () => { D.tasks = all; plan(box); });
     bindChecklist(box, all, () => { D.tasks = all; plan(box); });
     D.tasks = all;
   }
-  // ----- צ'קליסט הפרויקט: כל המשימות הפתוחות של הפרויקט במקום אחד (מדוחות ביקור, מהמשרד, מהשטח) -----
+  // ----- צ׳קליסט הפרויקט: כל המשימות הפתוחות של הפרויקט במקום אחד (מדוחות ביקור, מהמשרד, מהשטח) -----
   function checklistHtml(chk) {
     const open = chk.filter(t => t.status !== 'done'), done = chk.filter(t => t.status === 'done');
     const N = u => (D.team.find(x => x.id === u)?.full_name || '').split(' ')[0];
@@ -308,9 +309,9 @@ export async function renderProject(el, id, tab = 'o') {
     const row = t => `<div class="ck ${t.status === 'done' ? 'on' : ''}"><button class="ckbox" data-ck="${t.id}" aria-label="סימון">${t.status === 'done' ? icon('check', 16) : ''}</button>
       <span class="grow"><b>${esc(t.title)}</b>${meta(t) ? `<small>${esc(meta(t))}</small>` : ''}${t.done_note && t.status === 'done' ? `<small>${esc(t.done_note)}</small>` : ''}</span>${(t.photos?.after?.length || t.photos?.before?.length) ? `<span class="pill">${icon('photo', 14)} ${(t.photos.before?.length || 0) + (t.photos.after?.length || 0)}</span>` : ''}
       ${M && t.status !== 'done' ? `<button class="chip sm" data-who="${t.id}">${t.assignee_id ? 'החלפה' : 'שיוך'}</button>` : ''}</div>`;
-    return `<section class="stack cksec"><div class="sh-row"><h3 class="sh">צ'קליסט</h3>${open.length ? `<span class="count">${open.length}</span>` : ''}</div>
+    return `<section class="stack cksec"><div class="sh-row"><h3 class="sh">צ׳קליסט</h3>${open.length ? `<span class="count">${open.length}</span>` : ''}</div>
       <div class="cklist">${open.map(row).join('') || '<div class="empty-line">אין פריטים פתוחים</div>'}
-        <form class="ckadd" id="ckadd"><input id="ckin" placeholder="פריט חדש" autocomplete="off"><button class="btn primary sm">הוספה</button></form></div>
+        <form class="ckadd" id="ckadd"><input id="ckin" placeholder="פריט חדש" autocomplete="off"><button class="btn primary sm">הוספת פריט</button></form></div>
       ${done.length ? `<details class="fold"><summary><span class="sh">בוצעו</span><span class="count">${done.length}</span></summary><div class="cklist">${done.map(row).join('')}</div></details>` : ''}</section>`;
   }
   function bindChecklist(box, all, redraw) {
@@ -375,7 +376,7 @@ export async function renderProject(el, id, tab = 'o') {
     const leadDef = prev?.crew_lead_id || leads[0]?.id, crewDef = new Set((prev?.work_day_crew || []).map(c => c.user_id).filter(u => u !== prev.crew_lead_id));
     const droneDef = D.drones.find(x => x.id === prev?.drone_id && x.health !== 'grounded')?.id;
     const dTag = x => x.health === 'grounded' ? ' — מקורקע' : x.health === 'warning' ? ' — במעקב' : '';
-    sheet(`<h3>שיבוץ ימי עבודה</h3>
+    sheet(`<h3>שיבוץ ימי שטח</h3>
       <div class="row"><label class="field grow">התחלה<input type="date" id="sd" value="${start}"></label><label class="field grow">סיום<input type="date" id="sde" value="${pre.end || endOf(start, pre.n || maxDay)}"></label></div>
       <input type="hidden" id="sn" value="${pre.n || maxDay}"><div class="small muted" id="snn"></div>
       ${(teams || []).length ? `<div class="field">צוות<div class="chips">${teams.map(t => `<button type="button" class="chip" data-team="${t.id}" aria-pressed="false">${esc(t.name)}</button>`).join('')}</div></div>` : ''}
@@ -433,7 +434,7 @@ export async function renderProject(el, id, tab = 'o') {
       };
       const syncN = () => { const a = $('#sd', s), b = $('#sde', s); if (!a.value) return; if (!b.value || b.value < a.value) b.value = a.value;
         let n = 0; for (let d = a.value; d <= b.value; d = add1(d)) if (workday(d, $('#sfr', s).checked)) n++;
-        $('#sn', s).value = n || 1; $('#snn', s).textContent = `${n || 1} ימי עבודה`; drawWx(); applyAv(); };
+        $('#sn', s).value = n || 1; $('#snn', s).textContent = `${n || 1} ימי שטח`; drawWx(); applyAv(); };
       $('#sd', s).onchange = $('#sde', s).onchange = $('#sfr', s).onchange = syncN; $('#se', s).onchange = drawWx; syncN();
       // יציאה מהמשרד = הגעה − נסיעה (כביש × מקדם תנועה) − העמסה. המנהל יכול לשנות ידנית
       let travelMin = null, touched = !!prev?.report_time; const Dp = { office: [31.2524, 34.7908], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15 };
@@ -459,13 +460,13 @@ export async function renderProject(el, id, tab = 'o') {
         const args = { p: id, start_day: $('#sd', s).value, lead: $('#sl', s).value, crew, drone: $('#sdr', s).value || null, report: $('#st', s).value || '06:00', ndays: +$('#sn', s).value || null, skip: plan().filter(x => x.skip).map(x => x.d),
           arrive: $('#sa', s).value || null, shift_end: $('#se', s).value || null, fridays: $('#sfr', s).checked };
         if (!args.start_day || !args.lead || $('#sl', s).selectedOptions[0]?.disabled) return toast(args.start_day ? 'אין ראש צוות פנוי בתאריכים האלה' : 'חסר תאריך');
-        const { data, error } = await sb.rpc('schedule_work_days', args); if (error) return toast(error.message, 4000);
-        close(); toast(`שובצו ${data} ימי עבודה`); reload('o');
+        const { data, error } = await sb.rpc('schedule_work_days', args); if (error) return toast(errText(error, 'השיבוץ לא נשמר — נסו שוב'), 4000);
+        close(); toast(`שובצו ${data} ימי שטח`); reload('o');
       };
     });
   }
 
-  // ----- צ'אט צוות -----
+  // ----- צ׳אט צוות -----
   async function chat(box) {
     box.innerHTML = `<div id="cx"></div>`;
     (await import('./chat.js')).renderChat($('#cx'), { project: p });
@@ -532,11 +533,11 @@ export async function renderProject(el, id, tab = 'o') {
     };
     const c = $('#cls'); if (c) c.onclick = async () => {
       // פיילוט: האפליקציה רק מדווחת שבוצע. ההחלטה אם להמשיך להצעה — ניהולית, במאנדי (הליד עובר ל"פיילוט בוצע — ממתין להצעה")
-      if (p.engagement === 'פיילוט') { if (!(await confirmBox('סיום הפיילוט?', { ok: 'סיום' }))) return;
-        const { error } = await sb.rpc('close_pilot', { p: id, ok: true }); if (error) return toast(error.message); toast('הפיילוט הסתיים'); return reload('s'); }
+      if (p.engagement === 'פיילוט') { if (!(await confirmBox('סיום הפיילוט?', { ok: 'סיום הפיילוט' }))) return;
+        const { error } = await sb.rpc('close_pilot', { p: id, ok: true }); if (error) return toast(errText(error, 'לא נסגר — נסו שוב')); toast('הפיילוט הסתיים'); return reload('s'); }
       const openDays = D.days.some(d => d.status !== 'done');
       if (!(await confirmBox(openDays ? 'יש ימים שלא נסגרו' : 'לסגור את הפרויקט?', { body: openDays ? 'לסגור את הפרויקט בכל זאת?' : '', ok: 'סגירת פרויקט' }))) return;
-      const { error } = await sb.rpc('close_project', { p: id }); if (error) return toast(error.message);
+      const { error } = await sb.rpc('close_project', { p: id }); if (error) return toast(errText(error, 'הפרויקט לא נסגר — נסו שוב'));
       toast('הפרויקט נסגר'); reload('s');
     };
   }

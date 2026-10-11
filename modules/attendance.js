@@ -58,7 +58,7 @@ export async function myOpenShift() {
   if (s && closed.has(s.id)) s = null;
   await cache.set('open-shift', s); return s;
 }
-const km = m => m >= 1000 ? (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' ק"מ' : Math.round(m) + ' מ\'';
+const km = m => m >= 1000 ? (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' ק״מ' : Math.round(m) + ' מ׳';
 async function consent() {
   if (state.profile.attendance_consent_at) return true;
   return new Promise(res => sheet(`<h3>רישום שעות ומיקום</h3>
@@ -67,7 +67,7 @@ async function consent() {
       <p><b>אין מעקב רציף</b>, ואין איסוף מיקום מחוץ לשעות העבודה, בערב, בלינה או בסוף השבוע.</p>
       <p>את המיקום רואים רק המנהלים. לחשבת השכר עובר סיכום שעות בלי מיקום. המיקום נמחק אחרי 90 יום. שעות העבודה נשמרות 7 שנים כנדרש בחוק.</p>
       <p>אין קליטה או GPS? אפשר להחתים בלי מיקום. אפשר לעיין ברישום ולבקש תיקון בכל זמן.</p></div>
-    <div class="row-btns"><button class="btn ghost" id="cn">לא עכשיו</button><button class="btn primary" id="cy">קראתי ומסכים</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" id="cn">לא עכשיו</button><button class="btn primary" id="cy">קראתי ואישרתי</button></div>`, (s, close) => {
     $('#cn', s).onclick = () => { close(); res(false); };
     $('#cy', s).onclick = async () => { if ($('#cy', s).disabled) return; $('#cy', s).disabled = true; const t = new Date().toISOString(); state.profile.attendance_consent_at = t; await enqueue({ kind: 'update', table: 'profiles', rowId: state.user.id, patch: { attendance_consent_at: t } }); close(); res(true); };
   }));
@@ -84,7 +84,7 @@ export async function clockIn(after, { project_id: pid0 = null } = {}) {
   if (loc && navigator.onLine) try {
     const { data } = await sb.rpc('my_nearest_place', { la: loc.lat, ln: loc.lng }); const n = data?.[0];
     if (n && n.dist > n.radius) {
-      note = await ask(`אתה ${km(n.dist)} מ${n.place}`, { hint: 'הכניסה תסומן למנהל', placeholder: 'למשל: יצאתי מהבית ישר לאתר', ok: 'כניסה למשמרת', optional: true });
+      note = await ask(`במרחק ${km(n.dist)} מ${n.place}`, { hint: 'הכניסה תסומן למנהל', placeholder: 'למשל: יצאתי מהבית ישר לאתר', ok: 'כניסה למשמרת', optional: true });
       if (note == null) return toast('הכניסה בוטלה');
       note = note.trim() || null;
     }
@@ -112,7 +112,7 @@ export async function clockOut(open, after) {
   const mins = Math.round((Date.now() - new Date(open.start_at)) / 6e4);
   sheet(`<h3>יציאה מהמשמרת</h3><div class="kpis"><div class="kpi"><b>${tm(open.start_at)}</b><span>כניסה</span></div><div class="kpi"><b>${tm(new Date().toISOString())}</b><span>יציאה</span></div><div class="kpi"><b>${hhmm(mins / 60)}</b><span>משך</span></div></div>
     <input type="text" id="bn" placeholder="הערה (לא חובה)">
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="bo">יציאה</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="bo">יציאה מהמשמרת</button></div>`, (s, close) => {
     $('#bo', s).onclick = async () => {
       $('#bo', s).disabled = true; $('#bo', s).textContent = 'מאתר מיקום…';
       const note = $('#bn', s).value.trim() || null;
@@ -156,7 +156,7 @@ async function suggestIn(el) {
     const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { maximumAge: 300000, timeout: 8000 }));
     const { data } = await sb.rpc('my_nearest_place', { la: pos.coords.latitude, ln: pos.coords.longitude }); const n = data?.[0];
     if (!n || n.dist > n.radius || !el.isConnected) return;
-    el.classList.add('hint'); const b = el.querySelector('.grow b'); if (b) b.textContent = `אתה ב${n.place} — להיכנס למשמרת?`;
+    el.classList.add('hint'); const b = el.querySelector('.grow b'); if (b) b.textContent = `נמצאים ב${n.place} — להיכנס למשמרת?`;
   } catch { /* */ }
 }
 
@@ -315,7 +315,7 @@ export async function renderHours(el, userId, month) {
       <label class="field">תאריך<input type="date" id="ed" value="${day}"></label>
       <div class="row"><label class="field grow">כניסה<input type="time" id="es" value="${sh ? tm(sh.start_at) : '07:00'}"></label><label class="field grow">יציאה<input type="time" id="ee" value="${sh?.end_at ? tm(sh.end_at) : '16:00'}"></label></div>
       <label class="field">סיבה (חובה — נשמר ביומן)<input type="text" id="er" placeholder="למשל: שכח להחתים יציאה, אושר מול ראש הצוות"></label>
-      <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="eo">שמירה</button></div>`, (s, close) => {
+      <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="eo">שמירת המשמרת</button></div>`, (s, close) => {
       $('#eo', s).onclick = async () => {
         if (!$('#er', s).value.trim()) return toast('חובה לכתוב סיבה');
         const eo = $('#eo', s); if (eo.disabled) return; lock(eo, true);
@@ -360,7 +360,7 @@ export async function renderAttendance(el, month) {
   const payTotal = rows.reduce((a, r) => a + (r.E?.total || 0), 0);
   const nowOn = (shifts || []).filter(s => s.status === 'open' && (people || []).some(p => p.id === s.user_id));
   const idle = rows.filter(r => !(r.R.totals.days || r.am || r.E?.total));
-  const toLock = rows.filter(r => r.R.totals.days && !r.am?.locked);
+  const toLock = rows.filter(r => r.R.totals.days && !r.am?.locked && (state.profile?.role === 'admin' || r.p.id !== state.user.id));   // את החודש של מנהל התפעול נועלת ההנהלה
   const pendAll = (pend || []).length + (pabs || []).length;
   const box = $('#ab'); if (!box) return;
   const { data: pShifts } = (pend || []).some(r => r.shift_id) ? await sb.from('shifts').select('*').in('id', pend.filter(r => r.shift_id).map(r => r.shift_id)) : { data: [] };
@@ -448,7 +448,7 @@ async function exportXlsx(month, rows, abs, rates, S) {
   X.writeFile(wb, `דוח-שעות-${month}.xlsx`);
 }
 
-// כניסה רחוקה מהאתר (מעל 1 ק"מ מהמיקום הידוע של הפרויקט/האתר) — דגל למנהל, לא חסימה
+// כניסה רחוקה מהאתר (מעל 1 ק״מ מהמיקום הידוע של הפרויקט/האתר) — דגל למנהל, לא חסימה
 async function geoFlags(R) {
   const ids = [...new Set(R.days.flatMap(d => d.shifts.map(s => s.project_id)).filter(Boolean))]; if (!ids.length) return;
   const { data } = await sb.from('projects').select('id,lat,lng,sites(lat,lng)').in('id', ids);
@@ -457,6 +457,6 @@ async function geoFlags(R) {
   for (const d of R.days) for (const s of d.shifts) {
     const t = at[s.project_id]; if (!t || s.start_lat == null) continue;
     const dist = km(s.start_lat, s.start_lng, t.lat, t.lng);
-    if (dist > 1) { const f = `כניסה במרחק ${dist < 10 ? dist.toFixed(1) : Math.round(dist)} ק"מ מהאתר`; d.flags.push(f); R.flags.push(`${+d.date.slice(8)}.${+d.date.slice(5, 7)}: ${f}`); }
+    if (dist > 1) { const f = `כניסה במרחק ${dist < 10 ? dist.toFixed(1) : Math.round(dist)} ק״מ מהאתר`; d.flags.push(f); R.flags.push(`${+d.date.slice(8)}.${+d.date.slice(5, 7)}: ${f}`); }
   }
 }

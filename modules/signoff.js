@@ -30,7 +30,7 @@ export async function renderSignoff(el, pid, dayId = null) {
     if (!dayOf.has(r.report_date)) { x.work = x.work || r.work || ''; x.gal += Number(r.gallons) || 0; x.rep = r; }
     if (r.issues) x.issues = [...(x.issues || []), r.issues]; D.set(r.report_date, x); }
   const days = [...D.values()].sort((a, b) => a.d < b.d ? -1 : 1);
-  if (!days.length) { el.innerHTML = `<header class="phead">${backBtn('#/p/' + pid)}<h1 class="grow">החתמת לקוח</h1></header><div class="muted">${esc(p.name)}</div><div class="empty-line">עוד אין ימי עבודה מתועדים בפרויקט</div>`; return; }
+  if (!days.length) { el.innerHTML = `<header class="phead">${backBtn('#/p/' + pid)}<h1 class="grow">החתמת לקוח</h1></header><div class="muted">${esc(p.name)}</div><div class="empty-line">עוד אין ימי שטח מתועדים בפרויקט</div>`; return; }
 
   // ---- תמונות: מהאפליקציה (לפני/אחרי לפי יום) + מהדוחות במאנדי. בחירה מראש: "לפני" ראשונה ו"אחרי" אחרונה לכל יום, עד 12
   const wdDay = new Map(wds.map(w => [w.id, w.day]));

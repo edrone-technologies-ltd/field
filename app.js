@@ -1,11 +1,12 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
 import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir, skeleton } from './lib/core.js';
+import { errText } from './lib/audit.js';
 
 const app = $('#app');
 // לשוניות תחתונות — מוצגות לפי ההרשאות
 const TABS = [
   { k: '', t: 'בית', ic: 'home', ok: () => true },
-  { k: 'schedule', t: 'לו"ז', ic: 'calendar', ok: () => can('today') || isManager() },   // מנהל: לוח השיבוץ · עובד: הימים שלו
+  { k: 'schedule', t: 'לו״ז', ic: 'calendar', ok: () => can('today') || isManager() },   // מנהל: לוח השיבוץ · עובד: הימים שלו
   { k: 'projects', t: 'פרויקטים', ic: 'folder', ok: () => can('projects') },
   { k: 'inbox', t: 'הודעות', ic: 'chat', ok: () => true },
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
@@ -36,7 +37,7 @@ function nav(show, active = '') {
   unread();
 }
 // כפתור + : המקום היחיד ליצירת משהו חדש. רשת אחת, מילה אחת לכל פעולה; בתוך פרויקט — הדוח משויך אליו מראש
-const ADD = { daily: ['report', 'דוח יומי'], issue: ['alert', 'תקלה'], expense: ['receipt', 'הוצאה'], spec: ['clipboard', 'אפיון'], signoff: ['pen', 'החתמה'], visit: ['users', 'ביקור'], summary: ['activity', 'סיכום'] };
+const ADD = { daily: ['report', 'דוח יומי'], issue: ['alert', 'תקלה'], expense: ['receipt', 'הוצאה'], spec: ['clipboard', 'אפיון'], signoff: ['pen', 'החתמת לקוח'], visit: ['users', 'ביקור'], summary: ['activity', 'סיכום'] };
 async function quickAdd() {
   const { newReport, TYPES } = await import('./modules/reports.js');
   const pid = (location.hash.match(/^#\/p\/([0-9a-f-]{36})/) || [])[1] || null;
@@ -114,7 +115,7 @@ async function pushRow() {
   const st = await pushState().catch(() => 'unsupported'); const t = $('#pushtxt'), b = $('#pushbtn'); if (!t) return;
   t.textContent = PUSH_TXT[st];
   b.innerHTML = st === 'off' ? '<button class="btn ghost sm">הפעלה</button>' : st === 'on' ? '<span class="pill ok">פועל</span>' : '';
-  const btn = b.querySelector('button'); if (btn) btn.onclick = async () => { btn.disabled = true; try { await enablePush(); toast('ההתראות הופעלו'); } catch (e) { toast(e.message); } pushRow(); };
+  const btn = b.querySelector('button'); if (btn) btn.onclick = async () => { btn.disabled = true; try { await enablePush(); toast('ההתראות הופעלו'); } catch (e) { toast(errText(e, 'ההתראות לא הופעלו — בדקו את הרשאות הטלפון')); } pushRow(); };
 }
 export async function pushCard(box) {
   try { if (localStorage.getItem('edrone-push-dismiss')) return; } catch {}
@@ -122,10 +123,10 @@ export async function pushCard(box) {
   if (!['off', 'install'].includes(st) || !box) return;
   const c = document.createElement('div'); c.className = 'promo pushpromo';
   c.innerHTML = `<span class="mic">${icon('chat', 20)}</span><span class="grow"><b>${st === 'off' ? 'להפעיל התראות?' : 'מתקינים את האפליקציה'}</b><small>${st === 'off' ? 'כדי לדעת מיד על הודעה, שיבוץ או תקלה' : (/iphone|ipad/i.test(navigator.userAgent) ? 'בספארי: שיתוף ← "הוסף למסך הבית". אחר כך אפשר להפעיל התראות' : 'מוסיפים למסך הבית, ואז אפשר להפעיל התראות')}</small></span>
-    ${st === 'off' ? '<button class="btn primary sm" id="pc-on">הפעלה</button>' : ''}<button class="x" id="pc-x" aria-label="סגירה">×</button>`;
+    ${st === 'off' ? '<button class="btn primary sm" id="pc-on">הפעלת התראות</button>' : ''}<button class="x" id="pc-x" aria-label="סגירה">×</button>`;
   box.prepend(c);
   $('#pc-x').onclick = () => { c.remove(); try { localStorage.setItem('edrone-push-dismiss', '1'); } catch {} };
-  const on = $('#pc-on'); if (on) on.onclick = async () => { try { await enablePush(); c.remove(); toast('ההתראות הופעלו'); } catch (e) { toast(e.message); } };
+  const on = $('#pc-on'); if (on) on.onclick = async () => { try { await enablePush(); c.remove(); toast('ההתראות הופעלו'); } catch (e) { toast(errText(e, 'ההתראות לא הופעלו — בדקו את הרשאות הטלפון')); } };
 }
 window.__pushCard = pushCard;
 function setTheme(v) { if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; try { localStorage.setItem('edrone-theme', v); } catch {} themeColor(); }

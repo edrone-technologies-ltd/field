@@ -1,4 +1,4 @@
-// הודעות פנימיות: שיחה אישית עם כל עובד + קבוצות תפוצה. לא קשור לפרויקטים (לצ'אט פרויקט יש מקום בתוך הפרויקט).
+// הודעות פנימיות: שיחה אישית עם כל עובד + קבוצות תפוצה. לא קשור לפרויקטים (לצ׳אט פרויקט יש מקום בתוך הפרויקט).
 import { sb, state, isManager, cache, sheet, $, $$, esc, initials, icon, timeAgo, toast, ROLE_HE } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
@@ -37,7 +37,7 @@ async function newMessage() {
 function newGroup(people, back) {
   sheet(`<h3>קבוצת תפוצה חדשה</h3><input type="text" id="gt" placeholder="שם הקבוצה (למשל: צוות אינטל חיפה)">
     <div class="chips">${people.map(p => `<button class="chip" data-u="${p.id}" aria-pressed="false">${esc(p.full_name)}</button>`).join('')}</div>
-    <div class="lrow"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="gc">פתיחה</button></div>`, (s, close) => {
+    <div class="lrow"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="gc">פתיחת הקבוצה</button></div>`, (s, close) => {
     $$('[data-u]', s).forEach(c => c.onclick = () => c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') !== 'true'));
     $('#gc', s).onclick = async () => {
       const t = $('#gt', s).value.trim(), m = $$('[data-u][aria-pressed="true"]', s).map(c => c.dataset.u);

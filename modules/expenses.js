@@ -57,11 +57,11 @@ export async function newExpense(projectId, done, back, file0 = null) {
     <div class="chips">${Object.entries(CATS).map(([k, t]) => `<button class="chip" data-c="${k}" aria-pressed="${k === cat}">${t}</button>`).join('')}</div>
     <div class="row"><label class="field grow">סכום (₪)<input type="number" inputmode="decimal" step="0.01" id="xa"></label><label class="field grow">תאריך<input type="date" id="xd" value="${isoDay()}"></label></div>
     <label class="field">ספק / מקום<input type="text" id="xv" placeholder="למשל: פז, חניון עזריאלי"></label>
-    <div id="fuel" class="row"><label class="field grow">ליטרים<input type="number" inputmode="decimal" id="xl"></label><label class="field grow">ק"מ ברכב<input type="number" inputmode="numeric" id="xo"></label></div>
+    <div id="fuel" class="row"><label class="field grow">ליטרים<input type="number" inputmode="decimal" id="xl"></label><label class="field grow">ק״מ ברכב<input type="number" inputmode="numeric" id="xo"></label></div>
     ${(vehicles || []).length ? `<label class="field" id="veh">רכב<select id="xr"><option value="">—</option>${vehicles.map(v => `<option value="${v.id}" ${v.id === L.veh ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select></label>` : ''}
     <label class="field">פרויקט<select id="xp"><option value="">כללי</option>${(projects || []).map(p => `<option value="${p.id}" ${p.id === projectId ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
     <label class="field">הערה<input type="text" id="xn"></label>
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="xgo">שליחה</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="xgo">שליחה לאישור</button></div>`, (s, close) => {
     const pic = () => { const i = $('#rci', s); if (prevUrl) URL.revokeObjectURL(prevUrl); prevUrl = file ? URL.createObjectURL(file) : null; i.hidden = !file; if (file) i.src = prevUrl;
       $('#rcn', s).innerHTML = file ? `${icon('check', 18)} הקבלה צולמה · החלפה` : `${icon('photo', 22)} צילום קבלה`; $('#rcl', s).classList.toggle('on', !!file);
       $('#xgo', s).textContent = file ? 'שליחה' : 'שליחה בלי קבלה'; };
@@ -86,7 +86,7 @@ export async function newExpense(projectId, done, back, file0 = null) {
 async function exportXls(rows) {
   if (!window.XLSX) await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
   const X = window.XLSX, ok = rows.filter(r => r.status === 'approved');
-  const data = [['תאריך', 'עובד', 'קטגוריה', 'סכום ₪', 'ספק', 'פרויקט', 'ליטרים', 'ק"מ', 'הערה', 'קבלה']].concat(ok.map(r => [r.day, r.profiles?.full_name || '', CATS[r.category], Number(r.amount), r.vendor || '', r.projects?.name || '', r.liters || '', r.odometer || '', r.note || '', r.receipt_path ? 'יש' : 'אין']));
+  const data = [['תאריך', 'עובד', 'קטגוריה', 'סכום ₪', 'ספק', 'פרויקט', 'ליטרים', 'ק״מ', 'הערה', 'קבלה']].concat(ok.map(r => [r.day, r.profiles?.full_name || '', CATS[r.category], Number(r.amount), r.vendor || '', r.projects?.name || '', r.liters || '', r.odometer || '', r.note || '', r.receipt_path ? 'יש' : 'אין']));
   data.push([], ['סה״כ', '', '', ok.reduce((t, r) => t + Number(r.amount), 0)]);
   const wb = X.utils.book_new(); wb.Workbook = { Views: [{ RTL: true }] }; const ws = X.utils.aoa_to_sheet(data); ws['!views'] = [{ RTL: true }]; ws['!cols'] = [11, 16, 14, 10, 18, 26, 8, 8, 24, 7].map(w => ({ wch: w }));
   X.utils.book_append_sheet(wb, ws, 'הוצאות מאושרות'); X.writeFile(wb, `הוצאות-שטח-${isoDay().slice(0, 7)}.xlsx`);

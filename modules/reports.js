@@ -97,7 +97,7 @@ export function issueSheet(pid, after, back, dayId = null) {
     <textarea id="ib" rows="4" placeholder="מה קרה, איפה, מה נעשה"></textarea>
     <label class="tog"><span>קריטי — העבודה נעצרה / סכנה</span><span class="sw"><input type="checkbox" id="ic"><i></i></span></label>
     <label class="btn ghost block">${icon('photo', 18)} תמונות<input type="file" accept="image/*" multiple id="ip" hidden></label><div id="ipn" class="small muted"></div>
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="isend">דיווח</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="isend">דיווח תקלה</button></div>`, (s, close) => {
     $$('[data-k]', s).forEach(b => b.onclick = () => { kind = kind === b.dataset.k ? null : b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x.dataset.k === kind)); });
     $('#ic', s).onchange = e => crit = e.target.checked;
     $('#ip', s).onchange = e => { files = [...e.target.files]; $('#ipn', s).textContent = files.length ? `${files.length} תמונות יצורפו` : ''; };
@@ -117,7 +117,7 @@ export function issueSheet(pid, after, back, dayId = null) {
 
 // ---------- סיכום פרויקט פנימי ----------
 export async function renderSummary(el, pid) {
-  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין גישה</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין לך גישה למסך הזה</div>'; return; }
   el.innerHTML = `<div class="skel"></div>`;
   const [{ data: p }, { data: s }, { data: iss }, { data: reps }, { data: wd }] = await Promise.all([
     sb.from('projects').select('id,name').eq('id', pid).single(),

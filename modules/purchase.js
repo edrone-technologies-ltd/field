@@ -9,8 +9,8 @@ export async function renderPurchase(el) {
   el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">רכש ומלאי</h1><button class="hbtn" id="padd" aria-label="בקשת רכש">${icon('plus', 20)}</button></header>
     <div id="pb" class="stack lg"><div class="skel"></div></div>`;
   const [{ data: reqs }, { data: cat }] = await Promise.all([
-    sb.from('purchase_requests').select('*, purchase_lines(name,qty,unit), profiles:requested_by(full_name), projects(name)').order('created_at', { ascending: false }).limit(40),
-    sb.from('catalog_items').select('*').eq('in_app', true).order('is_material', { ascending: false }).order('name'),
+    sb.from('purchase_requests').select('id,title,requested_by,project_id,needed_by,notes,status,monday_item_id,monday_stage,decided_at,created_at,updated_at, purchase_lines(name,qty,unit), profiles:requested_by(full_name), projects(name)').order('created_at', { ascending: false }).limit(40),
+    sb.from('catalog_items').select('monday_item_id,name,unit,order_unit,units_per_order,min_qty,stock,sku,supplier_name,is_material,in_app').eq('in_app', true).order('is_material', { ascending: false }).order('name'),
   ]);
   const lows = (cat || []).filter(low);
   $('#pb').innerHTML = `
@@ -29,7 +29,7 @@ export async function renderPurchase(el) {
 }
 
 export async function newRequest(cat, preselect) {
-  if (!cat) { const { data } = await sb.from('catalog_items').select('*').eq('in_app', true).order('is_material', { ascending: false }).order('name'); cat = data || []; }
+  if (!cat) { const { data } = await sb.from('catalog_items').select('monday_item_id,name,unit,order_unit,units_per_order,min_qty,stock,sku,supplier_name,is_material,in_app').eq('in_app', true).order('is_material', { ascending: false }).order('name'); cat = data || []; }
   const { data: projects } = await sb.from('projects').select('id,name,status_label,monday_group').neq('monday_group', 'group_mm5052gw').order('name');
   // כמות מוצעת = עד פעמיים המינימום. בלי בחירה מראש — כל מה שמתחת למינימום כבר בסל
   // כמות מוצעת (ביחידות הזמנה — קרטון/גלון): מה שחסר עד המינימום + יחידת הזמנה אחת מעליו, כדי שלא נהיה שוב "נמוך" ביום ההגעה.
@@ -39,7 +39,6 @@ export async function newRequest(cat, preselect) {
   for (const k of preselect ? [].concat(preselect) : cat.filter(low).map(c => c.monday_item_id)) { const c = cat.find(x => x.monday_item_id === k); if (c) Q[k] = want(c); }
   cat = [...cat].sort((a, b) => (Q[b.monday_item_id] ? 1 : 0) - (Q[a.monday_item_id] ? 1 : 0) || low(b) - low(a));
   const free = [];
-  const total = () => cat.reduce((t, c) => t + (Q[c.monday_item_id] || 0) * Number(c.price_per_order || 0), 0) + free.reduce((t, f) => t + f.qty * (f.price || 0), 0);
   sheet(`<h3>בקשת רכש</h3>
     <div class="list" id="ci">${cat.map(c => `<div class="lrow"><span class="grow"><b>${esc(c.name)}</b><small>${[esc(c.order_unit || ''), `במלאי ${c.stock ?? '—'}`].filter(Boolean).join(' · ')}${low(c) ? ' · <span class="issue">נמוך</span>' : ''}</small></span>
       <span class="qty"><button type="button" data-m="${c.monday_item_id}">−</button><b id="q-${c.monday_item_id}">${Q[c.monday_item_id] || 0}</b><button type="button" data-p="${c.monday_item_id}">+</button></span>${per(c) > 1 && c.unit ? `<small class="qeq" id="qe-${c.monday_item_id}">${eq(c)}</small>` : ''}</div>`).join('')}</div>
@@ -52,13 +51,13 @@ export async function newRequest(cat, preselect) {
     $$('[data-m]', s).forEach(b => b.onclick = () => { const k = b.dataset.m; Q[k] = Math.max(0, (Q[k] || 0) - 1); $('#q-' + k, s).textContent = Q[k]; upd(); });
     upd();
     $('#rgo', s).onclick = async () => {
-      const lines = cat.filter(c => Q[c.monday_item_id] > 0).map(c => ({ catalog_monday_id: c.monday_item_id, name: c.name, qty: Q[c.monday_item_id], unit: c.order_unit || c.unit, unit_price: c.price_per_order }))
+      const lines = cat.filter(c => Q[c.monday_item_id] > 0).map(c => ({ catalog_monday_id: c.monday_item_id, name: c.name, qty: Q[c.monday_item_id], unit: c.order_unit || c.unit }))   // מחיר וסכום — השרת ממלא (לא נשלח למכשיר)
 ;
       if (!lines.length) return toast('לא נבחרו פריטים');
       const go = $('#rgo', s); if (go.disabled) return; go.disabled = true;
       const proj = (projects || []).find(p => p.id === $('#rp', s).value);
       const id = uid(), title = `${lines.map(l => l.name).slice(0, 2).join(' + ')}${lines.length > 2 ? ` ועוד ${lines.length - 2}` : ''}${proj ? ' — ' + proj.name : ''}`;
-      await enqueue({ kind: 'insert', table: 'purchase_requests', row: { id, title, requested_by: state.user.id, project_id: proj?.id || null, needed_by: $('#rd', s).value || null, notes: $('#rn', s).value.trim() || null, total: Math.round(total() * 100) / 100 } });
+      await enqueue({ kind: 'insert', table: 'purchase_requests', row: { id, title, requested_by: state.user.id, project_id: proj?.id || null, needed_by: $('#rd', s).value || null, notes: $('#rn', s).value.trim() || null } });
       for (const l of lines) await enqueue({ kind: 'insert', table: 'purchase_lines', row: { id: uid(), request_id: id, ...l } });
       close(); toast('הבקשה נשלחה'); await flush(); renderPurchase($('#app'));
     };

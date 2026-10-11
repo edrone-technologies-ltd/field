@@ -1,5 +1,5 @@
 // דוח ביקור / ביקורת: מנהל מבקר צוות, סיור עם לקוח או בקרת איכות. שייך לפרויקט אבל לא לשרשרת הצוות.
-// ממצאי "לתיקון" עוברים בלחיצה אחת לצ'קליסט הפרויקט — הכל במקום אחד, התראה אחת.
+// ממצאי "לתיקון" עוברים בלחיצה אחת לצ׳קליסט הפרויקט — הכל במקום אחד, התראה אחת.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, backBtn, signedUrls, zoom, isoDay, dm, goUp, confirmBox } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { errText } from '../lib/audit.js';
@@ -12,7 +12,7 @@ const SEV = { ok: ['תקין', 'ok'], note: ['הערה', 'warn'], fix: ['לתי�
 
 // טופס חדש / עריכה
 export async function renderVisitForm(el, pid, vid) {
-  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין גישה</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין לך גישה למסך הזה</div>'; return; }
   const [{ data: p }, { data: v }] = await Promise.all([
     sb.from('projects').select('id,name,client_name,sites(contact_name)').eq('id', pid).single(),
     vid ? sb.from('project_visits').select('*').eq('id', vid).single() : Promise.resolve({ data: null })]);
@@ -52,7 +52,7 @@ export async function renderVisitForm(el, pid, vid) {
         ${f.kind === 'client_tour' ? `<label class="field">מה הלקוח אמר<textarea id="vc" rows="3" placeholder="טענות, בקשות, שביעות רצון">${esc(f.client_feedback || '')}</textarea></label>` : ''}
         <div class="field">ציון כללי<div class="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-r="${n}" aria-pressed="${f.rating >= n}">★</button>`).join('')}</div></div>
         <label class="field">סיכום<textarea id="vs" rows="3">${esc(f.summary || '')}</textarea></label>
-        <button class="btn primary block big" id="vsave">שמירת דוח ביקור${pending(f).length ? ` + ${pending(f).length} לצ'קליסט` : ''}</button>
+        <button class="btn primary block big" id="vsave">שמירת דוח ביקור${pending(f).length ? ` + ${pending(f).length} לצ׳קליסט` : ''}</button>
       </div>`;
     const keep = () => { if ($('#vdue')) who.due = $('#vdue').value; f.visit_date = $('#vd').value; f.participants = $('#vp').value; f.summary = $('#vs').value; if ($('#vc')) f.client_feedback = $('#vc').value; $$('[data-ft]').forEach(t => f.findings[+t.dataset.ft].text = t.value); };
     const dropB = $('#vdrop'); if (dropB) dropB.onclick = async () => { if (!(await confirmBox('למחוק את הטיוטה ולהתחיל דוח חדש?', { ok: 'מחיקה' }))) return; dput(null); renderVisitForm(el, pid); };
@@ -99,7 +99,7 @@ export async function renderVisitForm(el, pid, vid) {
       const { data, error } = vid ? await sb.from('project_visits').update(row).eq('id', vid).select('id').single() : await sb.from('project_visits').insert(row).select('id').single();
       if (error) { $('#vsave').disabled = false; return toast(errText(error, 'הדוח לא נשמר — נסו שוב')); }
       dput(null); const n = await toChecklist(data.id, pid, f, who.id, who.due);
-      toast(n ? `דוח הביקור נשמר · ${n} פריטים בצ'קליסט` : 'דוח הביקור נשמר'); location.replace(`#/visit/${data.id}`);
+      toast(n ? `דוח הביקור נשמר · ${n} פריטים בצ׳קליסט` : 'דוח הביקור נשמר'); location.replace(`#/visit/${data.id}`);
     };
   };
   draw();
@@ -121,7 +121,7 @@ export async function renderVisit(el, id) {
   const unas = live.filter(t => t.status !== 'done' && !t.assignee_id);
   const first = n => (n || '').split(' ')[0];
   const st = x => { const t = TK.get(x.task_id); if (!t) return '';
-    if (t.status !== 'done' && t.assignee_id === state.user.id) return `<button class="btn primary sm" data-fix="${t.id}">טיפול</button>`;
+    if (t.status !== 'done' && t.assignee_id === state.user.id) return `<button class="btn primary sm" data-fix="${t.id}">סימון כטופל</button>`;
     return t.status === 'done' ? `<span class="pill ok">טופל · ${dm(isoDay(new Date(t.done_at)))}</span>` : t.assignee_id ? `<span class="pill warn">אצל ${esc(first(t.profiles?.full_name))}${t.due ? ' · עד ' + dm(t.due) : ''}</span>` : '<span class="pill">ממתין לשיוך</span>'; };
   const row = (lbl, list) => list.length ? `<div class="small muted">${lbl}</div><div class="fphs">${list.map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : '';
   const shots = x => { const t = TK.get(x.task_id), aft = t?.photos?.after || [];
@@ -135,8 +135,8 @@ export async function renderVisit(el, id) {
       ${F.length ? `<section class="stack"><div class="sh-row"><h3 class="sh">ממצאים</h3><span class="count">${F.length}</span></div>
         ${F.map(x => `<div class="finding ro"><div class="row"><span class="pill ${SEV[x.sev]?.[1] || ''}">${SEV[x.sev]?.[0] || ''}</span><span class="grow"></span>${st(x)}</div>
           <div>${esc(x.text || '')}</div>${shots(x)}</div>`).join('')}</section>` : ''}
-      ${T.length ? `<section class="stack"><h3 class="sh">צ'קליסט לצוות</h3>${T.map(x => `<div class="finding ro"><div class="row"><b class="grow">${esc(x.text)}</b>${st(x)}</div>${shots(x)}</div>`).join('')}</section>` : ''}
-      ${M && open.length ? `<button class="btn primary block" id="tochk">העברה לצ'קליסט הפרויקט (${open.length})</button>` : ''}
+      ${T.length ? `<section class="stack"><h3 class="sh">צ׳קליסט לצוות</h3>${T.map(x => `<div class="finding ro"><div class="row"><b class="grow">${esc(x.text)}</b>${st(x)}</div>${shots(x)}</div>`).join('')}</section>` : ''}
+      ${M && open.length ? `<button class="btn primary block" id="tochk">העברה לצ׳קליסט הפרויקט (${open.length})</button>` : ''}
       ${v.client_feedback ? `<section class="stack"><h3 class="sh">מה הלקוח אמר</h3><div class="card">${esc(v.client_feedback).replace(/\n/g, '<br>')}</div></section>` : ''}
       ${v.summary ? `<section class="stack"><h3 class="sh">סיכום</h3><div class="card">${esc(v.summary).replace(/\n/g, '<br>')}</div></section>` : ''}
     </div>`;
@@ -153,16 +153,16 @@ export async function renderVisit(el, id) {
       });
     });
   };
-  // כל הממצאים לתיקון בהכנסה אחת לצ'קליסט — טריגר ההתראות שולח התראה מרוכזת אחת
+  // כל הממצאים לתיקון בהכנסה אחת לצ׳קליסט — טריגר ההתראות שולח התראה מרוכזת אחת
   const b = $('#tochk'); if (b) b.onclick = async () => {
     b.disabled = true;
     const n = await toChecklist(v.id, v.project_id, { kind: v.kind, visit_date: v.visit_date, findings: F, todo: T });
     if (n == null) { b.disabled = false; return; }
-    toast(`${n} פריטים נוספו לצ'קליסט`); location.hash = `#/p/${v.project_id}/t`;
+    toast(`${n} פריטים נוספו לצ׳קליסט`); location.hash = `#/p/${v.project_id}/t`;
   };
 }
 
-// מה עוד לא נשתל בצ'קליסט: ממצאי "לתיקון" + פריטים שנכתבו ידנית
+// מה עוד לא נשתל בצ׳קליסט: ממצאי "לתיקון" + פריטים שנכתבו ידנית
 const pending = f => [...f.findings.filter(x => x.sev === 'fix' && !x.task_id && (x.text || '').trim()), ...f.todo.filter(x => !x.task_id && x.text)];
 
 // הכנסה אחת לטבלת המשימות → התראה מרוכזת אחת; מסמנים task_id על כל פריט
@@ -179,16 +179,16 @@ async function toChecklist(vid, pid, f, assignee = null, due = null) {
 
 function todoHtml(f, urls = {}) {
   const fx = f.findings.filter(x => x.sev === 'fix' && (x.text || '').trim());
-  return `<section class="stack"><div class="sh-row"><h3 class="sh">צ'קליסט לצוות</h3>${fx.length + f.todo.length ? `<span class="count">${fx.length + f.todo.length}</span>` : ''}</div>
+  return `<section class="stack"><div class="sh-row"><h3 class="sh">צ׳קליסט לצוות</h3>${fx.length + f.todo.length ? `<span class="count">${fx.length + f.todo.length}</span>` : ''}</div>
     <div class="cklist">${fx.map(x => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b></span>${x.task_id ? `<span class="muted">${icon('check', 16)}</span>` : '<span class="pill bad">לתיקון</span>'}</div>`).join('')}
       ${f.todo.map((x, i) => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b>${PH(x).length ? `<span class="fphs sm">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</span>` : ''}</span>
         <label class="chip sm" aria-label="תמונה">${icon('photo', 16)}<input type="file" accept="image/*" multiple data-tp="${i}" hidden></label>${x.task_id ? `<span class="muted">${icon('check', 16)}</span>` : `<button type="button" class="chip sm" data-tr="${i}" aria-label="הסרה">${icon('x', 16)}</button>`}</div>`).join('')}
-      <div class="ckadd"><input id="vtin" placeholder="פריט לצוות" autocomplete="off"><button type="button" class="btn primary sm" id="vtadd">הוספה</button></div></div></section>`;
+      <div class="ckadd"><input id="vtin" placeholder="פריט לצוות" autocomplete="off"><button type="button" class="btn primary sm" id="vtadd">הוספת פריט</button></div></div></section>`;
 }
 
 // ----- הפקת דוח: כל שורה = ממצא + תמונות, בתבנית הדוחות של E-Drone. מטעם החברה, בלי שמות אישיים -----
 export async function renderVisitReport(el, id) {
-  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין גישה</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין לך גישה למסך הזה</div>'; return; }
   el.innerHTML = '<div class="skel tall"></div>';
   const [{ data: v }, { data: co }] = await Promise.all([
     sb.from('project_visits').select('*, projects(name,client_name,sites(name,address))').eq('id', id).maybeSingle(),

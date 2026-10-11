@@ -86,7 +86,7 @@ export async function renderOps(el) {
     const onlyAir = miss.length === 1 && miss[0] === 'מרחב אווירי';
     issues.push({ tone: 'warn', ic: onlyAir ? 'drone' : 'clipboard', ds: [r.next_day], t: onlyAir ? `מרחב אווירי לא תואם · ${when}` : `לא מוכן ל${when} · ${nm}`, s: onlyAir ? nm : miss.join(' · '),
       ...(onlyAir ? { act: async () => {
-        if (!(await confirmBox('מרחב אווירי תואם?', { body: nm, ok: 'תואם' }))) return;
+        if (!(await confirmBox('מרחב אווירי תואם?', { body: nm, ok: 'סימון כתואם' }))) return;
         const { error } = await sb.rpc('set_readiness', { p: r.project_id, k: 'airspace', on_: true, days: [...new Set([...(w?.projects?.readiness?.airspace?.days || []), ...pd])] });
         if (error) return toast(errText(error)); toast('סומן — מרחב אווירי תואם', 1800, 'success'); renderOps(el); } } : { href: `#/p/${r.project_id}` }) });
   }
@@ -153,7 +153,7 @@ export async function renderOps(el) {
       <div class="row-btns"><button class="btn ghost sm" data-ab="${a.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-ab="${a.id}" data-ok="1">אישור</button></div></div>`),
     ...oreq.map(r => `<div class="card stack opr"><div class="row"><b class="grow">${esc(name(r.user_id))} · ${esc(r.category || 'בקשה')}</b><small class="muted">${timeAgo(r.created_at)}</small></div>
       <small>${esc((r.body || '').slice(0, 160))}</small>
-      <div class="row-btns"><a class="btn ghost sm" href="#/requests">פתיחה</a><button class="btn primary sm" data-or="${r.id}">טופל</button></div></div>`),
+      <div class="row-btns"><a class="btn ghost sm" href="#/requests">פתיחה</a><button class="btn primary sm" data-or="${r.id}">סימון כטופל</button></div></div>`),
   ];
   const pHref = preq.length === 1 && preq[0].monday_item_id ? `https://edroneil-force.monday.com/boards/5099908084/pulses/${preq[0].monday_item_id}" target="_blank" rel="noopener` : '#/purchase';
   if (exq.length) approvals.push(`<a class="lrow card" href="#/expenses"><span class="mic">${icon('receipt', 19)}</span><span class="grow"><b>${exq.length > 1 ? exq.length + ' הוצאות לאישור' : 'הוצאה לאישור'}</b></span><span class="chev">${icon('chev', 18)}</span></a>`);
@@ -209,7 +209,7 @@ export async function renderOps(el) {
       const reply = ok ? '' : await ask('סיבת הדחייה', { optional: true, ok: 'דחייה' }); if (reply === null) return; lock(b, true);
       const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, manager_reply: (reply || '').trim() || null, decided_at: new Date().toISOString() }).eq('id', b.dataset.ab);
       if (error) return fail(b, error); done(b, ok ? 'אושר' : 'נדחה — העובד קיבל הודעה'); });
-    $$('[data-or]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; const r = await ask('מה נעשה?', { optional: true, ok: 'סגירה' }); if (r === null) return; lock(b, true);
+    $$('[data-or]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; const r = await ask('מה נעשה?', { optional: true, ok: 'סגירת הבקשה' }); if (r === null) return; lock(b, true);
       const { error } = await sb.from('office_requests').update({ status: 'done', reply: (r || '').trim() || 'טופל', handled_by: state.user.id }).eq('id', b.dataset.or); if (error) return fail(b, error); done(b, 'נסגר — העובד קיבל מענה'); });
   }
 }

@@ -65,10 +65,13 @@ export async function renderDay(el, id) {
   let D;
   try { D = await loadDay(id); } catch { D = await cache.get(ck); }
   if (!D) { el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">יום שטח</h1></header><div class="empty-line">היום לא נמצא או שאין קליטה</div>`; return; }
-  // תמונות שעוד בתור (צולמו בלי קליטה) נספרות ומוצגות
-  try { const pend = await pendingPhotos(m => m.work_day_id === id); D.photos = D.photos.filter(p => !p.url && !pend.some(x => x.photoId === p.id)).concat(pend.map(x => ({ id: x.photoId, kind: x.meta.kind, storage_path: x.path, url: URL.createObjectURL(x.blob) }))); } catch {}
+  // תמונות שעוד בתור (צולמו בלי קליטה) נספרות ומוצגות. תמונה שכבר עלתה (קישור מקומי ישן) נשארת ברשימה בלי הקישור — לא נעלמת
+  try { const pend = await pendingPhotos(m => m.work_day_id === id); D.photos = D.photos.filter(p => !pend.some(x => x.photoId === p.id)).map(p => p.url ? { id: p.id, kind: p.kind, storage_path: p.storage_path } : p).concat(pend.map(x => ({ id: x.photoId, kind: x.meta.kind, storage_path: x.path, url: URL.createObjectURL(x.blob) }))); } catch {}
+  // מה שעוד בתור גובר על מה שהשרת (או העותק השמור ממנו) אומר — אחרת אחרי פתיחה מחדש בלי קליטה היום "חוזר לבוקר" ועושים הכל פעמיים
+  await overlayPending(D).catch(() => {});
   D.local = (await cache.get(ck + ':local')) || { stage: null, checks: {}, loaded: null };
-  const keep = () => cache.set(ck, D).then(() => cache.set(ck + ':local', D.local));
+  // שלב/טופס קודם (קטן), אחר כך היום כולו. כישלון שמירה (טלפון מלא) לא עוצר את המסך — מה שבתור נשמר בנפרד
+  const keep = () => cache.set(ck + ':local', D.local).then(() => cache.set(ck, D)).catch(() => {});
   const save = async (table, patch, rowId = D.day.id) => { if (table === 'work_days') Object.assign(D.day, patch); await enqueue({ kind: 'update', table, rowId, patch }); await keep(); };
   const insert = async (table, row) => { await enqueue({ kind: 'insert', table, row }); await keep(); };
   const go = () => draw();
@@ -121,8 +124,12 @@ export async function renderDay(el, id) {
   }
   function bindPhotos(root) {
     $$('input[data-kind]', root).forEach(inp => inp.onchange = async () => {
-      for (const f of inp.files) { const ph = await addFieldPhoto(f, { kind: inp.dataset.kind, work_day_id: D.day.id, project_id: D.day.project_id }); D.photos.push({ id: ph.id, kind: ph.kind, storage_path: ph.path, url: ph.url }); }
-      await keep(); toast('התמונה נשמרה'); draw();
+      // כל תמונה נשמרת לבד: תמונה אחת שנכשלה (פורמט לא נתמך / הטלפון מלא) לא מפילה את השאר, והעובד יודע
+      let ok = 0, bad = 0, why = null;
+      for (const f of [...inp.files]) try { const ph = await addFieldPhoto(f, { kind: inp.dataset.kind, work_day_id: D.day.id, project_id: D.day.project_id }); D.photos.push({ id: ph.id, kind: ph.kind, storage_path: ph.path, url: ph.url }); ok++; } catch (e) { bad++; why = e; }
+      inp.value = '';
+      await keep(); draw();
+      if (bad) toast(why?.quota ? 'אין מקום בטלפון — התמונה לא נשמרה' : ok ? `${ok} תמונות נשמרו · ${bad} לא נשמרו` : 'התמונה לא נשמרה — נסו שוב', 4500, 'error'); else toast(ok > 1 ? `${ok} תמונות נשמרו` : 'התמונה נשמרה');
     });
     $$('[data-z]', root).forEach(b => b.onclick = () => b.dataset.z && zoom(b.dataset.z, ''));
   }
@@ -137,7 +144,7 @@ export async function renderDay(el, id) {
           ${D.day.site_arrival ? `<div class="kpi"><b><bdi dir="ltr">${hhmm(D.day.site_arrival)}${D.day.site_end ? `<small class="kend">–${hhmm(D.day.site_end)}</small>` : ''}</bdi></b><span>באתר</span></div>` : `<div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div>`}
           <div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים</span></div></div>
         ${countdown()}
-        ${D.day.gust_max != null && !P.site_id ? `<div class="alert ${D.day.weather_alerted ? 'bad' : ''}"><span class="dot ${D.day.weather_alerted ? '' : 'ok'}"></span><span class="grow"><b>רוח עד ${D.day.wind_max} קמ"ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ"מ` : ''}</b><small>תחזית לשעות העבודה</small></span></div>` : ''}
+        ${D.day.gust_max != null && !P.site_id ? `<div class="alert ${D.day.weather_alerted ? 'bad' : ''}"><span class="dot ${D.day.weather_alerted ? '' : 'ok'}"></span><span class="grow"><b>רוח עד ${D.day.wind_max} קמ״ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ״מ` : ''}</b><small>תחזית לשעות העבודה</small></span></div>` : ''}
         <div class="opcrew">${crew.map(c => c.ph ? `<a class="opc ${c.st}" href="tel:${esc(c.ph)}" aria-label="חיוג ל${esc(c.n)}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</a>` : `<span class="opc ${c.st}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</span>`).join('')}${D.day.drone ? `<span class="opc">${icon('drone', 14)} ${esc(D.day.drone.name)}</span>` : ''}</div>
         ${navButtons(site.lat || P.lat, site.lng || P.lng, D.day.address || site.address || site.name || P.name)}
       </div>
@@ -337,12 +344,11 @@ export async function renderDay(el, id) {
   const mineQ = x => x.rowId === D.day.id || x.args?.d === D.day.id || x.row?.work_day_id === D.day.id || x.meta?.work_day_id === D.day.id || (x.table === 'tasks' && D.tasks.some(t => t.id === x.rowId));
   async function doneState() {
     const box = $('#dsent', el); if (!box) return;
-    if (!D.day.monday_item_id) {
-      const { outbox } = await import('../lib/store.js');
+    // התור קובע: כל עוד משהו מהיום הזה בטלפון — "ממתין", גם אם השרת כבר ראה חלק
+    { const { outbox } = await import('../lib/store.js');
       const tick = async () => { if (!box.isConnected) return; const n = (await outbox.all()).filter(mineQ).length;
-        box.textContent = n ? 'ממתין לקליטה — יישלח לבד' : 'נשלח למשרד'; if (n) setTimeout(tick, 4000); };
-      tick();
-    }
+        box.textContent = n ? `ממתין לקליטה · ${n} פריטים — יישלח לבד` : D.day.monday_item_id && D.day.monday_item_id !== 'none' ? 'הדוח התקבל במשרד' : 'נשלח למשרד'; if (n) setTimeout(tick, 4000); };
+      tick(); }
     nextUp();
     const sb0 = $('#dshift', el); if (!sb0) return;
     const { myOpenShift, clockOutNow } = await import('./attendance.js');
@@ -405,8 +411,8 @@ export async function renderDay(el, id) {
   }
   function futureBar(bar) {
     const me = D.day.work_day_crew.find(c => c.user_id === state.user.id);
-    if (!me || me.confirmed_at || me.cant_come_at) { bar.innerHTML = `<button class="btn ghost" type="button" disabled>${me?.cant_come_at ? 'עדכנת שלא תגיע' : me?.confirmed_at ? 'אישרת הגעה ✓ · נפתח ביום העבודה' : 'נפתח ביום העבודה'}</button>`; return; }
-    bar.innerHTML = `<button class="btn ghost" id="fcant">לא אוכל</button><button class="btn primary" id="fok">מגיע ✓</button>`;
+    if (!me || me.confirmed_at || me.cant_come_at) { bar.innerHTML = `<button class="btn ghost" type="button" disabled>${me?.cant_come_at ? 'עדכנת: לא אגיע' : me?.confirmed_at ? 'אישרת הגעה ✓ · נפתח ביום השטח' : 'נפתח ביום השטח'}</button>`; return; }
+    bar.innerHTML = `<button class="btn ghost" id="fcant">לא אוכל</button><button class="btn primary" id="fok">אגיע ✓</button>`;
     bar.querySelector('#fok').onclick = async e => { if (e.currentTarget.disabled) return; e.currentTarget.disabled = true;
       await enqueue({ kind: 'rpc', fn: 'confirm_day', args: { d: D.day.id } }); me.confirmed_at = new Date().toISOString(); await keep(); haptic('success'); toast('אישרת הגעה'); draw(); };
     bar.querySelector('#fcant').onclick = async () => { const why = await ask('לא אוכל להגיע', { placeholder: 'סיבה (לא חובה)', ok: 'עדכון המנהל', optional: true }); if (why == null) return;
@@ -479,7 +485,7 @@ export async function renderDay(el, id) {
     // נתקע: לחיצה ארוכה על המשימה, או כפתור ההתראה שלידה (נוח עם כפפות)
     const stuck = async t => { const note = await ask('מה תקוע?', { value: t.status_note || '', placeholder: 'למשל: מחכים למפתח לגג', ok: 'סימון כנתקע' }); if (note == null) return; t.status = 'blocked'; t.status_note = note; await save('tasks', { status: 'blocked', status_note: note }, t.id); draw(); };
     $$('[data-stuck]').forEach(b => b.onclick = () => stuck(D.tasks.find(x => x.id === b.dataset.stuck)));
-    $$('[data-t]').forEach(b => {
+    $$('button[data-t]', el).forEach(b => {   // רק כפתורי המשימות (גם #sheet נושא data-t)
       let timer, long = false;
       b.onpointerdown = () => { long = false; timer = setTimeout(() => { long = true; stuck(D.tasks.find(x => x.id === b.dataset.t)); }, 600); };
       b.onpointerup = b.onpointerleave = () => clearTimeout(timer);
@@ -494,7 +500,7 @@ export async function renderDay(el, id) {
     $$('[data-fix]').forEach(b => b.onclick = async () => { const f = D.fixes.find(x => x.id === b.dataset.fix);
       (await import('./tasks.js')).completeTask(f, () => { D.fixes = D.fixes.filter(x => x.id !== f.id); keep(); draw(); }, { work_day_id: D.day.id }); });
     $('#addtask').onclick = async () => {
-      const title = await ask('מה הלקוח ביקש?', { placeholder: 'למשל: ניקוי שלט הכניסה', ok: 'הוספה' }); if (!title) return;
+      const title = await ask('מה הלקוח ביקש?', { placeholder: 'למשל: ניקוי שלט הכניסה', ok: 'הוספת משימה' }); if (!title) return;
       toast('המשימה נוספה');
       const row = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, title, phase: 'תוספת', is_extra: true, status: 'todo', seq: 999, planned_date: D.day.day };
       D.tasks.push(row); await insert('tasks', row); draw();
@@ -582,7 +588,7 @@ export async function renderDay(el, id) {
         <textarea id="ib" placeholder="מה קרה?"></textarea>
         <label class="tog"><span>קריטי — העבודה נעצרה</span><span class="sw"><input type="checkbox" id="ic"><i></i></span></label>
         <label class="btn ghost block">${icon('photo', 18)} צילום התקלה<input type="file" accept="image/*" capture="environment" id="ip" hidden></label><div id="ipn" class="small muted"></div>
-        <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="isend">שליחה</button></div>`, (s, close) => {
+        <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="isend">דיווח תקלה</button></div>`, (s, close) => {
         $$('[data-k]', s).forEach(b => b.onclick = () => { kind = kind === b.dataset.k ? null : b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x.dataset.k === kind)); });
         $('#ic', s).onchange = e => crit = e.target.checked;
         $('#ip', s).onchange = e => { ph = e.target.files[0]; $('#ipn', s).textContent = ph ? 'התמונה תצורף' : ''; };
@@ -593,9 +599,9 @@ export async function renderDay(el, id) {
           const row = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, kind: ISSUE_KIND[kind] || 'other', severity: crit ? 'critical' : 'normal',
             body, opened_by: state.user.id, equipment_id: kind === 'רחפן' ? D.day.drone_id : null };
           D.issues.push(row); await insert('issues', row);
-          if (ph) await addFieldPhoto(ph, { kind: 'issue', work_day_id: D.day.id, project_id: D.day.project_id, issue_id: row.id });
+          let phErr = false; if (ph) try { await addFieldPhoto(ph, { kind: 'issue', work_day_id: D.day.id, project_id: D.day.project_id, issue_id: row.id }); } catch { phErr = true; }
           if (crit) await save('work_days', { status: 'issue' });
-          close(); toast('התקלה דווחה למשרד'); draw();
+          close(); phErr ? toast('התקלה דווחה · התמונה לא נשמרה', 4000, 'warn') : toast('התקלה דווחה למשרד'); draw();
         };
       });
     };
@@ -604,7 +610,7 @@ export async function renderDay(el, id) {
       const eq = D.day.equip_required?.length ? D.day.equip_required : (D.S.equip_default || []), sel = new Set();
       sheet(`<h3>חסר לי</h3>${eq.length ? `<div class="chips">${eq.map(x => `<button type="button" class="chip" data-mi="${esc(x)}" aria-pressed="false">${esc(x)}</button>`).join('')}</div>` : ''}
         <input type="text" id="mi" placeholder="${eq.length ? 'משהו אחר?' : 'מה חסר?'}"><div class="stepper"><button type="button" id="mq-">−</button><input class="days grow" id="mq" type="number" value="1" min="1"><button type="button" id="mq+">+</button></div>
-        <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="msend">שליחה</button></div>`, (s, close) => {
+        <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="msend">שליחה למשרד</button></div>`, (s, close) => {
         $$('[data-mi]', s).forEach(b => b.onclick = () => { const x = b.dataset.mi; sel.has(x) ? sel.delete(x) : sel.add(x); b.setAttribute('aria-pressed', sel.has(x)); });
         $('[id="mq-"]', s).onclick = () => $('#mq', s).value = Math.max(1, +$('#mq', s).value - 1);
         $('[id="mq+"]', s).onclick = () => $('#mq', s).value = +$('#mq', s).value + 1;
@@ -640,6 +646,25 @@ export async function renderDay(el, id) {
     } catch { /* בלי קליטה — בפעם הבאה */ }
   }, 45000);
   draw();
+}
+
+// פעולות שבתור (לפי הסדר) מוחלות על היום שנטען: עדכוני יום/משימות, רשומות חדשות, יציאה/שעות/אישור הגעה
+async function overlayPending(D) {
+  const { outbox } = await import('../lib/store.js');
+  const id = D.day.id, crew = D.day.work_day_crew || [];
+  const lists = { issues: D.issues, missing_items: D.missing, safety_checks: D.checks, tasks: D.tasks };
+  for (const x of await outbox.all()) {
+    if (x.kind === 'update' && x.table === 'work_days' && x.rowId === id) Object.assign(D.day, x.patch);
+    else if (x.kind === 'update' && x.table === 'tasks') [D.tasks, D.prep || [], D.fixes || []].forEach(L => { const t = L.find(t => t.id === x.rowId); if (t) Object.assign(t, x.patch); });
+    else if (x.kind === 'insert' && lists[x.table] && (x.row?.work_day_id === id)) { const L = lists[x.table]; if (!L.some(r => r.id === x.row.id)) L.push(x.row); }
+    else if (x.kind === 'rpc' && x.args?.d === id) {
+      const me = crew.find(c => c.user_id === state.user.id);
+      if (x.fn === 'crew_depart') crew.forEach(c => { c.clock_in ||= x.args.t; });
+      else if (x.fn === 'set_day_hours') (x.args.rows || []).forEach(r => { const c = crew.find(c => c.user_id === r.user_id); if (c) c.hours = r.hours; });
+      else if (x.fn === 'confirm_day' && me) { me.confirmed_at ||= new Date(x.at).toISOString(); me.cant_come_at = null; }
+      else if (x.fn === 'cant_come' && me) me.cant_come_at ||= new Date(x.at).toISOString();
+    }
+  }
 }
 
 // site_ops של כל המבנים באתר → תמונה אחת (ערכים שונים מחוברים, רשימות מאוחדות). hydrants/power ישנים = ברירת מחדל

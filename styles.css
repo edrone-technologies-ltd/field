@@ -1769,3 +1769,9 @@ body.client-mode .tabbar,body.client-mode #net,body.client-mode .topbar{display:
 .wxgn{min-height:34px}
 .ddh .hbtn::before,.task .hbtn::before{content:"";position:absolute;inset:-5px}
 .creport .cr-pair{display:grid;grid-template-columns:1fr 1fr;gap:4mm}
+
+/* תור שליחה: תצוגה מקדימה של תמונות שממתינות + מדדים */
+.qth { display: flex; gap: 4px; margin-top: 6px; }
+.qth img { width: 38px; height: 38px; object-fit: cover; border-radius: 8px; background: var(--line, #ddd); }
+.kpis.qk { margin: 4px 0 2px; }
+.lrow:has(.qth) { flex-shrink: 0; }

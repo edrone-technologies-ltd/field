@@ -30,7 +30,7 @@ export async function renderWeather(el, siteId = '') {
   let FF = [], K = [];
   try { [FF, K] = await Promise.all([S.length ? forecast(S) : [], kpSeries()]); } catch { FF = []; }
   if (!/^#\/weather/.test(location.hash) || !el.isConnected) return;   // המשתמש כבר עבר מסך — לא מציירים עליו
-  // מיקום חופשי (כללי, לא קשור לאתר): המיקום שלי / חיפוש / לחיצה במפה. ברירת מחדל כשאין אתרים — המשרד בב"ש
+  // מיקום חופשי (כללי, לא קשור לאתר): המיקום שלי / חיפוש / לחיצה במפה. ברירת מחדל כשאין אתרים — המשרד בב״ש
   let A = null, FA = null;
   let sel = S.length && FF.length ? Math.max(0, S.findIndex(s => s.id === siteId)) : -1;   // -1 = המיקום החופשי
   const cur = () => sel < 0 ? { s: A, F: FA } : { s: S[sel], F: FF[sel] };

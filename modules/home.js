@@ -82,13 +82,13 @@ export function alerts(d) {
   const rank = { bad: 0, warn: 1, '': 2 };
   return out.sort((a, b) => rank[a.tone] - rank[b.tone]);
 }
-const ENT_HE = { work_day: 'דוח יומי', spec: 'אפיון', issue: 'תקלה', missing: 'חוסר בשטח', message: 'הודעה', signoff: 'החתמת לקוח', summary: 'סיכום פרויקט', task: 'משימה', task_board: 'משימה',
+const ENT_HE = { work_day: 'דוח יומי', spec: 'אפיון', issue: 'תקלה', missing: 'חסר בשטח', message: 'הודעה', signoff: 'החתמת לקוח', summary: 'סיכום פרויקט', task: 'משימה', task_board: 'משימה',
   visit: 'דוח ביקור', purchase: 'בקשת רכש', contact: 'איש קשר', project_close: 'סגירת פרויקט', project_start: 'פתיחת פרויקט', schedule: 'תאריכי פרויקט' };
 const errHref = e => !e.entity_id ? null : e.entity === 'work_day' ? `#/day/${e.entity_id}` : ['summary', 'project_close', 'project_start', 'schedule'].includes(e.entity) ? `#/p/${e.entity_id}`
   : e.entity === 'visit' ? `#/visit/${e.entity_id}` : e.entity === 'purchase' ? '#/purchase' : null;
 const firstLine = s => (s || '').split('\n')[0].replace(/^[^֐-׿A-Za-z0-9]+/, '').slice(0, 90);
 
-// ---------- לו"ז: ימי שטח מהאפליקציה + טווחי פרויקטים ממאנדי + סיורי אפיון ----------
+// ---------- לו״ז: ימי שטח מהאפליקציה + טווחי פרויקטים ממאנדי + סיורי אפיון ----------
 export function schedule(d, from, n) {
   const days = []; for (let i = 0; i < n; i++) days.push({ date: addDays(from, i), items: [] });
   const by = new Map((d.projects || []).map(p => [p.id, p]));
@@ -134,8 +134,8 @@ export async function renderHome(el) {
   box.innerHTML = `<div id="attn"></div><div id="pulse">${pulseHtml(await cache.get('pulse').catch(() => null))}</div><div id="mytasks"></div><div id="openpast"></div>
     ${doneToday.length ? `<div class="list">${doneToday.map(w => dayRow(w, byId)).join('')}</div>` : ''}
     ${sv.length ? `<section><div class="sh-row"><h3 class="sh">סיורי אפיון</h3><a class="more" href="#/specs">כל האפיונים</a></div><div class="list">${sv.map(x => `<a class="lrow" href="${esc(x.href)}"><span class="grow"><b>${esc(x.name)}</b><small>${esc([x.visit_date === t ? 'היום' : dayWord(x.visit_date).replace('יום ', ''), x.scope_text, x.contact_name].filter(Boolean).join(' · '))}</small></span><span class="pill ${x.st === 'draft' ? 'warn' : ''}">${x.st === 'draft' ? 'בטיוטה' : 'לאפיון'}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
-    ${heroDays.map(w => dayHero(w, byId.get(w.project_id) || {}, cov[w.project_id])).join('') || (sv.length ? '' : empty('calendar', 'אין שיבוץ בשבועיים הקרובים', 'כשתשובץ — זה יופיע כאן'))}
-    ${pend.length > 1 ? `<div class="okall" data-act="all"><span class="grow"><b>${pend.length} ימים מחכים לאישור הגעה</b><small>${pend.map(w => dayWord(w.day).replace('יום ', '')).join(' · ')}</small></span><button class="btn primary" data-confirm-all="${pend.map(x => x.id).join(',')}">מאשר הכל</button></div>` : ''}
+    ${heroDays.map(w => dayHero(w, byId.get(w.project_id) || {}, cov[w.project_id])).join('') || (sv.length ? '' : empty('calendar', 'אין שיבוץ בשבועיים הקרובים', 'שיבוץ חדש יופיע כאן'))}
+    ${pend.length > 1 ? `<div class="okall" data-act="all"><span class="grow"><b>${pend.length} ימים מחכים לאישור הגעה</b><small>${pend.map(w => dayWord(w.day).replace('יום ', '')).join(' · ')}</small></span><button class="btn primary" data-confirm-all="${pend.map(x => x.id).join(',')}">אגיע לכולם ✓</button></div>` : ''}
     ${rest.length ? `<section><div class="sh-row"><h3 class="sh">הימים הקרובים</h3><a class="more" href="#/schedule">כל הלו״ז</a></div><div class="list">${rest.map(w => dayRow(w, byId, pend.length > 1)).join('')}</div></section>` : ''}`;
   bindConfirm(box); extras(); pastOpen($('#openpast'));
   fillGlance(box, P);
@@ -161,13 +161,13 @@ function dayHero(w, pr, cover) {
   const no = meOn(w)?.cant_come_at || PQ.no.has(w.id), okd = meOn(w)?.confirmed_at || PQ.ok.has(w.id);
   return `<div class="dhero"><a class="photo-hero" href="#/day/${w.id}">
       <span class="img" style="background-image:url('${cover || ''}')"></span>
-      <span class="ph-top"><span class="chip-dark">${isToday ? 'היום' : esc(dayWord(w.day))}${w.is_last_day ? ' · יום אחרון' : ''}${ilead ? ' · אתה ראש הצוות' : ''}</span>${w.status !== 'planned' ? `<span class="chip-dark">${DAY_ST[w.status]}</span>` : no ? '<span class="chip-dark">לא מגיע</span>' : okd && !isToday ? '<span class="chip-dark">אישרת ✓</span>' : ''}</span>
+      <span class="ph-top"><span class="chip-dark">${isToday ? 'היום' : esc(dayWord(w.day))}${w.is_last_day ? ' · יום אחרון' : ''}${ilead ? ' · אני ראש הצוות' : ''}</span>${w.status !== 'planned' ? `<span class="chip-dark">${DAY_ST[w.status]}</span>` : no ? '<span class="chip-dark">לא אגיע</span>' : okd && !isToday ? '<span class="chip-dark">אישרת ✓</span>' : ''}</span>
       <span class="ph-bottom"><b>${esc(pr.name || '')}</b>
         <span class="hero-times">${w.report_time ? `<span><small>יציאה</small><b>${w.report_time.slice(0, 5)}</b></span>` : ''}${w.site_arrival ? `<span><small>באתר</small><b>${w.site_arrival.slice(0, 5)}</b></span>` : ''}<span class="wxg" data-wxg="${esc(pr.site_id || pr.id || '')}|${w.day}"></span></span>
         ${w.day_goal ? `<small>${esc(w.day_goal)}</small>` : ''}
         ${crew.length ? `<span class="hero-crew">${crew.slice(0, 4).map(n => `<span class="avatar xs" title="${esc(n)}">${esc(initials(n))}</span>`).join('')}<small>עם ${esc((w.work_day_crew || []).filter(c => c.user_id !== state.user.id && c.profiles?.full_name).map(c => c.profiles.full_name.split(' ')[0] + (c === lead ? ' (ראש צוות)' : '')).join(', '))}</small></span>` : ''}
         <span class="btn primary">${cta}</span></span></a>
-    ${needsOk(w) ? `<div class="row-btns" data-act="${w.id}"><button class="btn ghost" data-cant="${w.id}">לא אוכל</button><button class="btn primary" data-confirm="${w.id}">מגיע ✓</button></div>` : ''}</div>`;
+    ${needsOk(w) ? `<div class="row-btns" data-act="${w.id}"><button class="btn ghost" data-cant="${w.id}">לא אוכל</button><button class="btn primary" data-confirm="${w.id}">אגיע ✓</button></div>` : ''}</div>`;
 }
 // תחזית במבט: משבים + פסיקה (טוב לטיסה / גבולי / לא לטוס) לכל יום שמסומן data-wxg="siteId|day"
 const geoOf = p => { const la = p?.sites?.lat ?? p?.lat, ln = p?.sites?.lng ?? p?.lng; return la != null && ln != null ? { id: p.site_id || p.id, lat: la, lng: ln } : null; };
@@ -241,15 +241,15 @@ const needsOk = w => { const me = meOn(w); return !!me && !me.confirmed_at && !m
 const dayRow = (w, byId, compact = false) => { const me = meOn(w), pr = byId.get(w.project_id) || w.projects || {};
   const needConfirm = needsOk(w), no = me?.cant_come_at || PQ.no.has(w.id), okd = me?.confirmed_at || PQ.ok.has(w.id);
   const crew = (w.work_day_crew || []).filter(c => c.user_id !== state.user.id).map(c => (c.profiles?.full_name || '').split(' ')[0]).filter(Boolean);
-  const st = no && w.status === 'planned' ? '<span class="pill bad">לא מגיע</span>' : w.status !== 'planned' ? `<span class="pill ${w.status === 'done' ? 'ok' : 'lime'}">${DAY_ST[w.status]}</span>` : okd ? '<span class="pill ok">מגיע ✓</span>' : '';
+  const st = no && w.status === 'planned' ? '<span class="pill bad">לא אגיע</span>' : w.status !== 'planned' ? `<span class="pill ${w.status === 'done' ? 'ok' : 'lime'}">${DAY_ST[w.status]}</span>` : okd ? '<span class="pill ok">אישרת ✓</span>' : '';
   return `<div class="dayrow"><a class="lrow" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
   <span class="grow"><b>${esc(pr.name || '')}</b><small>${[w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : '', w.site_arrival ? 'באתר ' + w.site_arrival.slice(0, 5) : '', w.is_last_day ? 'יום אחרון' : '', w.crew_lead_id === state.user.id ? 'ראש צוות' : '', crew.length ? 'עם ' + esc(crew.join(', ')) : ''].filter(Boolean).join(' · ')}</small></span>
   <span class="dr-end">${st}<span class="wxg" data-wxg="${esc(pr.site_id || pr.id || '')}|${w.day}"></span></span></a>
-  ${needConfirm ? `<div class="${compact ? 'chips dr-mini' : 'row-btns dr-act'}" data-act="${w.id}"><button class="${compact ? 'chip' : 'btn ghost sm'}" data-cant="${w.id}">לא אוכל</button><button class="${compact ? 'chip on' : 'btn primary sm'}" data-confirm="${w.id}">מגיע ✓</button></div>` : ''}</div>`; };
+  ${needConfirm ? `<div class="${compact ? 'chips dr-mini' : 'row-btns dr-act'}" data-act="${w.id}"><button class="${compact ? 'chip' : 'btn ghost sm'}" data-cant="${w.id}">לא אוכל</button><button class="${compact ? 'chip on' : 'btn primary sm'}" data-confirm="${w.id}">אגיע ✓</button></div>` : ''}</div>`; };
 // נשלח דרך התור — עובד גם בלי קליטה
 function bindConfirm(root) {
   const done = (id, html) => { PQ.ok.add(id); $$(`[data-act="${id}"]`, root).forEach(x => x.outerHTML = html); };
-  const ACK = '<div class="acked" style="text-align:center">מגיע ✓</div>';
+  const ACK = '<div class="acked" style="text-align:center">אישרת הגעה ✓</div>';
   $$('[data-confirm]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true; const id = b.dataset.confirm;
     await enqueue({ kind: 'rpc', fn: 'confirm_day', args: { d: id } }); haptic('success'); toast('אישרת הגעה'); done(id, ACK);
     $$('[data-confirm-all]', root).forEach(x => { const ids = x.dataset.confirmAll.split(',').filter(y => y !== id); if (ids.length < 2) x.closest('.okall')?.remove(); else { x.dataset.confirmAll = ids.join(','); const t = x.closest('.okall')?.querySelector('b'); if (t) t.textContent = `${ids.length} ימים מחכים לאישור הגעה`; } }); });
@@ -260,7 +260,7 @@ function bindConfirm(root) {
   $$('[data-cant]', root).forEach(b => b.onclick = async () => { const id = b.dataset.cant;
     const why = await ask('לא אוכל להגיע', { placeholder: 'סיבה (לא חובה)', ok: 'עדכון המנהל', optional: true }); if (why == null) return;
     await enqueue({ kind: 'rpc', fn: 'cant_come', args: { d: id, reason: why.trim() || null } }); PQ.no.add(id);
-    $$(`[data-act="${id}"]`, root).forEach(x => x.outerHTML = '<div class="acked" style="text-align:center">המנהל עודכן שלא תגיע</div>'); toast('המנהל עודכן'); });
+    $$(`[data-act="${id}"]`, root).forEach(x => x.outerHTML = '<div class="acked" style="text-align:center">המנהל קיבל עדכון</div>'); toast('המנהל עודכן'); });
 }
 // ---------- כל מה שלטיפול ----------
 export async function renderAlerts(el) {
@@ -270,13 +270,13 @@ export async function renderAlerts(el) {
   bindNeeds(box, A, () => renderAlerts(el));
 }
 
-// ---------- לו"ז ----------
+// ---------- לו״ז ----------
 export async function renderSchedule(el) {
   const M = isManager();
   if (!M) return mySchedule(el);
   // מנהל: הלשונית היא לוח השיבוץ של השבוע (+ פרויקטים שמחכים לתאריך). עובד: הימים שלו.
   if (M) { const { renderDispatch } = await import('./dispatch.js'); await renderDispatch(el, null, { title: 'לו״ז' }); }
-  else el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1>לו"ז</h1></header>`;
+  else el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1>לו״ז</h1></header>`;
   el.insertAdjacentHTML('beforeend', '<div id="sc" class="stack lg" style="margin-top:28px"></div>');
   const d = await load(); const box = $('#sc'); if (!box) return;
   const t = today();
@@ -291,7 +291,7 @@ export async function renderSchedule(el) {
   bindConfirm(box);
 }
 
-// ---------- הלו"ז שלי (עובד שטח / ראש צוות): פס שבועיים במבט, ואז הימים לפי שבוע, עם מי ותחזית ----------
+// ---------- הלו״ז שלי (עובד שטח / ראש צוות): פס שבועיים במבט, ואז הימים לפי שבוע, עם מי ותחזית ----------
 const dowOf = s => new Date(s + 'T12:00').getDay();
 async function myDays(from, to) {
   const me = state.user.id, sel = 'id,day,status,report_time,site_arrival,project_id,crew_lead_id,is_last_day,day_goal,kind,projects(id,name,site_id,lat,lng,sites(lat,lng)),work_day_crew(*,profiles(full_name))';
@@ -322,8 +322,8 @@ async function mySchedule(el) {
   const groups = []; ahead.forEach(w => { const k = wk(w.day); let g = groups.find(x => x.k === k); if (!g) groups.push(g = { k, ws: [] }); g.ws.push(w); });
   box.innerHTML = `<div class="wkstrip">${strip.map(cell).join('')}</div>
     <div class="pulse sm"><span><b>${doneM}</b><small>ימי שטח החודש</small></span><span><b>${leftM}</b><small>נשארו החודש</small></span><span><b>${ahead.length}</b><small>משובץ קדימה</small></span></div>
-    ${pend.length > 1 ? `<div class="okall"><span class="grow"><b>${pend.length} ימים מחכים לאישור הגעה</b><small>${pend.map(w => dayWord(w.day).replace('יום ', '')).join(' · ')}</small></span><button class="btn primary" data-confirm-all="${pend.map(x => x.id).join(',')}">מאשר הכל</button></div>` : ''}
-    ${groups.map(g => `<section><h3 class="sh">${g.k}</h3><div class="list">${g.ws.map(w => dayRow(w, by, pend.length > 1)).join('')}</div></section>`).join('') || empty('calendar', 'אין שיבוץ קדימה', 'כשתשובץ — תקבל הודעה וזה יופיע כאן')}
+    ${pend.length > 1 ? `<div class="okall"><span class="grow"><b>${pend.length} ימים מחכים לאישור הגעה</b><small>${pend.map(w => dayWord(w.day).replace('יום ', '')).join(' · ')}</small></span><button class="btn primary" data-confirm-all="${pend.map(x => x.id).join(',')}">אגיע לכולם ✓</button></div>` : ''}
+    ${groups.map(g => `<section><h3 class="sh">${g.k}</h3><div class="list">${g.ws.map(w => dayRow(w, by, pend.length > 1)).join('')}</div></section>`).join('') || empty('calendar', 'אין שיבוץ קדימה', 'שיבוץ חדש יופיע כאן, עם התראה')}
     ${past.length ? `<details class="fold"><summary><span class="sh">ימים שעברו החודש</span><span class="count">${past.length}</span></summary><div class="list">${past.map(w => dayRow(w, by)).join('')}</div></details>` : ''}`;
   bindConfirm(box); fillGlance(box, [...by.values()]);
 }

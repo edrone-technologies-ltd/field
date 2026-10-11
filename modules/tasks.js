@@ -41,9 +41,9 @@ export async function myTasks(box) {
         ${em ? `<a class="chip" href="mailto:${esc(em)}">מייל</a>` : ''}${s ? `<a class="chip" href="#/site/${esc(s.slug)}">לליד</a>` : ''}</div>` : ''}
     </div>`;
   };
-  // מקובץ לפי פרויקט: צ'קליסט אחד לכל פרויקט, עם מעבר לצ'קליסט המלא
+  // מקובץ לפי פרויקט: צ׳קליסט אחד לכל פרויקט, עם מעבר לצ׳קליסט המלא
   const groups = new Map(); mine.forEach(t => { const k = t.project_id || t.site_id || '-'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); });
-  const head = t => t.project_id ? `<div class="row"><b class="grow">${esc(t.projects?.name || 'פרויקט')}</b><a class="more" href="#/p/${t.project_id}/t">לצ'קליסט</a></div>` : t.sites ? `<div class="row"><b>${esc(t.sites.name)}</b></div>` : groups.size > 1 ? '<div class="row"><b>כללי</b></div>' : '';
+  const head = t => t.project_id ? `<div class="row"><b class="grow">${esc(t.projects?.name || 'פרויקט')}</b><a class="more" href="#/p/${t.project_id}/t">לצ׳קליסט</a></div>` : t.sites ? `<div class="row"><b>${esc(t.sites.name)}</b></div>` : groups.size > 1 ? '<div class="row"><b>כללי</b></div>' : '';
   box.innerHTML = `${mine.length ? `<section><div class="sh-row"><h3 class="sh">המשימות שלי</h3><span class="count">${mine.length}</span></div><div class="stack">${[...groups.values()].map(g => `<div class="stack">${head(g[0])}${g.map(t => row(t, true)).join('')}</div>`).join('')}</div></section>` : ''}
     ${others.length ? `<details class="fold"><summary><span class="sh">משימות שפתחתי לצוות</span><span class="count">${others.length}</span></summary><div class="stack">${others.map(t => row(t, false)).join('')}</div></details>` : ''}`;
   $$('.fph', box).forEach(i => i.onclick = () => zoom(i.src, ''));
@@ -82,7 +82,7 @@ export async function newTask({ site, title = '', notes = '', project = null, on
   });
 }
 
-// סימון "טופל" עם תיעוד: תמונת "אחרי" (חובה כשיש תמונת "לפני" מהממצא) + מה נעשה. משמש בבית, בצ'קליסט הפרויקט וביום השטח.
+// סימון "טופל" עם תיעוד: תמונת "אחרי" (חובה כשיש תמונת "לפני" מהממצא) + מה נעשה. משמש בבית, בצ׳קליסט הפרויקט וביום השטח.
 // הכל נכנס לתור ונשלח כשיש קליטה (גם באתר בלי קליטה). meta.work_day_id = יום השטח שבו טופל (לא חובה)
 export function completeTask(t, onDone, meta = {}) {
   const before = t.photos?.before || [], after = [...(t.photos?.after || [])], urls = {};
@@ -90,7 +90,7 @@ export function completeTask(t, onDone, meta = {}) {
     ${before.length ? `<div class="small muted">לפני</div><div class="fphs" id="cb"></div>` : ''}
     <div class="small muted">אחרי</div><div class="fphs" id="ca"></div>
     <label class="field">מה נעשה<textarea id="cn" rows="2" placeholder="לא חובה"></textarea></label>
-    <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="cok">טופל</button></div>`, async (s, close) => {
+    <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="cok">סימון כטופל</button></div>`, async (s, close) => {
     const img = ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '';
     const draw = () => {
       if ($('#cb', s)) $('#cb', s).innerHTML = before.map(img).join('');

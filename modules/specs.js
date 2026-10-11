@@ -106,7 +106,7 @@ export async function renderSites(el) {
 
 
 // ---------- מיקום האתר (כפתור אחד לאתר) — לתחזית ולמתכנן השמש בביצוע ----------
-// ---------- מפת אתר (תצ"א / מפת מתחם): אחת לאתר, בראש העמוד ----------
+// ---------- מפת אתר (תצ״א / מפת מתחם): אחת לאתר, בראש העמוד ----------
 const siteMapHtml = s => (s.map_path || can('specs')) ? `<div class="card sitemap" id="sitemap"><div class="skel"></div></div>` : '';
 async function bindSiteMap(s, after) {
   const box = $('#sitemap'); if (!box) return;
@@ -162,7 +162,7 @@ function bindSiteTools(s, opts = {}) {
         $$('[data-to]', sh).forEach(r => r.onclick = async () => {
           if (!(await confirmBox(`לאחד את הליד עם "${r.dataset.n}"?`, { ok: 'איחוד' }))) return;
           r.disabled = true; const { error } = await sb.rpc('merge_lead', { lead: s.id, target: r.dataset.to });
-          if (error) { r.disabled = false; return toast(errText(error, 'האיחוד נכשל')); }
+          if (error) { r.disabled = false; return toast(errText(error, 'האיחוד נכשל — נסו שוב')); }
           close(); toast('אוחד — הליד יתעדכן במאנדי'); location.hash = '#/site/' + r.dataset.slug; });
       });
     }
@@ -202,7 +202,7 @@ async function loadLeaflet() {
 }
 async function pickOnMap(s, done) {
   if (!navigator.onLine) return toast('המפה דורשת קליטה');
-  let L; try { L = await loadLeaflet(); } catch { return toast('המפה לא נטענה'); }
+  let L; try { L = await loadLeaflet(); } catch { return toast('המפה לא נטענה — נסו שוב'); }
   sheet(`<h3>מיקום ${esc(s.name)}</h3>
     <div class="row"><input type="search" id="mq" class="grow" placeholder="חיפוש כתובת או מקום" value="${esc(s.address || '')}"><button class="btn ghost sm" id="mqs">חיפוש</button></div>
     <div id="mres" class="list"></div>
@@ -250,7 +250,7 @@ async function wx3(s) {
 
 
 // ---------- הערכת מחיר (הרשאת כספים בלבד) — לפי הפרמטרים החיים מלוח התמחור במאנדי ----------
-const BASE = [31.2524, 34.7908]; // ב"ש
+const BASE = [31.2524, 34.7908]; // ב״ש
 async function roadKm(lat, lng) {
   try {
     const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${BASE[1]},${BASE[0]};${lng},${lat}?overview=false`);
@@ -278,8 +278,8 @@ async function priceCard(s, days) {
   let m = Math.round(P.margin <= 1 ? P.margin * 100 : P.margin);
   const draw = () => {
     const e = estimate(P, days, d.km, m);
-    box.innerHTML = `<div class="row"><span class="mic">${icon('cash', 19)}</span><span class="grow"><b>הערכת מחיר</b><small class="muted">${nf(days)} ימים · ${Math.round(d.km)} ק"מ מב"ש${d.est ? ' (משוער)' : ''}${e.far ? ' · כולל לינה' : ''}</small></span></div>
-      <div class="kpis"><div class="kpi"><b>₪${nf(Math.round(e.price))}</b><span>מחיר לפני מע"מ</span></div><div class="kpi"><b>₪${nf(Math.round(e.cost))}</b><span>עלות מלאה</span></div><div class="kpi"><b>₪${nf(Math.round(e.price / days))}</b><span>ליום</span></div></div>
+    box.innerHTML = `<div class="row"><span class="mic">${icon('cash', 19)}</span><span class="grow"><b>הערכת מחיר</b><small class="muted">${nf(days)} ימים · ${Math.round(d.km)} ק״מ מב״ש${d.est ? ' (משוער)' : ''}${e.far ? ' · כולל לינה' : ''}</small></span></div>
+      <div class="kpis"><div class="kpi"><b>₪${nf(Math.round(e.price))}</b><span>מחיר לפני מע״מ</span></div><div class="kpi"><b>₪${nf(Math.round(e.cost))}</b><span>עלות מלאה</span></div><div class="kpi"><b>₪${nf(Math.round(e.price / days))}</b><span>ליום</span></div></div>
       <div class="row pmargin"><small class="grow muted">מרווח</small><div class="stepper"><button type="button" data-m="-5">−</button><b class="sval">${m}%</b><button type="button" data-m="5">+</button></div></div>
       <small class="muted">יום ₪${nf(Math.round(e.daily))} · נסיעה${e.far ? '+לינה' : ''} ₪${nf(Math.round(e.travel))}</small>`;
     $$('[data-m]', box).forEach(b => b.onclick = () => { m = Math.min(80, Math.max(0, m + Number(b.dataset.m))); draw(); });
@@ -287,7 +287,7 @@ async function priceCard(s, days) {
   draw();
 }
 
-// ---------- אתר: מבנים + צ'אט ----------
+// ---------- אתר: מבנים + צ׳אט ----------
 export async function renderSite(el, slug, tab = 'b') {
   el.innerHTML = `<div class="skel"></div>`;
   const s = await fetchSite(slug);
@@ -299,9 +299,9 @@ export async function renderSite(el, slug, tab = 'b') {
     <div id="sctc"></div>
     ${siteTools(s, { price: true, days: Math.ceil(days - 1e-3) })}
     <div class="kpis"><div class="kpi"><b>${done}/${n}</b><span>מבנים הושלמו</span></div><div class="kpi"><b>${days ? nf(Math.ceil(days - 1e-3)) : '—'}</b><span>ימי עבודה${days % 1 ? ` (${nf(days)} עוגל)` : ''}</span></div>
-      ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ"ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
+      ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ״ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
     <div class="sigline" id="sig"></div>
-    <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ'אט אפיון</button></div>
+    <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ׳אט אפיון</button></div>
     <div id="tabbody"></div>`;
   bindCopy(el); bindSiteTools(s, { days: Math.ceil(days - 1e-3) });
   import('../lib/contacts.js').then(async m => { await m.renderContacts($('#sctc'), { siteId: s.id, clientId: s.client_id, org: s.name, empty: s.contact_name || s.contact_phone ? contactCard(s.contact_name, s.contact_phone) : '' }); const c = $('#sctc'); if (c) bindCopy(c); });
@@ -313,7 +313,7 @@ export async function renderSite(el, slug, tab = 'b') {
   body.innerHTML = groups.map(g => `${g ? `<h3 class="sh">${esc(s.group_word)} ${esc(g)}</h3>` : ''}<div class="list">${
     s.buildings.filter(b => (b.group_label || '') === g).map(b => {
       const [c, t] = STAT[b.spec?.status || 'new'];
-      const meta = [b.facade_area_m2 ? nf(b.facade_area_m2) + ' מ"ר' : null, b.floors ? nf(b.floors) + ' קומות' : null, b.spec?.days_expected ? nf(b.spec.days_expected) + ' ימים' : null].filter(Boolean).join(' · ');
+      const meta = [b.facade_area_m2 ? nf(b.facade_area_m2) + ' מ״ר' : null, b.floors ? nf(b.floors) + ' קומות' : null, b.spec?.days_expected ? nf(b.spec.days_expected) + ' ימים' : null].filter(Boolean).join(' · ');
       const th = b.plan_images[0] && thumbs[b.plan_images[0].storage_path];
       return `<button class="item" data-b="${b.id}">${th ? `<img src="${esc(th)}" alt="">` : ''}<span class="t"><b>${esc(b.name)}</b><small>${esc(b.subtitle ? b.subtitle + ' · ' : '')}${meta}</small></span><span class="pill ${c}">${t}</span></button>`;
     }).join('')}</div>`).join('');
@@ -321,7 +321,7 @@ export async function renderSite(el, slug, tab = 'b') {
   // פעולה אחת ברורה: המבנה הבא לאפיון (טיוטה קודם, אחר כך לפי הסדר)
   const nxt = can('specs') && (s.buildings.find(b => b.spec?.status === 'draft') || s.buildings.find(b => b.spec?.status !== 'done'));
   if (nxt) body.insertAdjacentHTML('afterbegin', `<a class="btn primary block" href="#/b/${esc(slug)}/${nxt.id}">${nxt.spec?.status === 'draft' ? 'המשך אפיון' : 'אפיון'} · ${esc(nxt.name)}</a>`);
-  $('#addb').onclick = async () => { const n = await ask('שם המבנה', { placeholder: 'למשל: בניין B, אגף מזרחי', ok: 'הוספה' }); if (!n || $('#addb').disabled) return; $('#addb').disabled = true;
+  $('#addb').onclick = async () => { const n = await ask('שם המבנה', { placeholder: 'למשל: בניין B, אגף מזרחי', ok: 'הוספת מבנה' }); if (!n || $('#addb').disabled) return; $('#addb').disabled = true;
     const { data, error } = await sb.rpc('add_building', { s: s.id, n }); if (error) { $('#addb').disabled = false; return toast(errText(error, 'המבנה לא נוסף — נסו שוב')); } location.hash = `#/b/${slug}/${data}`; };
   $$('[data-b]', body).forEach(b => b.onclick = () => location.hash = `#/b/${slug}/${b.dataset.b}`);
 }
@@ -373,14 +373,14 @@ export async function renderBuilding(el, slug, bid) {
     ${s.kind === 'lead' ? `<div class="menu">${[['שלב', s.lead_stage], ['היקף', s.scope_text], ['אחראי', s.lead_owner], ['תאריך סיור', s.visit_date ? dm(s.visit_date) : null], ['הערות מהליד', s.lead_notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}
       ${NAMES.length > 1 && editable ? `<button class="lrow" type="button" id="splitb"><span class="grow"><b>יצירת ${NAMES.length} מבנים</b><small>${esc(NAMES.join(' · '))}</small></span><span class="chev">${icon('plus', 18)}</span></button>` : ''}
       <a class="lrow" href="#/site/${esc(slug)}"><span class="grow"><b>${s.buildings.length > 1 ? `כל המבנים בליד (${s.buildings.length})` : 'הוספת מבנה'}</b></span><span class="chev">${icon('chev', 18)}</span></a></div>` : !b.facade_area_m2 && b.plan_source !== 'plans' ? '' : `
-    <div class="kpis"><div class="kpi"><b>${b.facade_area_m2 ? nf(b.facade_area_m2) : 'למדידה'}</b><span>${b.facade_area_m2 ? 'מ"ר לפי התכנית' : 'שטח חזיתות'}</span></div>
+    <div class="kpis"><div class="kpi"><b>${b.facade_area_m2 ? nf(b.facade_area_m2) : 'למדידה'}</b><span>${b.facade_area_m2 ? 'מ״ר לפי התכנית' : 'שטח חזיתות'}</span></div>
       <div class="kpi"><b>${b.floors ? nf(b.floors) : '—'}</b><span>קומות</span></div><div class="kpi"><b>${b.plan_source === 'plans' ? b.plan_images.length : 'סקיצה'}</b><span>${b.plan_source === 'plans' ? 'חזיתות בתכנית' : 'מקור'}</span></div></div>`}
     <div class="sigline" id="sig"></div>
     ${b.office_note ? `<div class="note">${esc(b.office_note)}</div>` : ''}
     ${contactCard(s.contact_name, s.contact_phone)}
     ${s.kind === 'lead' && s.buildings.length === 1 ? siteTools(s) : ''}
     ${b.plan_images.length ? `<h3 class="sh">${b.plan_source === 'plans' ? 'החזיתות מהתכנית' : 'מיקום בסקיצה'}</h3>
-      <div class="facades">${b.plan_images.map((p, i) => `<div class="fc"><button class="fcimg" data-i="${i}"><img loading="lazy" src="${esc(plans[p.storage_path])}" alt="${esc(p.title)}"></button><div><b>${esc(p.title)}</b>${esc(p.dims_text || '')}${p.area_m2 ? ' · ' + nf(p.area_m2) + ' מ"ר' : ''}</div>${FAC.some(f => f.id === p.id) ? counter(p.id) : ''}</div>`).join('')}</div>` : ''}
+      <div class="facades">${b.plan_images.map((p, i) => `<div class="fc"><button class="fcimg" data-i="${i}"><img loading="lazy" src="${esc(plans[p.storage_path])}" alt="${esc(p.title)}"></button><div><b>${esc(p.title)}</b>${esc(p.dims_text || '')}${p.area_m2 ? ' · ' + nf(p.area_m2) + ' מ״ר' : ''}</div>${FAC.some(f => f.id === p.id) ? counter(p.id) : ''}</div>`).join('')}</div>` : ''}
     ${!imgs.length && FACON ? `<h3 class="sh">ימים לפי חזית</h3>
       <div class="facades" id="facs"></div>` : ''}
     <fieldset class="fset" ${editable ? '' : 'disabled'}>
@@ -446,7 +446,7 @@ export async function renderBuilding(el, slug, bid) {
   });
   const days = $('#days');
   // בדיקת מציאות: קצב שנגזר מהמספרים של הסוקר עצמו (שטח ÷ ימים) — לא מספר מומצא
-  const rate = () => { const a = Number(b.facade_area_m2 || form.area_m2), d = Number(days.value); $('#rate').textContent = a && d ? `≈ ${nf(Math.round(a / d))} מ"ר חזית ליום עבודה` : ''; ready(); };
+  const rate = () => { const a = Number(b.facade_area_m2 || form.area_m2), d = Number(days.value); $('#rate').textContent = a && d ? `≈ ${nf(Math.round(a / d))} מ״ר חזית ליום עבודה` : ''; ready(); };
   days.oninput = () => { set('days_expected', days.value === '' ? null : Number(days.value)); rate(); }; rate();
   // מונה ימים על כל חזית: הסה״כ למבנה = סכום החזיתות (כשסופרים לפי חזיתות, הסה״כ נעול)
   const syncTotal = (init = false) => {
@@ -511,7 +511,7 @@ export async function renderBuilding(el, slug, bid) {
   const ar = $('#area'); if (ar) ar.oninput = () => { set('area_m2', ar.value === '' ? null : Math.max(0, Number(ar.value))); rate(); };
   const spb = $('#splitb'); if (spb) spb.onclick = async () => {
     if (!navigator.onLine) return toast('יצירת מבנים דורשת קליטה');
-    if (spb.disabled || !(await confirmBox(`ליצור ${NAMES.length} מבנים?`, { body: NAMES.join(' · '), ok: 'יצירה' }))) return;
+    if (spb.disabled || !(await confirmBox(`ליצור ${NAMES.length} מבנים?`, { body: NAMES.join(' · '), ok: 'יצירת המבנים' }))) return;
     spb.disabled = true; if (dirty) await save(false, true);
     await sb.rpc('rename_building', { b: b.id, n: NAMES[0] });   // 088 — בלעדיו המבנה הקיים נשאר בשמו
     for (const n of NAMES.slice(1)) { const { error } = await sb.rpc('add_building', { s: s.id, n, fl: form.floors ?? null }); if (error) { spb.disabled = false; return toast(errText(error, 'המבנים לא נוספו — נסו שוב')); } }
@@ -596,7 +596,7 @@ export async function renderBuilding(el, slug, bid) {
       const dn = $('#dn'); if (dn.disabled) return; dn.disabled = true;
       await geoSilent(6000);
       const miss = [!(NPH.site + NPH.facade + NPH.obstacle) && 'אין תמונות', !s.lat && 'אין מיקום'].filter(Boolean);
-      if (miss.length && !(await confirmBox(miss.join(' · ') + ' — לסיים בכל זאת?', { ok: 'סיום' }))) { dn.disabled = false; return; }
+      if (miss.length && !(await confirmBox(miss.join(' · ') + ' — לסיים בכל זאת?', { ok: 'סיום האפיון' }))) { dn.disabled = false; return; }
       const at = Date.now(); await save(true, true); dn.disabled = false; doneSheet(at);
     };
   }

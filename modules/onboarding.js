@@ -1,4 +1,4 @@
-// קליטת עובד: צ'קליסט שמחושב מהנתונים (onboarding_status בשרת). העובד רואה מה עליו לעשות; המנהל רואה הכל ומסמן "ציוד נמסר".
+// קליטת עובד: צ׳קליסט שמחושב מהנתונים (onboarding_status בשרת). העובד רואה מה עליו לעשות; המנהל רואה הכל ומסמן "ציוד נמסר".
 import { sb, state, isManager, icon, $, $$, esc, toast, backBtn, enablePush } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 

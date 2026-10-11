@@ -76,8 +76,8 @@ async function teamsCard(people) {
       <label class="field">שם הצוות<input id="tn" value="${esc(f.name)}"></label>
       ${pick('pilot', 'מטיס')}${pick('operator', 'מפעיל מערכות')}
       <div class="field">ראש צוות<div class="chips" id="tl"></div></div>
-      <div class="row">${t ? '<button class="btn ghost" id="tdel">פירוק צוות</button>' : ''}<button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="tsv">שמירה</button></div>`, (s, close) => {
-      const lead = () => { $('#tl', s).innerHTML = [f.pilot_id, f.operator_id].filter(Boolean).map(id => `<button type="button" class="chip" data-lead="${id}" aria-pressed="${f.lead_id === id}">${esc(N(id))}</button>`).join('') || '<span class="small muted">חסר מטיס ומפעיל</span>';
+      <div class="row">${t ? '<button class="btn ghost" id="tdel">פירוק צוות</button>' : ''}<button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="tsv">שמירת הצוות</button></div>`, (s, close) => {
+      const lead = () => { $('#tl', s).innerHTML = [f.pilot_id, f.operator_id].filter(Boolean).map(id => `<button type="button" class="chip" data-lead="${id}" aria-pressed="${f.lead_id === id}">${esc(N(id))}</button>`).join('') || '<span class="small muted">חסר מטיס ומפעיל מערכות</span>';
         $$('[data-lead]', s).forEach(b => b.onclick = () => { f.lead_id = b.dataset.lead; lead(); }); };
       ['pilot', 'operator'].forEach(k => $$(`[data-${k}]`, s).forEach(b => b.onclick = () => {
         f[k + '_id'] = b.dataset[k]; const other = k === 'pilot' ? 'operator' : 'pilot';

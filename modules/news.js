@@ -54,7 +54,7 @@ function compose(kind, people, done) {
     ${kind === 'news' ? `<div class="field">למי<div class="chips">${AUD.map(([k, l]) => `<button type="button" class="chip" data-r="${k}" aria-pressed="false">${l}</button>`).join('')}</div></div>
       <label class="tog"><span>דורש אישור קריאה</span><span class="sw"><input type="checkbox" id="ar"><i></i></span></label>
       <label class="tog"><span>נעוץ למעלה</span><span class="sw"><input type="checkbox" id="ap"><i></i></span></label>` : ''}
-    <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="as">פרסום</button></div>`, (s, close) => {
+    <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="as">פרסום ההודעה</button></div>`, (s, close) => {
     $$('[data-p]', s).forEach(c => c.onclick = () => { who = c.dataset.p; $$('[data-p]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); });
     $$('[data-r]', s).forEach(c => c.onclick = () => { const k = c.dataset.r, i = roles.indexOf(k); i < 0 ? roles.push(k) : roles.splice(i, 1); c.setAttribute('aria-pressed', roles.includes(k)); });
     $('#as', s).onclick = async () => {
@@ -119,7 +119,7 @@ export async function newRequest(done, pre) {
     <div class="field">נושא<div class="chips">${C.map(c => `<button type="button" class="chip" data-c="${esc(c)}" aria-pressed="${c === cat}">${esc(c)}</button>`).join('')}</div></div>
     <label class="field">מה צריך<textarea id="rb" rows="4" placeholder="למשל: חסרות לי 6 שעות בתלוש של ספטמבר"></textarea></label>
     <label class="btn ghost block">${icon('photo', 18)} <span id="rfl">צירוף תמונה (לא חובה)</span><input type="file" accept="image/*" id="rf" hidden></label>
-    <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="rs">שליחה</button></div>`, (s, close) => {
+    <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="rs">שליחה למשרד</button></div>`, (s, close) => {
     const PH = { 'שכר': 'למשל: חסרות לי 6 שעות בתלוש של ספטמבר', 'שעות ונוכחות': 'למשל: שכחתי להחתים ביום שלישי', 'ציוד': 'למשל: צריך כפפות ונעלי עבודה מידה 43', 'מסמך / אישור': 'למשל: אישור העסקה לבנק', 'רכב': 'למשל: נורת שמן דולקת ברכב 12-345-67' };
     $$('[data-c]', s).forEach(c => c.onclick = () => { cat = c.dataset.c; $$('[data-c]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); $('#rb', s).placeholder = PH[cat] || 'מה צריך?'; $('#rb', s).focus(); });
     $('#rb', s).placeholder = PH[cat] || 'מה צריך?';
@@ -131,7 +131,7 @@ export async function newRequest(done, pre) {
         const { error } = await sb.storage.from('field').upload(photo_path, blob, { contentType: 'image/jpeg' }); if (error) throw error; } catch { photo_path = null; toast('התמונה לא עלתה — הבקשה נשלחת בלעדיה'); }
       const { error } = await sb.from('office_requests').insert({ user_id: state.user.id, category: cat, body, photo_path });
       if (error) { $('#rs', s).disabled = false; return toast(errText(error, 'הבקשה לא נשלחה — נסו שוב')); }
-      close(); toast('נשלח למשרד — תקבל עדכון כשיטופל'); done();
+      close(); toast('נשלח למשרד — עדכון יגיע כשיטופל'); done();
     };
   });
 }

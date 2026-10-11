@@ -10,7 +10,7 @@ const dlabel = iso => { const d = new Date(iso), t = new Date(); const y = new D
 export async function renderChat(el, { site, project, conversation }) {
   const key = site ? { col: 'site_id', id: site.id } : project ? { col: 'project_id', id: project.id } : { col: 'conversation_id', id: conversation.id };
   const label = site ? site.name : project ? project.name : conversation.title;
-  // "חשוב" = חובת אישור קריאה. בשיחות פנימיות — רק מנהל מסמן. בצ'אט פרויקט — גם עובר כעדכון למאנדי.
+  // "חשוב" = חובת אישור קריאה. בשיחות פנימיות — רק מנהל מסמן. בצ׳אט פרויקט — גם עובר כעדכון למאנדי.
   const showImportant = !conversation || isManager();
   el.innerHTML = `<div class="chat" id="msgs"><div class="skel"></div></div>`;
   const comp = document.createElement('div'); comp.className = 'composer';
@@ -30,7 +30,7 @@ export async function renderChat(el, { site, project, conversation }) {
   } catch {}
   taggable = taggable.filter(id => id !== state.user.id && names.get(id)).sort((a, b) => names.get(a).localeCompare(names.get(b), 'he'));
   let rows = [], acks = new Map(), audience = conversation ? (conversation.members || []).length : 0;
-  // אישורי קריאה (כמו בוואטסאפ): ✓ נשלח · ✓✓ נקרא (בשיחה אישית — ע"י השני, בקבוצה — ע"י כולם). שעון = עוד בטלפון
+  // אישורי קריאה (כמו בוואטסאפ): ✓ נשלח · ✓✓ נקרא (בשיחה אישית — ע״י השני, בקבוצה — ע״י כולם). שעון = עוד בטלפון
   let reads = [];
   async function loadReads() {
     if (!conversation) return;
@@ -40,7 +40,7 @@ export async function renderChat(el, { site, project, conversation }) {
     if (m._local) return `<span class="tk wait" aria-label="ממתין לשליחה">${icon('clock', 12)}</span>`;
     if (!conversation) return '';
     const n = reads.filter(r => r.last_read_at && new Date(r.last_read_at) >= new Date(m.created_at)).length, all = reads.length && n >= reads.length;
-    return `<span class="tk ${all ? 'read' : ''}" aria-label="${all ? 'נקרא' : 'נשלח'}" title="${conversation.kind === 'group' && n && !all ? `נקרא ע"י ${n}` : ''}">${all || n ? '✓✓' : '✓'}</span>`;
+    return `<span class="tk ${all ? 'read' : ''}" aria-label="${all ? 'נקרא' : 'נשלח'}" title="${conversation.kind === 'group' && n && !all ? `נקרא ע״י ${n}` : ''}">${all || n ? '✓✓' : '✓'}</span>`;
   };
   const retick = () => $$('[data-tk]').forEach(e => { const m = rows.find(r => r.id === e.dataset.tk); if (m) e.innerHTML = tick(m); });
   async function load() {
@@ -134,6 +134,6 @@ export async function renderChat(el, { site, project, conversation }) {
       const blob = await shrink(f), photoId = crypto.randomUUID(), path = `${state.user.id}/chat/${key.id}/${photoId}.jpg`;
       await enqueue({ kind: 'photo', blob, photoId, path, meta: { [key.col]: key.id, kind: 'general' } });
       await send(path);
-    } catch { toast('התמונה לא נשלחה'); }
+    } catch { toast('התמונה לא נשלחה — נסו שוב'); }
   };
 }

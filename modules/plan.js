@@ -92,7 +92,7 @@ export async function renderPlan(el, pid, print = false) {
   $('#padd').onclick = async e => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; const n = (nums.at(-1) || 0) + 1; if (await save(n, { body: '', photos: [] })) renderPlan(el, pid); else b.disabled = false; };
   const g = $('#pgen'); if (g) g.onclick = async () => {
     if (g.disabled) return;
-    if ((rows || []).length && !(await confirmBox('לבנות מחדש מהאפיון?', { body: 'הטקסט והתמונות שנכתבו לכל יום נשארים', ok: 'עדכון' }))) return;
+    if ((rows || []).length && !(await confirmBox('לבנות מחדש מהאפיון?', { body: 'הטקסט והתמונות שנכתבו לכל יום נשארים', ok: 'בנייה מחדש' }))) return;
     g.disabled = true; const { data, error } = await sb.rpc('generate_work_plan', { p: pid }); if (error) { g.disabled = false; return toast(errText(error, 'התכנית לא נבנתה — נסו שוב'), 4000); }
     toast(`נבנו ${data} ימי עבודה`); renderPlan(el, pid);
   };

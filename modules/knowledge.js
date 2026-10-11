@@ -162,7 +162,7 @@ function drawQuiz(x, v, el, id) {
   const ans = [];
   box.innerHTML = `<h3>מבחן הסמכה</h3><div class="small muted">${x.quiz.length} שאלות · עוברים מ-${x.pass_pct}%${x.cert_months ? ` · תוקף ${x.cert_months} חודשים` : ''}</div>
     ${x.quiz.map((q, i) => `<div class="qz" data-q="${i}"><b>${i + 1}. ${esc(q.q)}</b>${q.options.map((o, j) => `<button type="button" class="qopt" data-o="${j}">${esc(o)}</button>`).join('')}</div>`).join('')}
-    <div id="qres"></div><button class="btn primary block big" id="qsend">בדיקה</button>`;
+    <div id="qres"></div><button class="btn primary block big" id="qsend">בדיקת התשובות</button>`;
   $$('.qz', box).forEach(z => $$('.qopt', z).forEach(b => b.onclick = () => { ans[+z.dataset.q] = +b.dataset.o; $$('.qopt', z).forEach(y => y.classList.toggle('on', y === b)); }));
   $('#qsend', box).onclick = async () => {
     if (ans.filter(a => a != null).length < x.quiz.length) return toast('יש שאלות בלי תשובה');
@@ -219,7 +219,7 @@ async function editKb(x, C, pre = {}) {
         <label class="field">נוסח החתימה<textarea id="kst" rows="2" placeholder="קראתי והבנתי את הנוהל ואפעל לפיו.">${esc(x?.sign_text || '')}</textarea></label>
       </div></details>
     <label class="tog"><span>הדרכת חובה</span><span class="sw"><input type="checkbox" id="kr" ${f.required ? 'checked' : ''}><i></i></span></label>
-    <div class="row">${x ? '<button class="btn ghost" id="kdel">מחיקה</button>' : ''}<button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="ks">שמירה</button></div>`, (s, close) => {
+    <div class="row">${x ? '<button class="btn ghost" id="kdel">מחיקה</button>' : ''}<button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="ks">שמירת ההדרכה</button></div>`, (s, close) => {
     const drawFiles = () => { $('#kf', s).innerHTML = f.files.map((x, i) => `<div class="lrow"><span class="mic">${icon('file', 18)}</span><b class="grow">${esc(x.name)}</b><button type="button" class="chip" data-rm="${i}">הסרה</button></div>`).join('');
       $$('[data-rm]', s).forEach(b => b.onclick = () => { f.files.splice(+b.dataset.rm, 1); drawFiles(); }); };
     drawFiles();

@@ -113,7 +113,7 @@ export async function renderClientReport(el, pid) {
 async function shareLink(p, pid) {
   let { data: s } = await sb.from('project_shares').select('token,expires_at').eq('project_id', pid).eq('revoked', false).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (!s) ({ data: s } = await sb.from('project_shares').insert({ project_id: pid, created_by: state.user.id }).select('token').single());
-  if (!s) return toast('לא הצלחתי ליצור קישור');
+  if (!s) return toast('הקישור לא נוצר — נסו שוב');
   const u = location.origin + location.pathname.replace(/[^/]*$/, '') + 'share.html?t=' + s.token;
   try { if (navigator.share) await navigator.share({ title: `E-Drone · ${p.sites?.name || p.name}`, url: u }); else { await navigator.clipboard.writeText(u); toast('הקישור הועתק'); } } catch { }
 }
@@ -133,5 +133,5 @@ async function collage(before, after, name) {
     if (logo) { const h = 70, w = logo.width * h / logo.height; x.fillStyle = 'rgba(255,255,255,.9)'; x.fillRect(1080 - w - 60, 960, w + 40, h + 30); x.drawImage(logo, 1080 - w - 40, 975, w, h); }
     const a2 = document.createElement('a'); a2.href = c.toDataURL('image/jpeg', 0.9); a2.download = `לפני-אחרי-${name}.jpg`; a2.click();
     toast('הקולאז׳ נשמר — בלי שם הלקוח בתמונה');
-  } catch { toast('לא הצלחתי לטעון את התמונות'); }
+  } catch { toast('התמונות לא נטענו — נסו שוב'); }
 }
