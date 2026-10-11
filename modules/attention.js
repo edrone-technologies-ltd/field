@@ -59,16 +59,34 @@ async function pushRows() {
   return [];
 }
 
-export async function attention(box) {
-  if (!box) return;
+// כל מה שמחכה למשתמש עצמו (הודעות, הדרכות, קליטה, התראות, שיבוץ שחסר)
+export async function attentionItems() {
   const parts = await Promise.all([tourRows(), schedRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
-  if (!items.length) { box.innerHTML = ''; return; }
-  box.innerHTML = `<section class="attn"><div class="sh-row"><h3 class="sh">מחכה לך</h3>${items.length > 1 ? `<span class="count">${items.length}</span>` : ''}</div>
-    <div class="alist">${items.slice(0, 5).map((x, i) => `<a class="arow ${x.tone}" ${x.href ? `href="${x.href}"` : 'role="button" tabindex="0"'} data-i="${i}"><span class="aic">${x.ic}</span><span class="grow"><b>${esc(x.title)}</b><small>${esc(x.sub)}</small></span>${x.btn ? `<span class="btn primary sm">${x.btn}</span>` : `<span class="chev">${icon('chev', 18)}</span>`}</a>`).join('')}</div></section>`;
-  box.querySelectorAll('[data-i]').forEach(a => { const x = items[+a.dataset.i]; if (x.k === 'push' && x.btn) a.onclick = async e => { e.preventDefault(); try { await enablePush(); toast('ההתראות הופעלו'); attention(box); } catch (err) { toast(err.message); } }; });
-  // כמה פרויקטים ממתינים — רשימה קצרה של בדיוק אותם פרויקטים (לא כל הפרויקטים)
-  box.querySelectorAll('[data-i]').forEach(a => { const x = items[+a.dataset.i]; if (!x.list) return;
-    a.onclick = e => { e.preventDefault(); sheet(`<h3>${esc(x.title)}</h3><div class="list">${x.list.map(l => `<a class="lrow" href="${l.href}" data-close><span class="grow"><b>${esc(l.t)}</b><small>${esc(l.s)}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div><button class="btn ghost block" data-close>סגירה</button>`); }; });
+  return items;
+}
+// "דורש טיפול" — רשימה אחת לכל המסך: הכי חמור קודם, 5 ראשונים ו"עוד" שנפתח במקום
+const RANK = { bad: 0, gold: 1, warn: 2, '': 3 };
+export const sortNeeds = items => items.slice().sort((a, b) => (RANK[a.tone] ?? 3) - (RANK[b.tone] ?? 3));
+const nrow = (x, i, hide) => `<a class="arow ${x.tone || ''}" ${x.href ? `href="${x.href}"` : 'role="button" tabindex="0"'} data-ni="${i}"${hide ? ' hidden' : ''}><span class="aic">${x.ic}</span><span class="grow"><b>${esc(x.title)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span>${x.btn ? `<span class="btn primary sm">${x.btn}</span>` : x.href || x.list ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</a>`;
+export function needsList(items, { title = 'דורש טיפול', limit = 5, id = 'needs' } = {}) {
+  if (!items.length) return '';
+  const more = items.length - limit;
+  return `<section id="${id}"><div class="sh-row"><h3 class="sh">${title}</h3><span class="count">${items.length}</span></div>
+    <div class="alist">${items.map((x, i) => nrow(x, i, i >= limit)).join('')}${more > 0 ? `<button class="arow more-row" data-nmore>עוד ${more}</button>` : ''}</div></section>`;
+}
+export function bindNeeds(root, items, redraw) {
+  root.querySelectorAll('[data-nmore]').forEach(b => b.onclick = () => { root.querySelectorAll('[data-ni][hidden]').forEach(r => r.hidden = false); b.remove(); });
+  root.querySelectorAll('[data-ni]').forEach(a => { const x = items[+a.dataset.ni]; if (!x) return;
+    if (x.k === 'push' && x.btn) a.onclick = async e => { e.preventDefault(); try { await enablePush(); toast('ההתראות הופעלו'); redraw?.(); } catch (err) { toast(err.message); } };
+    // כמה פרויקטים ממתינים — רשימה קצרה של בדיוק אותם פרויקטים
+    else if (x.list) a.onclick = e => { e.preventDefault(); sheet(`<h3>${esc(x.title)}</h3><div class="list">${x.list.map(l => `<a class="lrow" href="${l.href}" data-close><span class="grow"><b>${esc(l.t)}</b><small>${esc(l.s)}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div><button class="btn ghost block" data-close>סגירה</button>`); };
+  });
+}
+export async function attention(box) {
+  if (!box) return;
+  const items = sortNeeds(await attentionItems());
+  box.innerHTML = needsList(items, { title: 'מחכה לך' });
+  bindNeeds(box, items, () => attention(box));
 }

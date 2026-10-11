@@ -135,13 +135,11 @@ export async function renderProject(el, id, tab = 'o') {
         ${M ? `<button class="lrow kv" id="share" type="button"><span class="mic">${icon('send', 19)}</span><span class="grow"><b>קישור התקדמות ללקוח</b><small>עמוד עם סטטוס ותמונות — בלי מחירים, שעות או שמות</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
       </div>
       ${s?.lat || p.lat ? navButtons(s?.lat || p.lat, s?.lng || p.lng) : ''}
+      ${D.reps.length || D.days.some(d => d.status === 'done') ? `<button class="lrow" id="toRep" type="button"><span class="mic">${icon('photo', 19)}</span><span class="grow"><b>דוחות ותמונות מהשטח</b><small>${D.reps.length} דוחות${D.reps[0] ? ' · אחרון ' + dm(D.reps[0].report_date) : ''}</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
       ${M ? '<div class="sigline" id="sig"></div>' : ''}
-      <div id="gal"></div>
-      ${D.reps.length ? `<section><h3 class="sh">דוחות שטח</h3><div class="list">${D.reps.slice(0, 4).map(r => `<div class="rep compact"><span class="grow"><b>${dm(r.report_date)}${r.gallons ? ` · ${nf(r.gallons)} גלונים` : ''}${r.hours ? ` · ${nf(r.hours)} שעות` : ''}</b><small>${esc([r.crew, r.work].filter(Boolean).join(' · '))}</small>${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}</span>${r.had_issues ? '<span class="pill warn">תקלה</span>' : ''}</div>`).join('')}</div></section>` : ''}
       ${M && p.monday_item_id ? `<a class="more center" href="https://edroneil-force.monday.com/boards/5099780041/pulses/${esc(p.monday_item_id)}" target="_blank" rel="noopener">פתיחת הפרויקט במאנדי</a>` : ''}`;
     if (M) import('../lib/audit.js').then(m => m.signature($('#sig'), { project_id: id }));
-    const phs = D.reps.flatMap(r => (r.photos || []).filter(Boolean).map(x => ({ x, d: r.report_date })));
-    if (phs.length) signedUrls('media', phs.map(o => o.x)).then(u => { const g = $('#gal'); if (g) { g.innerHTML = `<section><h3 class="sh">מהשטח</h3><div class="gallery">${phs.slice(0, 9).map(o => `<button data-z="${esc(u[o.x])}"><img src="${esc(u[o.x])}" alt="" loading="lazy"><span>${dm(o.d)}</span></button>`).join('')}</div></section>`; $$('[data-z]', g).forEach(b => b.onclick = () => zoom(b.dataset.z, '')); } });
+    const tr = $('#toRep', box); if (tr) tr.onclick = () => $('#pt [data-t="d"]')?.click();
     $$('[data-x]', box).forEach(b => b.onclick = () => closeIssue(b.dataset.x, () => overview(box)));
     $$('[data-act]', box).forEach(r => r.onclick = () => r.dataset.act === 'site' ? siteSheet() : notesSheet());
     if (p.site_id) { const cb = document.createElement('div'); $('.menu', box)?.after(cb); import('../lib/contacts.js').then(m => m.renderContacts(cb, { siteId: p.site_id, clientId: p.client_id, org: p.client_name || p.sites?.name, title: 'אנשי קשר באתר' })); }

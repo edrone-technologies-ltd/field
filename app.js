@@ -5,8 +5,7 @@ const app = $('#app');
 // לשוניות תחתונות — מוצגות לפי ההרשאות
 const TABS = [
   { k: '', t: 'בית', ic: 'home', ok: () => true },
-  { k: 'ops', t: 'ניהול', ic: 'shield', ok: () => isManager() },
-  { k: 'schedule', t: 'לו"ז', ic: 'calendar', ok: () => can('today') && !isManager() },
+  { k: 'schedule', t: 'לו"ז', ic: 'calendar', ok: () => can('today') || isManager() },   // מנהל: לוח השיבוץ · עובד: הימים שלו
   { k: 'projects', t: 'פרויקטים', ic: 'folder', ok: () => can('projects') },
   { k: 'inbox', t: 'הודעות', ic: 'chat', ok: () => true },
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
@@ -47,12 +46,11 @@ function nav(show, active = '') {
   $('#tplus').onclick = quickAdd;
   unread();
 }
-// כפתור + : פעולה חדשה לפי הרשאות — הוצאה ובקשה/בעיה למשרד לכולם, רכש למנהל תפעול ומעלה
-function quickAdd() {
-  const O = [['#/expenses/new', 'receipt', 'הוצאה', 'דלק, חניה, אוכל, לינה — צילום קבלה'],
-    ['#/requests/new', 'send', 'בקשה או בעיה למשרד', 'שכר, ציוד, מסמכים, כל דבר אחר'],
-    can('purchase') && ['#/purchase/new', 'cart', 'בקשת רכש', 'חומרים וציוד מספקים']].filter(Boolean);
-  sheet(`<h3>חדש</h3><div class="list">${O.map(([h, ic, t, d]) => `<a class="lrow" href="${h}" data-close><span class="mic">${icon(ic, 19)}</span><span class="grow"><b>${t}</b><small>${d}</small></span></a>`).join('')}</div>`, () => {});
+// כפתור + : המקום היחיד ליצירת משהו חדש — דוחות (לפי הרשאות), בקשה/בעיה למשרד, ורכש למנהל תפעול ומעלה
+async function quickAdd() {
+  const { newReport } = await import('./modules/reports.js');
+  newReport(null, [['#/requests/new', 'send', 'בקשה או בעיה למשרד', 'שכר, ציוד, מסמכים, כל דבר אחר'],
+    can('purchase') && ['#/purchase/new', 'cart', 'בקשת רכש', 'חומרים וציוד מספקים']].filter(Boolean));
 }
 async function unread() {
   try {
@@ -78,6 +76,7 @@ function renderMenu() {
       !isManager() && ['#/requests', 'send', 'בקשה למשרד', 'שכר, ציוד, מסמכים'],
     ]],
     ['שטח', [
+      ['#/weather', 'sun', 'מזג אוויר וטיסה', 'לכל אתר ולכל מקום — רוח, משבים, גשם, Kp'],
       ['#/kb', 'book', 'מרכז ידע', 'הדרכות וסרטוני תפעול'],
       can('specs') && ['#/specs', 'clipboard', 'אפיונים', 'סיורים לפי אתר ומבנה'],
       isManager() && ['#/reports', 'photo', 'דוחות שטח', 'כל הדוחות והתמונות'],
@@ -85,11 +84,9 @@ function renderMenu() {
       can('purchase') && ['#/purchase', 'cart', 'רכש ומלאי', 'בקשת רכש'],
     ]],
     ['ניהול', [
-      isManager() && ['#/alerts', 'alert', 'לטיפול', 'מה פתוח ודורש החלטה'],
       isManager() && ['#/requests', 'send', 'בקשות מהצוות', 'שכר, ציוד, מסמכים'],
       isManager() && ['#/attendance', 'team', 'נוכחות צוות', can('finance') ? 'אישורים וייצוא לשכר' : 'אישורים ושעות'],
       isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
-      ['#/weather', 'sun', 'מזג אוויר וטיסה', 'לכל אתר ולכל מקום — רוח, משבים, גשם, Kp'],
       isManager() && ['#/clients', 'folder', 'לקוחות', 'תיק לקוח והיסטוריית עבודות'],
       state.profile.role === 'admin' && ['#/activity', 'clock', 'פעילות', 'מי מחובר ומה קורה'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
@@ -98,7 +95,7 @@ function renderMenu() {
   const th = document.documentElement.dataset.theme || '';
   app.innerHTML = `<header class="phead">${backBtn('#/')}<h1>עוד</h1></header>
     <div class="stack lg">
-      <div class="card prof"><span class="avatar lg">${esc(initials(p.full_name))}</span><div class="grow"><b>${esc(p.full_name)}</b><small>${esc(ROLE_HE[p.role])} · ${esc(p.phone || '')}</small>
+      <div class="card prof"><span class="avatar lg">${esc(initials(p.full_name))}</span><div class="grow"><b>${esc(p.full_name)}</b><small>${esc([ROLE_HE[p.role], p.phone].filter(Boolean).join(' · '))}</small>
         ${p.is_pilot && p.pilot_license_expiry ? `<small class="${new Date(p.pilot_license_expiry) - Date.now() < 45 * 864e5 ? 'err' : ''}">רישיון מטיס ${esc(p.pilot_license_no || '')} · בתוקף עד ${new Date(p.pilot_license_expiry).toLocaleDateString('he-IL')}</small>` : ''}</div></div>
       ${groups.map(([g, rows]) => `<section><h3 class="sh">${g}</h3><div class="mgrid">${rows.map(([h, ic, t, s]) => `<a class="mtile" href="${h}"><span class="mic">${icon(ic, 20)}</span><b>${t}</b><small>${s}</small></a>`).join('')}</div></section>`).join('')}
       <div class="menu"><div class="lrow"><span class="mic">${icon('sun', 20)}</span><span class="grow"><b>תצוגה</b></span>
@@ -155,7 +152,7 @@ async function routeInner() {
   $('#sheet').hidden = true;
   // מסך שורש של לשונית (בלי תת-נתיב) — בלי כפתור חזרה בכותרת
   if (h.length === 1 && TABS.some(t => t.k === h[0] && t.ok())) document.body.dataset.root = ''; else delete document.body.dataset.root;
-  nav(WITH_NAV.has(h[0]), h[0] === 'alerts' || h[0] === 'reports' ? (isManager() ? '' : 'menu') : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses'].includes(h[0]) ? 'menu' : h[0]);
+  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'alerts' || h[0] === 'reports' ? (isManager() ? '' : 'menu') : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses'].includes(h[0]) ? 'menu' : h[0]);
   const guard = m => { if (!can(m)) { app.innerHTML = `<div class="empty-card"><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; } return true; };
   const home = () => import('./modules/home.js');
   switch (h[0]) {

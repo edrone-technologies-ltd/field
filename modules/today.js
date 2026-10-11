@@ -100,7 +100,7 @@ export async function renderDay(el, id) {
     const s = stage();
     return `<div class="phero sm"><span class="img" style="background-image:url('${coverUrl || coverArt(P.name || '')}')"></span>
         <a class="back glass" href="#/" aria-label="חזרה">${icon('back', 20)}</a>
-        <span class="ph-bottom"><span class="row" style="gap:6px"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${dayLabel(D.day.day)}${D.day.is_last_day ? ' · יום אחרון' : ''}</span>${statusPill(D.day)}</span>
+        <span class="ph-bottom"><span class="row" style="gap:6px"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${dayLabel(D.day.day)}</span>${statusPill(D.day)}</span>
         <b>${esc(P.name || '')}</b>${D.day.day_goal ? `<small>${esc(D.day.day_goal)}</small>` : ''}</span></div>
       ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? '✓' : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`}`;
   }
@@ -135,9 +135,9 @@ export async function renderDay(el, id) {
           ${D.day.site_arrival ? `<div class="kpi"><b><bdi dir="ltr">${hhmm(D.day.site_arrival)}${D.day.site_end ? '–' + hhmm(D.day.site_end) : ''}</bdi></b><span>באתר</span></div>` : `<div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div>`}
           <div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלון ${esc(D.day.material_planned || '')}</span></div></div>
         ${countdown()}
-        ${D.day.gust_max != null ? `<div class="wx ${D.day.weather_alerted ? 'bad' : ''}">${D.day.weather_alerted ? '⚠ ' : ''}תחזית לשעות העבודה: רוח עד ${D.day.wind_max} קמ"ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ"מ` : ''}</div>` : ''}
-        <div class="small muted">צוות: ${esc(crew.join(' · ') || '—')}${D.day.drone ? ` · כלי: ${esc(D.day.drone.name)}` : ''}</div>
-        ${navButtons(site.lat || P.lat, site.lng || P.lng, D.day.address || site.address || site.name || P.name)}${site.lat || P.lat ? '' : '<div class="small muted">אין מיקום שמור לאתר — הניווט לפי כתובת</div>'}
+        ${D.day.gust_max != null && !P.site_id ? `<div class="wx ${D.day.weather_alerted ? 'bad' : ''}">${D.day.weather_alerted ? '⚠ ' : ''}תחזית לשעות העבודה: רוח עד ${D.day.wind_max} קמ"ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ"מ` : ''}</div>` : ''}
+        <div class="opcrew">${crew.map(n => `<span class="opc"><i></i>${esc(n)}</span>`).join('')}${D.day.drone ? `<span class="opc">${icon('drone', 14)} ${esc(D.day.drone.name)}</span>` : ''}</div>
+        ${navButtons(site.lat || P.lat, site.lng || P.lng, D.day.address || site.address || site.name || P.name)}
       </div>
       ${P.work_notes ? `<div class="note"><b>דגשים מהמשרד:</b> ${esc(P.work_notes)}</div>` : ''}
       ${site.access_notes ? `<div class="note">${esc(site.access_notes)}</div>` : ''}

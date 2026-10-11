@@ -1,6 +1,8 @@
-// ניהול מהטלפון (מנהל תפעול ומעלה): מסך אחד שעונה על "מה קורה בשטח, מה תקוע, ומה מחכה לי" — ומאשרים ישר מכאן.
+// הבית של המנהל (מנהל תפעול ומעלה): מסך אחד שעונה על "מה קורה בשטח, מה תקוע, ומה מחכה לי" — ומאשרים ישר מכאן.
+// סדר קבוע: מדדים · דורש טיפול (רשימה אחת) · לאישורך · היום בשטח · מחר · המשימות שלי · אתמול.
 // היום ומחר בשטח (צוות, מי החתים, מי אישר הגעה, מזג אוויר) · בעיות (מחושבות מהנתונים, שבוע קדימה) · לאישורך (תיקוני שעות, היעדרויות, בקשות למשרד, רכש).
-import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, toast, ask, timeAgo, can } from '../lib/core.js';
+import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, HE_DOW, toast, ask, timeAgo, can, initials } from '../lib/core.js';
+import { attentionItems, sortNeeds, needsList, bindNeeds } from './attention.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const first = n => (n || '').split(' ')[0];
@@ -9,7 +11,13 @@ const ABS = { vacation: 'חופשה', sick: 'מחלה', reserve: 'מילואים
 
 export async function renderOps(el) {
   if (!isManager()) { el.innerHTML = '<div class="empty">למנהל תפעול ומעלה.</div>'; return; }
-  el.innerHTML = `<header class="phead"><h1 class="grow">ניהול</h1><span class="small muted">${HE_D1[new Date().getDay()]} ${dm(isoDay())}</span></header><div class="skel tall"></div>`;
+  const now = new Date(), hr = now.getHours(), me = state.profile;
+  const greet = hr < 5 ? 'לילה טוב' : hr < 12 ? 'בוקר טוב' : hr < 17 ? 'צהריים טובים' : hr < 21 ? 'ערב טוב' : 'לילה טוב';
+  const head = `<header class="hhead"><div class="grow"><div class="eyebrow">יום ${HE_DOW[now.getDay()]}, ${now.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</div><h1>${greet}, ${esc(first(me.full_name))}</h1></div>
+    <a class="avatar" href="#/menu" aria-label="החשבון שלי">${esc(initials(me.full_name))}</a></header>`;
+  if (!el.querySelector('#hm')) el.innerHTML = `${head}<div id="hm" class="stack lg"><div class="skel"></div><div class="skel tall"></div></div>`;
+  const home = await import('./home.js');
+  const extra = Promise.all([home.load().then(home.alerts).catch(() => []), attentionItems().catch(() => [])]);
   const t = isoDay(), tm = addDays(t, 1), y = addDays(t, -1), wk = addDays(t, 6);
   const q = async p => { try { const { data } = await p; return data || []; } catch { return []; } };
   const [days, people, shifts, abs, sreq, oreq, preq, drones, ended, pulls] = await Promise.all([
@@ -61,8 +69,12 @@ export async function renderOps(el) {
   // הסנכרון עם מאנדי הוא מה שמחזיק את הכל — אם הוא נתקע, זה הדבר הראשון שצריך לדעת
   const lastOk = pulls.find(x => x.status === 'ok');
   if (pulls.length && (!lastOk || Date.now() - new Date(lastOk.created_at) > 40 * 6e4)) issues.unshift({ tone: 'bad', ic: 'alert', t: 'הסנכרון עם מאנדי נעצר', s: lastOk ? `סבב תקין אחרון ${timeAgo(lastOk.created_at)}` : 'הסבבים האחרונים נכשלו', href: can('admin') ? '#/admin' : '#/ops' });
-  const rank = { bad: 0, warn: 1 };
-  issues.sort((a, b) => rank[a.tone] - rank[b.tone]);
+  // רשימה אחת: בעיות שטח (שבוע קדימה) + מה שהמערכת מזהה (צי, פרויקטים, רישיונות, סנכרון) + מה שמחכה לי אישית
+  const [sys, mineA] = await extra;
+  const N = sortNeeds([
+    ...issues.map(i => ({ tone: i.tone, ic: icon(i.ic, 20), title: i.t, sub: i.s, href: i.href })),
+    ...sys.filter(a => a.k !== 'shiftreq').map(a => ({ tone: a.tone, ic: icon(a.ic, 20), title: a.title, sub: a.sub, href: a.href })),
+    ...mineA]);
 
   // ---- היום ומחר ----
   const dayCard = w => {
@@ -92,16 +104,19 @@ export async function renderOps(el) {
   ];
   if (preq.length) approvals.push(`<a class="lrow card" href="#/purchase"><span class="mic">${icon('cart', 19)}</span><span class="grow"><b>${preq.length > 1 ? preq.length + ' בקשות רכש ממתינות' : 'בקשת רכש ממתינה'}</b><small>לאישור ושליחה לספק</small></span><span class="chev">${icon('chev', 18)}</span></a>`);
 
-  const kpi = (n, l, tone = '') => `<div class="kpi ${tone}"><b>${n}</b><span>${l}</span></div>`;
-  el.innerHTML = `<header class="phead"><h1 class="grow">ניהול</h1><span class="small muted">${HE_D1[new Date().getDay()]} ${dm(t)}</span></header>
-    <div class="stack lg">
-      <div class="kpis opk">${kpi(dToday.length, 'ימי שטח היום')}${kpi(open.length, 'במשמרת עכשיו')}${kpi(issues.length, 'בעיות', issues.some(i => i.tone === 'bad') ? 'bad' : issues.length ? 'warn' : '')}${kpi(approvals.length, 'לאישורך', approvals.length ? 'warn' : '')}</div>
-      ${issues.length ? `<section class="stack"><h3 class="sh">בעיות</h3><div class="alist">${issues.map(i => `<a class="arow ${i.tone}" href="${i.href}"><span class="aic">${icon(i.ic, 20)}</span><span class="grow"><b>${esc(i.t)}</b><small>${esc(i.s)}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
-      <section class="stack"><div class="sh-row"><h3 class="sh">היום בשטח</h3><a class="more" href="#/dispatch">לוח שיבוץ</a></div>${dToday.map(dayCard).join('') || '<div class="small muted">אין ימי שטח היום</div>'}</section>
-      ${approvals.length ? `<section class="stack"><h3 class="sh">לאישורך</h3>${approvals.join('')}</section>` : ''}
-      <section class="stack"><h3 class="sh">מחר</h3>${dTom.map(dayCard).join('') || '<div class="small muted">אין ימי שטח מחר</div>'}</section>
-      <div class="opquick">${[['#/schedule', 'calendar', 'לו״ז'], ['#/dispatch', 'users', 'שיבוץ'], ['#/attendance', 'clock', 'נוכחות'], ['#/weather', 'sun', 'מזג אוויר'], ['#/equipment', 'drone', 'ציוד'], ['#/requests', 'send', 'בקשות']].map(([h, ic, l]) => `<a href="${h}">${icon(ic, 20)}<span>${l}</span></a>`).join('')}</div>
-    </div>`;
+  const kpi = (n, l, go, tone = '') => `<button class="kpi ${tone}" data-go="${go}"><b>${n}</b><span>${l}</span></button>`;
+  const nextDay = days.find(w => w.day > tm);
+  const none = (title, sub) => `<div class="empty-card"><span class="ei">${icon('drone', 24)}</span><span><b>${title}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></div>`;
+  $('#hm', el).innerHTML = `
+      <div class="kpis opk">${kpi(dToday.length, 'ימי שטח היום', 'sec-today')}${kpi(open.length, 'במשמרת עכשיו', 'sec-today')}${kpi(N.length, 'לטיפול', 'needs', N.some(i => i.tone === 'bad') ? 'bad' : N.length ? 'warn' : '')}${kpi(approvals.length, 'לאישורך', 'sec-appr', approvals.length ? 'warn' : '')}</div>
+      ${needsList(N)}
+      ${approvals.length ? `<section id="sec-appr"><div class="sh-row"><h3 class="sh">לאישורך</h3><span class="count">${approvals.length}</span></div>${approvals.join('')}</section>` : ''}
+      <section id="sec-today"><div class="sh-row"><h3 class="sh">היום בשטח</h3><a class="more" href="#/schedule">לו״ז ושיבוץ</a></div>${dToday.map(dayCard).join('') || none('אין ימי שטח היום', nextDay ? `הבא: ${nextDay.projects?.name || ''} · ${dm(nextDay.day)}` : '')}</section>
+      ${dTom.length ? `<section><h3 class="sh">מחר</h3>${dTom.map(dayCard).join('')}</section>` : ''}
+      <div id="mytasks"></div><div id="yday"></div>`;
+  $$('[data-go]', el).forEach(b => b.onclick = () => document.getElementById(b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  bindNeeds(el, N, () => renderOps(el));
+  home.extras();
   import('../lib/wx.js').then(m => m.fillWx(el)).catch(() => {});
   const again = () => renderOps(el);
   $$('[data-sr]', el).forEach(b => b.onclick = async e => { e.preventDefault(); const ok = b.dataset.ok === '1'; const reply = ok ? '' : await ask('סיבת הדחייה', { optional: true, ok: 'דחייה' }); if (reply === null) return;

@@ -978,3 +978,18 @@ a.lrow:has(.chev)::after{display:none}
 .wxd.on,.wxh.on{outline:2px solid var(--ink);outline-offset:-1px}
 .wxv{border-width:1px;border-radius:var(--r)}
 .wxh{background:transparent}
+/* תחזית + מרחב אווירי = כרטיס אחד */
+.wxblock{border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);background:var(--card);overflow:hidden}
+.wxblock.bad{border-color:color-mix(in srgb,#D64532 28%,var(--line))} .wxblock.mid{border-color:color-mix(in srgb,#E3A23B 30%,var(--line))}
+.wxblock .wxcard{border:0;border-radius:0;box-shadow:none}
+.wxblock .wxair{border:0;border-top:1px solid var(--line);border-radius:0;box-shadow:none;min-height:52px;padding:8px 14px;margin:0;background:var(--card)}
+.wxblock .wxair .mic{width:32px;height:32px} .wxblock .wxair b{font-size:.9rem}
+/* "עוד" בתוך רשימה */
+.more-row{justify-content:center;min-height:48px;width:100%;border:0;border-top:1px solid var(--line);background:transparent;color:var(--muted);font:inherit;font-weight:700;font-size:var(--t-meta);cursor:pointer}
+.kpi{font:inherit;color:inherit;text-align:right;cursor:pointer}
+/* כרטיס יום בשטח: כותרת מלאה, מזג אוויר בשורת המידע */
+.opday .row{align-items:flex-start} .opday .row b{font-size:var(--t-b);line-height:1.3}
+.navbtns .btn{min-height:46px;font-size:.92rem}
+/* איש קשר: כרטיס רגיל, הפעולות כשבבים */
+.contact{background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);padding:12px 14px}
+.contact a,.contact button{border-color:var(--line);background:var(--card2)}

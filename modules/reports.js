@@ -14,10 +14,10 @@ export const TYPES = [
 ];
 
 // ---------- פתיחת דוח חדש ----------
-export async function newReport(projectId) {
+export async function newReport(projectId, links = []) {
   if (projectId) return pickType(projectId);
   // מהבית: קודם סוג הדוח, ואז (אם צריך) הפרויקט
-  sheet(`<h3>דוח חדש</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}</div>
+  sheet(`<h3>${links.length ? 'חדש' : 'דוח חדש'}</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}${links.map(([h, ic, t, d]) => `<a class="lrow" href="${h}" data-close><span class="mic">${icon(ic, 20)}</span><span class="grow"><b>${t}</b><small>${d}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>
     <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
     $$('[data-t]', s).forEach(b => b.onclick = () => { close(); const t = TYPES.find(x => x.k === b.dataset.t); if (t.noProject) return open(t.k);
       const again = () => pickProject(pid => open(t.k, pid, again), () => newReport()); again(); });

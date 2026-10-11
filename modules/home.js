@@ -1,5 +1,5 @@
 // בית: עונה רק על "מה קורה היום ומה צריך אותי". כל השאר בלשוניות.
-// מנהל: היום בשטח · לטיפול (3 הכי חשובים) · השבוע (הפרויקטים עצמם — בלשונית פרויקטים). עובד שטח: היום שלי · הימים הקרובים · הודעות.
+// מנהל → מסך הבקרה (ops.js). עובד שטח: שעון · מחכה לך · היום שלי · הימים הקרובים. יצירת כל דבר חדש — רק בכפתור +.
 import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel } from '../lib/core.js';
 
 const today = () => isoDay();
@@ -49,7 +49,7 @@ export function alerts(d) {
     const left = daysBetween(t, p.pilot_license_expiry);
     if (left <= 45) out.push({ tone: left <= 14 ? 'bad' : 'warn', ic: 'shield', title: `רישיון המטיס של ${p.full_name.split(' ')[0]} ${left < 0 ? 'פג' : `פג בעוד ${left} ימים`}`, sub: `בתוקף עד ${dm(p.pilot_license_expiry)}` });
   });
-  if ((d.shiftReq || []).length) out.push({ tone: 'warn', ic: 'clock', title: `${d.shiftReq.length} בקשות תיקון שעות ממתינות לאישור`, sub: 'עובדים ששכחו להחתים או ביקשו עריכה', href: '#/attendance' });
+  if ((d.shiftReq || []).length) out.push({ k: 'shiftreq', tone: 'warn', ic: 'clock', title: `${d.shiftReq.length} בקשות תיקון שעות ממתינות לאישור`, sub: 'עובדים ששכחו להחתים או ביקשו עריכה', href: '#/attendance' });
   if ((d.pushErr || []).length) out.push({ tone: 'warn', ic: 'alert', title: 'שליחה למאנדי נכשלה', sub: String(d.pushErr[0].error || '').slice(0, 90) });
   const nd = (d.visits || []).filter(v => !v.visit_date);
   if (nd.length) out.push({ tone: '', ic: 'calendar', title: `${nd.length} סיורי אפיון בלי תאריך`, sub: nd.map(v => v.lead_name).join(' · ') });
@@ -82,7 +82,8 @@ const empty = (ic, title, sub, tone = '') => `<div class="empty-card ${tone}"><s
 
 // ---------- מסך הבית ----------
 export async function renderHome(el) {
-  const p = state.profile, first = (p.full_name || '').split(' ')[0], M = isManager();
+  if (isManager()) return (await import('./ops.js')).renderOps(el);
+  const p = state.profile, first = (p.full_name || '').split(' ')[0];
   const now = new Date(), h = now.getHours();
   const greet = h < 5 ? 'לילה טוב' : h < 12 ? 'בוקר טוב' : h < 17 ? 'צהריים טובים' : h < 21 ? 'ערב טוב' : 'לילה טוב';
   el.innerHTML = `<header class="hhead"><div class="grow"><div class="eyebrow">יום ${HE_DOW[now.getDay()]}, ${now.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</div><h1>${greet}, ${esc(first)}</h1></div>
@@ -100,49 +101,10 @@ export async function renderHome(el) {
       <span class="ph-bottom"><b>${esc(pr.name || '')}</b><small>${w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) : ''}${w.day_goal ? ' · ' + esc(w.day_goal) : ''}</small>
       <span class="btn primary">${w.status === 'planned' ? 'פתיחת היום' : w.status === 'done' ? 'סיכום היום' : 'המשך היום'}</span></span></a>`; }).join('');
 
-  if (!M) {
-    const next = (d.wdays || []).filter(w => w.day > t && mineDay(w)).slice(0, 4);
-    box.innerHTML = `<div id="attn"></div><div id="mytasks"></div>${myDay}${quick()}${myDay ? '' : empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
-      ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId)).join('')}</div></section>` : ''}
-      ${inboxPeek(d)}`;
-    bindConfirm(box); extras(); return;
-  }
-
-  const A = alerts(d);
-  const inField = new Map();
-  (d.wdays || []).filter(w => w.day === t).forEach(w => inField.set(w.project_id, { p: byId.get(w.project_id), w }));
-  P.filter(isOpen).forEach(x => { const f = x.planned_from || x.actual_from, to = x.planned_to || x.actual_to || f; if (f && f <= t && to >= t && !inField.has(x.id)) inField.set(x.id, { p: x }); });
-  const field = [...inField.values()].filter(x => x.p);
-  const nextField = !field.length ? schedule(d, addDays(t, 1), 13).find(x => x.items.some(i => i.kind !== 'v')) : null;
-  const week = schedule(d, t, 7);
-
-  box.innerHTML = `
-    <div id="attn"></div><div id="mytasks"></div>${myDay}<div id="yday"></div>${quick()}
-    <section><div class="sh-row"><h3 class="sh">היום בשטח</h3>${field.length ? `<span class="count">${field.length}</span>` : ''}<a class="more" href="#/weather">מזג אוויר וטיסה</a></div>
-      ${field.length ? `<div class="rail">${field.map(x => `<a class="pcard" href="${x.w ? '#/day/' + x.w.id : '#/p/' + x.p.id}"><span class="img" style="background-image:url('${cov[x.p.id]}')"></span>
-        <span class="pc-b"><b>${esc(x.p.name)}</b>${x.p.site_id ? `<span data-wx="${x.p.site_id}|${t}"></span>` : ''}<small>${x.w ? `${DAY_ST[x.w.status]}${x.w.report_time ? ' · ' + x.w.report_time.slice(0, 5) : ''} · ${esc((x.w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).join(', '))}` : esc(x.p.client_name || x.p.status_label || '')}</small></span></a>`).join('')}</div>`
-      : empty('drone', 'אין עבודה בשטח היום', nextField ? `הבא: ${esc(nextField.items.find(i => i.kind !== 'v').p?.name || '')}, ${dayWord(nextField.date)}` : 'אין עבודה מתוכננת בשבועיים הקרובים')}
-    </section>
-
-    <section><div class="sh-row"><h3 class="sh">לטיפול</h3>${A.length > 3 ? `<a class="more" href="#/alerts">הכל (${A.length})</a>` : ''}</div>
-      ${A.length ? `<div class="alist">${A.slice(0, 3).map(alertRow).join('')}</div>` : empty('shield', 'הכל תחת שליטה', 'אין כרגע דברים פתוחים', 'ok')}
-    </section>
-
-    <section><div class="sh-row"><h3 class="sh">השבוע</h3><a class="more" href="#/schedule">לו"ז מלא</a></div>
-      <div class="week" id="wk">${week.map((x, i) => `<button class="wd" data-i="${i}" aria-pressed="false"><small>${i === 0 ? 'היום' : HE_D1[new Date(x.date + 'T12:00').getDay()]}</small><b>${+x.date.slice(8)}</b><span class="dots">${x.items.slice(0, 3).map(it => `<i class="${it.kind === 'v' ? 'blue' : it.kind === 'w' ? 'lime' : TONE[it.p?.status_label] || 'grey'}"></i>`).join('')}</span></button>`).join('')}</div>
-      <div id="wkday" class="ditems"></div>
-    </section>
-
-
-    ${inboxPeek(d)}
-    <div class="foot">${d.sync?.[0] ? `מסונכרן עם מאנדי · ${timeAgo(d.sync[0].created_at)}` : ''}</div>`;
-
-  const pick = i => { $$('#wk .wd').forEach(b => b.setAttribute('aria-pressed', b.dataset.i == i)); const x = week[i];
-    $('#wkday').innerHTML = x.items.length ? x.items.map(evRow).join('') : `<div class="ev none">אין עבודה מתוכננת ${i == 0 ? 'היום' : 'ביום הזה'}</div>`; };
-  $$('#wk .wd').forEach(b => b.onclick = () => pick(+b.dataset.i));
-  extras();
-  import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
-  pick(week[0].items.length ? 0 : Math.max(0, week.findIndex(x => x.items.length)));
+  const next = (d.wdays || []).filter(w => w.day > t && mineDay(w)).slice(0, 4);
+  box.innerHTML = `<div id="attn"></div><div id="mytasks"></div>${myDay || empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
+    ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId)).join('')}</div></section>` : ''}`;
+  bindConfirm(box); extras();
 }
 const dayRow = (w, byId) => { const me = (w.work_day_crew || []).find(c => c.user_id === state.user.id);
   const needConfirm = me && !me.confirmed_at && w.status === 'planned' && w.day > today();
@@ -153,12 +115,6 @@ function bindConfirm(root) {
   $$('[data-confirm]', root).forEach(b => b.onclick = async () => { b.disabled = true; const { error } = await sb.rpc('confirm_day', { d: b.dataset.confirm });
     if (error) { b.disabled = false; return; } b.outerHTML = '<div class="acked" style="text-align:center">אישרת הגעה ✓</div>'; });
 }
-function inboxPeek(d) {
-  const un = (d.inbox || []).filter(c => c.unread > 0).slice(0, 3);
-  if (!un.length) return '';
-  return `<section><div class="sh-row"><h3 class="sh">הודעות חדשות</h3><a class="more" href="#/inbox">הכל</a></div><div class="list">${un.map(c => `<a class="lrow" href="#/c/${c.id}"><span class="avatar sm ${c.kind === 'group' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 18) : esc(initials(c.title))}</span><span class="grow"><b>${esc(c.title || '')}</b><small>${esc(c.last_message || '')}</small></span><span class="badge">${c.unread}</span></a>`).join('')}</div></section>`;
-}
-
 // ---------- כל מה שלטיפול ----------
 export async function renderAlerts(el) {
   el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1>לטיפול</h1></header><div id="al" class="alist"><div class="skel"></div></div>`;
@@ -168,20 +124,19 @@ export async function renderAlerts(el) {
 
 // ---------- לו"ז ----------
 export async function renderSchedule(el) {
-  el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1>לו"ז</h1></header><div id="sc" class="stack lg"><div class="skel"></div></div>`;
+  const M = isManager();
+  // מנהל: הלשונית היא לוח השיבוץ של השבוע (+ פרויקטים שמחכים לתאריך). עובד: הימים שלו.
+  if (M) { const { renderDispatch } = await import('./dispatch.js'); await renderDispatch(el, null, { title: 'לו״ז' }); }
+  else el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1>לו"ז</h1></header>`;
+  el.insertAdjacentHTML('beforeend', '<div id="sc" class="stack lg" style="margin-top:28px"></div>');
   const d = await load(); const box = $('#sc'); if (!box) return;
-  const t = today(), M = isManager();
+  const t = today();
   const by = new Map((d.projects || []).map(p => [p.id, p]));
   const mine = (d.wdays || []).filter(w => w.day >= t && mineDay(w));
-  const days = schedule(d, t, 14).filter((x, i) => i === 0 || x.items.length);
   const hasDay = new Set((d.wdays || []).filter(w => w.day >= t).map(w => w.project_id));
   const noDate = (d.projects || []).filter(isOpen).filter(p => ['קביעת מועד', 'תואם - ממתין לביצוע', 'אושר מול לקוח', 'בביצוע'].includes(p.status_label) && !hasDay.has(p.id) && !((p.planned_to || p.planned_from || '') >= t));
-  box.innerHTML = `${can('today') ? `<section><h3 class="sh">הימים שלי</h3>${mine.length ? `<div class="list">${mine.map(w => dayRow(w, by)).join('')}</div>` : empty('calendar', 'אין לך ימי שטח משובצים', 'השיבוץ נעשה בתוך הפרויקט')}</section>` : ''}
-    ${M ? `<a class="btn primary block" href="#/dispatch">${icon('users', 18)} לוח שיבוץ שבועי</a>` : ''}
-    ${M ? `<section><div class="sh-row"><h3 class="sh">כל החברה · שבועיים</h3><a class="more" href="#/reports">דוחות שטח</a></div>
-      <div class="agenda">${days.map(x => `<div class="day ${x.date === t ? 'is-today' : ''}"><div class="dlabel"><b>${x.date === t ? 'היום' : HE_DOW[new Date(x.date + 'T12:00').getDay()]}</b><span>${dm(x.date)}</span></div>
-        <div class="ditems">${x.items.length ? x.items.map(evRow).join('') : '<div class="ev none">אין עבודה מתוכננת</div>'}</div></div>`).join('')}</div></section>` : ''}
-    ${M && noDate.length ? `<section><div class="sh-row"><h3 class="sh">ממתינים לתאריך</h3><span class="count">${noDate.length}</span></div><div class="small muted">פרויקטים פתוחים בלי תאריך ביצוע עתידי במאנדי</div>
+  box.innerHTML = `${!M ? `<section><h3 class="sh">הימים שלי</h3>${mine.length ? `<div class="list">${mine.map(w => dayRow(w, by)).join('')}</div>` : empty('calendar', 'אין לך ימי שטח משובצים', 'כשתשובץ, הימים יופיעו כאן')}</section>` : ''}
+    ${M && noDate.length ? `<section><div class="sh-row"><h3 class="sh">ממתינים לתאריך במאנדי</h3><span class="count">${noDate.length}</span></div>
       <div class="alist">${noDate.map(p => `<a class="arow" href="#/p/${p.id}"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.status_label, p.client_name].filter(Boolean).join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}`;
   bindConfirm(box);
 }
@@ -209,19 +164,13 @@ export async function renderReports(el) {
   $('#rq').oninput = e => draw(e.target.value.trim()); draw('');
 }
 
-// פעולות מהירות — שלוש הפעולות שעושים הכי הרבה, בשורה אחת
-const quick = () => `<div class="quick"><button class="qa primary" id="qnew">${icon('plus', 22)}<b>דוח חדש</b></button>
-  <a class="qa" href="#/requests">${icon('send', 22)}<b>${isManager() ? 'בקשות מהצוות' : 'בקשה למשרד'}</b></a>
-  <a class="qa" href="#/expenses">${icon('receipt', 22)}<b>הוצאה</b></a></div>`;
-
 // תוספות בראש המסך אחרי שהוא צויר: הודעות לאישור, הפעלת התראות
-function extras() {
+export function extras() {
   if (isManager()) yesterday();
   import('./tasks.js').then(m => m.myTasks($('#mytasks')));
   import('./attention.js').then(m => m.attention($('#attn')));
   pendingAcks();
   import('./attendance.js').then(m => m.clockCard($('#hm')));
-  const n = $('#qnew'); if (n) n.onclick = async () => (await import('./reports.js')).newReport();
 }
 // הודעות חשובות שמחכות לאישור שלי — בראש המסך, עד שמאשרים
 async function pendingAcks() {
