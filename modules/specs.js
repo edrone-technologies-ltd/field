@@ -275,7 +275,7 @@ export async function renderSite(el, slug, tab = 'b') {
 export async function renderBuilding(el, slug, bid) {
   const s = await fetchSite(slug); const b = s?.buildings.find(x => x.id === bid);
   if (!b) { el.innerHTML = `<div class="empty">המבנה לא נמצא.</div>`; return; }
-  const spec = b.spec; let form = { ...spec }; let dirty = false;
+  const spec = b.spec; let form = { ...spec, floors: spec.floors ?? (b.floors != null ? Math.round(b.floors) : null) }; let dirty = false;
   const editable = can('specs');
   const plans = await signedUrls('plans', b.plan_images.map(p => p.storage_path));
   const chips = (k, opts) => `<div class="chips">${opts.map(o => `<button type="button" class="chip" data-g="${k}" data-v="${esc(o)}" aria-pressed="${form[k] === o}">${esc(o)}</button>`).join('')}</div>`;
@@ -306,6 +306,8 @@ export async function renderBuilding(el, slug, bid) {
       <div class="facades" id="facs"></div>` : ''}
     <fieldset ${editable ? '' : 'disabled'} style="border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:14px">
     <div class="sec"><h3>הערכת ביצוע</h3>
+      <div class="field">קומות במבנה
+        <div class="stepper"><button type="button" id="fm" aria-label="פחות קומות">−</button><input class="days grow" id="floors" type="number" inputmode="numeric" step="1" min="0" max="200" value="${esc(form.floors ?? '')}"><button type="button" id="fp" aria-label="יותר קומות">+</button></div></div>
       <div class="field">ימי עבודה צפויים למבנה<small id="dsrc">כל המבנה, כל החזיתות. חצי יום = 0.5</small>
         <div class="stepper"><button type="button" id="dm">−</button><input class="days grow" id="days" type="number" inputmode="decimal" step="0.5" min="0" value="${esc(form.days_expected ?? '')}"><button type="button" id="dp">+</button></div></div>
       <div class="small muted" id="rate"></div>
@@ -398,6 +400,10 @@ export async function renderBuilding(el, slug, bid) {
   drawFacades();
   $('#dm').onclick = () => { days.value = Math.max(0, (Number(days.value) || 0) - 0.5); days.oninput(); };
   $('#dp').onclick = () => { days.value = (Number(days.value) || 0) + 0.5; days.oninput(); };
+  const fl = $('#floors');
+  fl.oninput = () => set('floors', fl.value === '' ? null : Math.max(0, Math.min(200, Math.round(Number(fl.value)))));
+  $('#fm').onclick = () => { fl.value = Math.max(0, (Number(fl.value) || 0) - 1); fl.oninput(); };
+  $('#fp').onclick = () => { fl.value = Math.min(200, (Number(fl.value) || 0) + 1); fl.oninput(); };
   ['obstacles_text', 'notes', 'highlights'].forEach(k => $('#' + k).oninput = e => set(k, e.target.value));
   TOGS.forEach(([k]) => $('#t_' + k).onchange = e => { set(k, e.target.checked); if (k === 'obstacles') $('#obstBox').hidden = !e.target.checked; });
 
@@ -431,12 +437,12 @@ export async function renderBuilding(el, slug, bid) {
 
   async function save(done, quiet) {
     const patch = {};
-    ['days_expected', 'facades', 'facade_days', 'work_window', 'method', 'washed_last', 'density', 'material', 'obstacles', 'obstacles_text', 'docking', 'hydrants', 'power', 'secure_storage', 'notes', 'highlights'].forEach(k => patch[k] = form[k] ?? null);
+    ['days_expected', 'facades', 'facade_days', 'work_window', 'method', 'washed_last', 'density', 'material', 'obstacles', 'obstacles_text', 'docking', 'hydrants', 'power', 'secure_storage', 'notes', 'highlights', 'floors'].forEach(k => patch[k] = form[k] ?? null);
     ['obstacles', 'docking', 'hydrants', 'power', 'secure_storage'].forEach(k => patch[k] = !!patch[k]);
     patch.status = done ? 'done' : (spec.status === 'done' ? 'done' : 'draft');
     patch.surveyor_id = spec.surveyor_id || state.user.id;
     await enqueue({ kind: 'update', table: 'specs', rowId: spec.id, patch });
-    Object.assign(spec, patch); b.spec = spec; await cache.set('site:' + slug, s);
+    Object.assign(spec, patch); b.spec = spec; if (patch.floors != null) b.floors = patch.floors; await cache.set('site:' + slug, s);
     dirty = false; const [c2, t2] = STAT[patch.status]; const p = $('#stp'); if (p) { p.className = 'pill ' + c2; p.textContent = t2; }
     if (!quiet) toast(navigator.onLine ? (done ? 'האפיון הושלם ונשמר' : 'נשמר') : 'נשמר בטלפון · יישלח כשתחזור קליטה');
   }
