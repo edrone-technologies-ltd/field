@@ -8,7 +8,7 @@ const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיח
 const T_STATUS = { todo: ['לביצוע', ''], in_progress: ['בעבודה', 'lime'], done: ['בוצע', 'ok'], blocked: ['נתקע', 'bad'], dropped: ['בוטל', ''] };
 const NEXT = { todo: 'done', in_progress: 'done', done: 'todo', blocked: 'done', dropped: 'todo' };   // הקשה אחת = בוצע (ושוב = ביטול)
 const hhmm = t => (t || '').slice(0, 5);
-const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,lat,lng,map_path)), work_day_crew(user_id,role,hours,clock_in,confirmed_at,cant_come_at,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
+const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,access_auto,lat,lng,map_path)), work_day_crew(user_id,role,hours,clock_in,confirmed_at,cant_come_at,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
 
 function statusPill(d) {
   const m = { planned: ['מתוכנן', ''], en_route: ['בדרך', 'warn'], on_site: ['באתר', 'lime'], working: ['בעבודה', 'lime'], issue: ['תקלה', 'bad'], done: ['נסגר', 'ok'] }[d.status] || ['', ''];
@@ -45,8 +45,19 @@ export async function loadDay(id) {
   ]);
   const allTasks = (tasks || []).concat(open.filter(t => !(tasks || []).some(x => x.id === t.id)));
   const D = { ops: siteOps(ops), prep, at: Date.now(), clockH: ch ? Object.fromEntries(ch.map(r => [r.user_id, Number(r.hours)])) : null, specPh: sp, fixes, plan, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
+  // רשימת ההעמסה לפי האפיון (רק כשלא נקבעה ידנית ליום): ברז/הידרנט → בלי מיכל מים, שקע → בלי גנרטור, חומר הניקוי בשמו, גג → רתמות
+  const def = D.S.equip_default || [], req = day.equip_required || [];
+  if (Object.keys(D.ops).length && (!req.length || (req.length === def.length && req.every(x => def.includes(x))))) day.equip_required = tailorEquip(def, D.ops, day.material_planned);
   await cache.set('day:' + id, D);
   return D;
+}
+function tailorEquip(base, o, mat) {
+  let L = [...base]; const has = (k, v) => String(o[k] || '').split(' / ').includes(v), swap = (a, b) => { const i = L.indexOf(a); if (i >= 0) { if (b) L[i] = b; else L.splice(i, 1); } else if (b) L.push(b); };
+  if (o.water && !has('water', 'מכלית')) swap('מיכל מים', has('water', 'הידרנט') ? 'מתאם הידרנט' : 'מחבר לברז');
+  if (o.power && !has('power', 'גנרטור')) swap('גנרטור', 'כבל מאריך');
+  if (mat === 'מים בלבד') swap('חומר ניקוי', null); else if (mat && mat !== 'אחר') swap('חומר ניקוי', 'חומר ניקוי · ' + mat);
+  if (has('launch', 'גג') && !L.some(x => /רתמ/.test(x))) L.push('רתמות לעבודה מהגג');
+  return [...new Set(L)];
 }
 export async function renderDay(el, id) {
   el.innerHTML = `<div class="skel"></div>`;
@@ -132,24 +143,32 @@ export async function renderDay(el, id) {
       </div>
       ${opsStrip()}
       ${P.work_notes ? `<div class="note"><b>דגשים מהמשרד:</b> ${esc(P.work_notes)}</div>` : ''}
-      ${site.access_notes ? `<div class="note">${esc(site.access_notes)}</div>` : ''}
-      ${D.day.logistics?.length ? `<section><h3 class="sh">לפני היציאה</h3><div class="list">${D.day.logistics.map(l => `<div class="lrow"><span class="grow">${esc(l)}</span></div>`).join('')}</div></section>` : ''}
-      ${D.tasks.length ? `<section><h3 class="sh">משימות היום</h3><div class="list">${D.tasks.map(t => `<div class="lrow"><span class="grow"><b>${esc(t.title)}</b>${t.risk ? `<small class="issue">${esc(t.risk)}</small>` : ''}${t.instructions ? `<small>${esc(t.instructions)}</small>` : ''}</span>${t.phase ? `<span class="pill">${esc(t.phase)}</span>` : ''}</div>`).join('')}</div></section>` : ''}
+      ${site.access_notes && !(site.access_notes === site.access_auto && opsStrip()) ? `<div class="note">${esc(site.access_notes)}</div>` : ''}
+      ${logi().length && !opsStrip() ? `<section><h3 class="sh">לפני היציאה</h3><div class="list">${logi().map(l => `<div class="lrow"><span class="grow">${esc(l)}</span></div>`).join('')}</div></section>` : ''}
+      ${dayList().length ? `<section><h3 class="sh">משימות היום</h3><div class="list">${dayList().map(t => `<div class="lrow"><span class="grow"><b>${esc(t.title)}</b>${t.risk ? `<small class="issue">${esc(t.risk)}</small>` : ''}${t.instructions ? `<small>${esc(t.instructions)}</small>` : ''}</span>${t.phase ? `<span class="pill">${esc(t.phase)}</span>` : ''}</div>`).join('')}</div></section>` : ''}
       ${sunCard()}
       ${contactCard(site.contact_name, site.contact_phone)}
       ${site.map_path ? '<div class="card sitemap compact" id="daymap"></div>' : ''}`;
   }
+  // משימות היום בסקירה — בלי ההכנות שכבר מופיעות לסימון ב"לפני היציאה"
+  function dayList() { const P = new Set((D.prep || []).map(t => t.id)); return D.tasks.filter(t => !P.has(t.id)); }
+  // שורות לוגיסטיקה מהשיבוץ (work_days.logistics) — בלי מה שכבר מופיע מהאפיון (מים/חשמל), כדי שלא יופיע פעמיים
+  function logi(o = D.ops || {}) {
+    return (D.day.logistics || []).filter(l => !(o.water && /מים|הידרנט/.test(l)) && !(o.power && /חשמל|גנרטור/.test(l)));
+  }
   // לפני היציאה / באתר: מה האפיון אמר על השטח + משימות ההכנה (סימון בלחיצה). onSite = רק מה שרלוונטי באתר
   function opsStrip(onSite = false) {
-    const o = D.ops || {}, prep = (D.prep || []).filter(t => !D.tasks.some(x => x.id === t.id));
+    const o = D.ops || {}, prep = D.prep || [];   // כולל הכנות של היום — מסמנים בבוקר, לפני היציאה
     const items = [['water', 'מים'], ['power', 'חשמל'], ['access', 'גישה'], ['launch', 'המראה'], ['air', 'מרחב אווירי']].filter(([k]) => o[k]).filter(([k]) => !onSite || k !== 'access');
     if (!items.length && !o.hazards?.length && !o.permits?.length && !prep.length) return '';
+    const L = onSite ? [] : logi(o);
     const warn = { water: 'מכלית', power: 'גנרטור', air: ['נדרש תיאום', 'מוגבל'], access: 'רחוק — סחיבה' };
     const bad = (k, v) => [].concat(warn[k] || []).includes(v);
     return `<div class="card stack opsx"><b>${onSite ? 'באתר' : 'לפני היציאה'}</b>
       ${items.length ? `<div class="opsg">${items.map(([k, l]) => `<span class="${bad(k, o[k]) ? 'w' : ''}"><small>${l}</small><b>${esc(o[k])}</b></span>`).join('')}</div>` : ''}
       ${o.hazards?.length ? `<div class="chips">${o.hazards.map(h => `<span class="pill bad">${esc(h)}</span>`).join('')}</div>` : ''}
       ${!onSite && o.permits?.length && !prep.length ? `<div class="small muted">לתאם מראש: ${esc(o.permits.join(' · '))}</div>` : ''}
+      ${L.length ? `<div class="small muted">${L.map(esc).join(' · ')}</div>` : ''}
       ${prep.length ? `<div class="list">${prep.map(t => `<button class="task ${t.status}" data-prep="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : ''}</span><span class="t"><b>${esc(t.title)}</b></span></button>`).join('')}</div>` : ''}</div>`;
   }
   function bindOps(root) {
@@ -227,11 +246,11 @@ export async function renderDay(el, id) {
     if (D.local.close && !D.local.close._v) D.local.close = null;   // מבנה ישן (שמר גם ערכים נגזרים) — מתחילים נקי
     const O = D.local.close ||= { _v: 2 }, base = {
       material: D.day.material_used || D.day.material_planned || 'Assert Lemon', gallons: D.day.gallons ?? (D.day.gallons_planned != null ? Number(D.day.gallons_planned) : null),   // ברירת מחדל = המתוכנן; משנים רק בחריג
-      work: D.day.work_types?.length ? D.day.work_types : ['ניקוי חזיתות'], equipment_ok: D.day.equipment_ok ?? true, quality: D.day.quality || 0,
+      work: D.day.work_types?.length ? D.day.work_types : ['ניקוי חזיתות'], equipment_ok: D.day.equipment_ok ?? !D.issues.some(i => i.kind === 'equipment' && i.status !== 'closed'),   // דווחה היום תקלת ציוד → לא מסמנים "חזר תקין" לבד quality: D.day.quality || 0,
       notes: D.day.notes || '', weather: D.day.weather_stop, flights: D.day.flights ?? null, air: D.day.air_minutes ?? null,
       // שעות: מה שנשמר ביום, אחרת מהשעון. בלי משמרת בשעון — ריק (לא מנחשים שעות למי שאולי לא הגיע)
       hours: Object.fromEntries(D.day.work_day_crew.map(c => [c.user_id, c.hours ?? D.clockH?.[c.user_id] ?? null])),
-      tomorrow: D.day.tomorrow ?? D.tasks.filter(t => !['done', 'dropped'].includes(t.status)).map(t => t.title).join(' · '),
+      tomorrow: D.day.tomorrow ?? D.tasks.filter(t => !['done', 'dropped'].includes(t.status) && t.phase !== 'הכנה').map(t => t.title).join(' · '),   // הכנות לפני יציאה אינן "עבודה למחר"
       sign: { name: site.contact_name || '', role: '', satisfied: true, notes: '' },
       start: D.day.arrived_at ? hm(D.day.arrived_at) : '07:00', end: D.day.finished_at ? hm(D.day.finished_at) : (D.day.day === isoDay() ? hm(new Date().toISOString()) : '15:00'),
       crew: D.day.work_day_crew.map(c => c.user_id),
@@ -266,7 +285,7 @@ export async function renderDay(el, id) {
         <b>מי עבד</b><div class="chips">${D.team.filter(u => ['crew_lead', 'crew', 'ops_manager', 'admin'].includes(u.role)).map(u => `<button class="chip" data-crew="${u.id}" aria-pressed="${C.crew.includes(u.id)}" ${u.id === D.day.crew_lead_id ? 'disabled' : ''}>${esc(u.full_name)}</button>`).join('')}</div></div>
       ${D.tasks.length ? `<div class="sec"><h3>מה בוצע מהתכנית</h3><div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-rt="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : ''}</span><span class="t"><b>${esc(t.title)}</b><small>${esc(t.phase || '')}</small></span></button>`).join('')}</div></div>` : ''}
       ${baBlock()}`;
-    return reportTop + (REPORT ? '' : `<div class="card row"><div class="ring" style="--p:${tot ? Math.round(done / tot * 100) : 0}"><b>${done}/${tot}</b></div><div class="grow"><b>משימות שבוצעו היום</b><div class="small muted">${tot - done ? `${tot - done} עוברות למחר` : 'הכל בוצע'}</div></div></div>`) + `
+    return reportTop + (REPORT ? '' : `<div class="card row"><div class="ring" style="--p:${tot ? Math.round(done / tot * 100) : 0}"><b>${done}/${tot}</b></div><div class="grow"><b>משימות שבוצעו היום</b><div class="small muted">${tot - done ? `${tot - done} ${D.day.is_last_day ? 'לא בוצעו' : 'עוברות למחר'}` : 'הכל בוצע'}</div></div></div>`) + `
       <div class="sec"><b>חומר</b>${chips('material', D.S.materials || ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'])}
         <b>גלונים</b><div class="stepper"><button type="button" data-g="-0.5">−</button><input class="days grow" id="gal" type="number" inputmode="decimal" step="0.5" min="0" value="${C.gallons ?? ''}" placeholder="${D.day.gallons_planned ? nf(D.day.gallons_planned) : ''}"><button type="button" data-g="0.5">+</button></div>
         ${D.day.gallons_planned ? `<div class="chips"><button type="button" class="chip" id="galp" aria-pressed="${C.gallons != null && +C.gallons === +D.day.gallons_planned}">כמתוכנן · ${nf(D.day.gallons_planned)}</button></div>` : ''}
@@ -278,11 +297,12 @@ export async function renderDay(el, id) {
         <input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${v ?? ''}"></div>`; }).join('')}</div>
       <div class="sec">
         <label class="tog"><span>הציוד חזר תקין</span><span class="sw"><input type="checkbox" id="eqok" ${C.equipment_ok ? 'checked' : ''}><i></i></span></label>
-        <details class="cmore" id="cmore" ${D.local.more || C.weather ? 'open' : ''}><summary><span class="grow">עוד</span><small class="muted">${esc([C.flights != null ? C.flights + ' טיסות' : '', C.air != null ? C.air + ' דק׳ אוויר' : '', C.weather ? 'עצירת מזג אוויר' : ''].filter(Boolean).join(' · '))}</small></summary>
-        ${D.day.drone_id || D.day.method === 'רחפן' ? `<div class="row"><label class="field grow">מספר טיסות<input type="number" inputmode="numeric" min="0" id="fl" value="${C.flights ?? ''}"></label><label class="field grow">דקות אוויר<input type="number" inputmode="numeric" min="0" id="am" value="${C.air ?? ''}"></label></div>` : ''}
+        ${D.day.drone_id ? `<div class="row"><label class="field grow">מספר טיסות<input type="number" inputmode="numeric" min="0" id="fl" value="${C.flights ?? ''}"></label><label class="field grow">דקות אוויר<input type="number" inputmode="numeric" min="0" id="am" value="${C.air ?? ''}"></label></div>` : ''}
+        <details class="cmore" id="cmore" ${D.local.more || C.weather ? 'open' : ''}><summary><span class="grow">עוד</span><small class="muted">${esc([!D.day.drone_id && C.flights != null ? C.flights + ' טיסות' : '', !D.day.drone_id && C.air != null ? C.air + ' דק׳ אוויר' : '', C.weather ? 'עצירת מזג אוויר' : ''].filter(Boolean).join(' · '))}</small></summary>
+        ${!D.day.drone_id && D.day.method === 'רחפן' ? `<div class="row"><label class="field grow">מספר טיסות<input type="number" inputmode="numeric" min="0" id="fl" value="${C.flights ?? ''}"></label><label class="field grow">דקות אוויר<input type="number" inputmode="numeric" min="0" id="am" value="${C.air ?? ''}"></label></div>` : ''}
         <label class="tog"><span>עצירה בגלל מזג אוויר</span><span class="sw"><input type="checkbox" id="wth" ${C.weather ? 'checked' : ''}><i></i></span></label></details>
         <b>איכות העבודה היום</b><div class="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-q="${n}" aria-pressed="${C.quality >= n}">★</button>`).join('')}</div>
-        <label class="field">מה נשאר למחר<textarea id="tmr">${esc(C.tomorrow)}</textarea></label>
+        <label class="field">${D.day.is_last_day ? 'מה נשאר פתוח' : 'מה נשאר למחר'}<textarea id="tmr">${esc(C.tomorrow)}</textarea></label>
         <label class="field">הערות למשרד<textarea id="nts" placeholder="מה חשוב שהמשרד ידע">${esc(C.notes)}</textarea></label></div>
       ${D.day.is_last_day ? `<div class="sec"><h3>החתמת לקוח</h3>
         <label class="field">שם החותם<input type="text" id="sn" value="${esc(C.sign.name)}"></label>
@@ -307,7 +327,7 @@ export async function renderDay(el, id) {
       <div id="dshift"></div>
       <div class="kpis opk"><div class="kpi"><b>${nD}/${nT}</b><span>משימות</span></div><div class="kpi"><b>${d.gallons != null ? nf(d.gallons) : '—'}</b><span>גלונים</span></div><div class="kpi"><b>${nPh || '—'}</b><span>תמונות</span></div><div class="kpi"><b>${hrs ? nf(hrs) : '—'}</b><span>שעות צוות</span></div></div>
       <div id="dnext"></div>
-      ${d.tomorrow ? `<div class="note"><b>למחר:</b> ${esc(d.tomorrow)}</div>` : ''}
+      ${d.tomorrow ? `<div class="note"><b>${d.is_last_day ? 'נשאר פתוח:' : 'למחר:'}</b> ${esc(d.tomorrow)}</div>` : ''}
       ${d.signoff ? `<div class="card"><div class="eyebrow">חתימת לקוח</div><b>${esc(d.signoff.name || '')}</b> ${d.signoff.role ? '· ' + esc(d.signoff.role) : ''}<div class="small muted">${d.signoff.satisfied ? 'מרוצה' : 'לא מרוצה'}${d.signoff.notes ? ' · ' + esc(d.signoff.notes) : ''}</div></div>` : ''}
       <div class="photos">${D.photos.filter(p => ['before', 'after'].includes(p.kind)).map(p => `<button class="ph" data-z="${esc(p.url || photoUrls[p.storage_path]?.f || '')}"><img src="${esc(p.url || photoUrls[p.storage_path]?.t || '')}" data-full="${esc(p.url || photoUrls[p.storage_path]?.f || '')}" alt=""><span class="q">${p.kind === 'before' ? 'לפני' : 'אחרי'}</span></button>`).join('')}</div>
       <a class="btn ghost block" href="#/p/${d.project_id}">לפרויקט</a>`;

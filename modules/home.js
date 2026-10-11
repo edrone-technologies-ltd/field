@@ -118,7 +118,7 @@ export async function renderHome(el) {
   el.innerHTML = `<header class="hhead"><div class="grow"><div class="eyebrow">יום ${HE_DOW[now.getDay()]}, ${now.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</div><h1>${greet}, ${esc(first)}</h1></div>
       <a class="avatar" href="#/menu" aria-label="החשבון שלי">${esc(initials(p.full_name))}</a></header>
     <div id="hm" class="stack lg"><div class="skel tall"></div><div class="skel"></div><div class="skel"></div></div>`;
-  const d = await load(); const box = $('#hm'); if (!box) return;
+  warmExtras(); const d = await load(); const box = $('#hm'); if (!box) return;
   const t = today(), P = d.projects || [];
   const cov = await covers(P);
   const byId = new Map(P.map(x => [x.id, x]));
@@ -130,15 +130,28 @@ export async function renderHome(el) {
   const openToday = mine.filter(w => w.status !== 'done'), doneToday = mine.filter(w => w.status === 'done');
   const heroDays = openToday.length ? openToday : ahead.slice(0, 1), rest = ahead.filter(w => !heroDays.includes(w)).slice(0, 4);
   const pend = ahead.filter(needsOk);
+  const sv = can('specs') ? await surveyVisits(t) : [];   // סוקר: הסיורים הקרובים (מהליד) — ישר לטופס האפיון
   box.innerHTML = `<div id="attn"></div><div id="pulse">${pulseHtml(await cache.get('pulse').catch(() => null))}</div><div id="mytasks"></div><div id="openpast"></div>
     ${doneToday.length ? `<div class="list">${doneToday.map(w => dayRow(w, byId)).join('')}</div>` : ''}
-    ${heroDays.map(w => dayHero(w, byId.get(w.project_id) || {}, cov[w.project_id])).join('') || empty('calendar', 'אין שיבוץ בשבועיים הקרובים', 'כשתשובץ — זה יופיע כאן')}
+    ${sv.length ? `<section><div class="sh-row"><h3 class="sh">סיורי אפיון</h3><a class="more" href="#/specs">כל האפיונים</a></div><div class="list">${sv.map(x => `<a class="lrow" href="${esc(x.href)}"><span class="grow"><b>${esc(x.name)}</b><small>${esc([x.visit_date === t ? 'היום' : dayWord(x.visit_date).replace('יום ', ''), x.scope_text, x.contact_name].filter(Boolean).join(' · '))}</small></span><span class="pill ${x.st === 'draft' ? 'warn' : ''}">${x.st === 'draft' ? 'בטיוטה' : 'לאפיון'}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
+    ${heroDays.map(w => dayHero(w, byId.get(w.project_id) || {}, cov[w.project_id])).join('') || (sv.length ? '' : empty('calendar', 'אין שיבוץ בשבועיים הקרובים', 'כשתשובץ — זה יופיע כאן'))}
     ${pend.length > 1 ? `<div class="okall" data-act="all"><span class="grow"><b>${pend.length} ימים מחכים לאישור הגעה</b><small>${pend.map(w => dayWord(w.day).replace('יום ', '')).join(' · ')}</small></span><button class="btn primary" data-confirm-all="${pend.map(x => x.id).join(',')}">מאשר הכל</button></div>` : ''}
     ${rest.length ? `<section><div class="sh-row"><h3 class="sh">הימים הקרובים</h3><a class="more" href="#/schedule">כל הלו״ז</a></div><div class="list">${rest.map(w => dayRow(w, byId, pend.length > 1)).join('')}</div></section>` : ''}`;
   bindConfirm(box); extras(); pastOpen($('#openpast'));
   fillGlance(box, P);
   pulse($('#pulse'), ahead.length + mine.filter(w => w.status !== 'done').length);
   prefetchDays((d.wdays || []).filter(w => (w.day === t || w.day === addDays(t, 1)) && mineDay(w)).map(w => w.id));
+}
+// סיורי אפיון בשבוע הקרוב שעוד לא הושלמו (תאריך הסיור מהליד). ליד עם מבנה אחד → ישר לטופס
+async function surveyVisits(t) {
+  try {
+    const { data } = await sb.from('sites').select('id,slug,name,kind,visit_date,scope_text,contact_name,merged_into,buildings(id,specs(status))')
+      .eq('is_active', true).is('merged_into', null).gte('visit_date', t).lte('visit_date', addDays(t, 7)).order('visit_date');
+    return (data || []).map(x => { const B = x.buildings || [], st = b => (b.specs?.[0] || b.specs)?.status;
+      if (B.length && B.every(b => st(b) === 'done')) return null;
+      return { ...x, st: B.some(b => st(b) === 'draft') ? 'draft' : 'new', href: x.kind === 'lead' && B.length === 1 ? `#/b/${x.slug}/${B[0].id}` : `#/site/${x.slug}` };
+    }).filter(Boolean);
+  } catch { return []; }
 }
 // כרטיס יום ראשי: היום (פתיחה/המשך) או השיבוץ הבא (מחר / יום ד׳ 14.10) — שעות, כתובת, מי איתי, תחזית ואישור הגעה
 function dayHero(w, pr, cover) {
@@ -362,17 +375,23 @@ async function pendingAcks() {
 }
 
 // אתמול בשטח (מנהלים): דוחות, שעות, תקלות, הוצאות — במבט אחד
-async function yesterday() {
-  const box = $('#yday'); if (!box) return;
+// הנתונים של חלקי המסך המשניים (אתמול, הודעות לאישור) — אפשר להתחיל לטעון במקביל לטעינה הראשית (warmExtras)
+function yData() {
   const y = addDays(today(), -1), from = new Date(y + 'T00:00:00').toISOString(), to = new Date(today() + 'T00:00:00').toISOString();
   const q = p => p.then(r => r.data || []).catch(() => []);
-  const [reps, days, iss, exps, shifts] = await Promise.all([
+  return Promise.all([
     q(sb.from('field_reports').select('project_label,hours').eq('report_date', y)),
     q(sb.from('work_days').select('id,projects(name)').eq('day', y).eq('status', 'done')),
     q(sb.from('issues').select('id,severity').gte('created_at', from).lt('created_at', to)),
     can('finance') ? q(sb.from('expenses').select('amount').eq('day', y)) : Promise.resolve([]),
     q(sb.from('shifts').select('start_at,end_at').gte('start_at', from).lt('start_at', to)),
   ]);
+}
+export function warmExtras() { try { if (isManager()) yData(); sb.rpc('my_pending_acks').then(() => {}, () => {}); import('./tasks.js'); import('./attention.js'); import('./attendance.js'); } catch { /* */ } }
+async function yesterday() {
+  const box = $('#yday'); if (!box) return;
+  const y = addDays(today(), -1);
+  const [reps, days, iss, exps, shifts] = await yData();
   const hrs = shifts.reduce((t, s) => t + (s.end_at ? (new Date(s.end_at) - new Date(s.start_at)) / 36e5 : 0), 0);
   const projs = new Set([...reps.map(r => r.project_label), ...days.map(d => d.projects?.name)].filter(Boolean));
   if (!projs.size && hrs < 0.5) return;  // מוצג רק כשהייתה עבודת שטח אתמול — לא כרטיס של אפסים

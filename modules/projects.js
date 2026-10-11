@@ -229,7 +229,7 @@ export async function renderProject(el, id, tab = 'o') {
     const tr = $('#toRep', box); if (tr) tr.onclick = () => $('#pt [data-t="d"]')?.click();
     $$('[data-x]', box).forEach(b => b.onclick = () => closeIssue(b.dataset.x, () => overview(box)));
     $$('[data-act]', box).forEach(r => r.onclick = () => r.dataset.act === 'site' ? siteSheet() : notesSheet());
-    if (p.site_id) { const cb = document.createElement('div'); $('.menu', box)?.after(cb); import('../lib/contacts.js').then(m => m.renderContacts(cb, { siteId: p.site_id, clientId: p.client_id, org: p.client_name || p.sites?.name, title: 'אנשי קשר באתר' })); }
+    if (p.site_id) { const cb = document.createElement('div'); $('.menu', box)?.after(cb); import('../lib/contacts.js').then(m => m.renderContacts(cb, { siteId: p.site_id, clientId: p.client_id, org: p.client_name || p.sites?.name, title: 'אנשי קשר באתר', empty: p.sites?.contact_name ? contactCard(p.sites.contact_name, p.sites.contact_phone) : '' })); }
     import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
     bindSched(box); bindReady(box); readyWx(box).catch(() => {});
     const sh = $('#share', box); if (sh) sh.onclick = shareSheet;
@@ -481,11 +481,14 @@ export async function renderProject(el, id, tab = 'o') {
     const pilot = p.engagement === 'פיילוט';
     const rows = [
       step(1, daysOk, 'ימי השטח נסגרו', D.days.length ? `${doneN}/${D.days.length}${live ? ' · יום פתוח עכשיו' : open.length ? ` · הבא ${dm(open[0].day)}` : ''}` : D.reps.length ? `${D.reps.length} דוחות יומיים` : 'עוד אין ימי שטח', live ? `#/day/${live.id}` : '', false),
-      step(2, !!SG.length, 'חתימת לקוח', SG.length ? esc(`${SG[0].name || ''}${SG[0].at ? ' · ' + dm(SG[0].at.slice(0, 10)) : ''}`) : '', cs && !SG.length ? '' : `#/signoff/${id}`, daysOk && !SG.length),
-      M ? step(3, false, 'דוח ללקוח', 'PDF · קולאז׳ לפני/אחרי', `#/client-report/${id}`, !!SG.length || !!cs) : '',
+      step(2, !!SG.length, 'חתימת לקוח', SG.length ? esc(`${SG[0].name || ''}${SG[0].at ? ' · ' + dm(isoDay(new Date(SG[0].at))) : ''}`) : '', cs && !SG.length ? '' : `#/signoff/${id}`, daysOk && !SG.length),
+      M ? step(3, !!SG.length, 'דוח ללקוח', SG.length ? 'מוכן · שיתוף ללקוח או PDF' : 'נבנה לבד מהחתימה · PDF · קולאז׳ לפני/אחרי', `#/client-report/${id}`, !!cs) : '',
+      M ? step(4, false, 'סיכום פנימי', 'איכות, תקלות ולקחים — לפעם הבאה', `#/summary/${id}`, !!SG.length).replace('class="rdy rstep', 'id="sumstep" class="rdy rstep') : '',
     ];
+    // דוח מוכן (יש חתימה) → שיתוף בלחיצה מכאן, בלי להיכנס לדוח (אותו קישור לקוח פעיל, או חדש)
+    const shareBtn = M && SG.length ? `<button class="btn primary block" id="crshare">${icon('send', 18)} שיתוף הדוח ללקוח</button>` : '';
     const closeBtn = M && !cs && (pilot || (state.profile.role === 'admin' && !SG.length)) ? `<button class="btn ghost block" id="cls">${pilot ? 'סיום הפיילוט' : 'סגירה בלי חתימה'}</button>` : '';
-    return `<section><h3 class="sh">${cs ? 'אחרי הסגירה' : 'סגירת הפרויקט'}</h3><div class="rdylist">${rows.join('')}</div></section>${closeBtn}`;
+    return `<section><h3 class="sh">${cs ? 'אחרי הסגירה' : 'סגירת הפרויקט'}</h3><div class="rdylist">${rows.join('')}</div></section>${shareBtn}${closeBtn}`;
   }
   // ----- סיכום -----
   async function summary(box) {
@@ -515,6 +518,18 @@ export async function renderProject(el, id, tab = 'o') {
     if ((ph || []).length) { $('#gal').innerHTML = ph.map(x => `<button class="ph" data-z="${esc(urls[x.storage_path])}"><img src="${esc(tu[x.storage_path].t)}" data-full="${esc(urls[x.storage_path])}" alt="" loading="lazy"><span class="q">${x.kind === 'before' ? 'לפני' : 'אחרי'}</span></button>`).join(''); $('#galsec').hidden = false; }
     SG.forEach((g, i) => { const b = $(`[data-sg="${i}"]`, box); if (b && g.path && urls[g.path]) b.innerHTML = `<img src="${esc(urls[g.path])}" alt="חתימה" class="sigimg">`; });
     $$('[data-z]', box).forEach(b => b.onclick = () => zoom(b.dataset.z, ''));
+    const ss = $('#sumstep'); if (ss) sb.from('project_summaries').select('project_id').eq('project_id', id).maybeSingle().then(({ data }) => {
+      if (data && ss.isConnected) { ss.classList.remove('next'); ss.classList.add('on'); $('.rbox', ss).innerHTML = icon('check', 16); } }, () => {});
+    const cr = $('#crshare'); if (cr) cr.onclick = async () => {
+      if (cr.disabled) return; cr.disabled = true;
+      try {
+        let { data: x } = await sb.from('project_shares').select('token').eq('project_id', id).eq('revoked', false).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(1).maybeSingle();
+        if (!x) ({ data: x } = await sb.from('project_shares').insert({ project_id: id, created_by: state.user.id }).select('token').single());
+        if (!x?.token) { toast('הקישור לא נוצר — נסו שוב'); return; }
+        const u = location.origin + location.pathname.replace(/[^/]*$/, '') + 'share.html?t=' + x.token;
+        try { if (navigator.share) await navigator.share({ title: `E-Drone · ${p.sites?.name || p.name}`, url: u }); else { await navigator.clipboard.writeText(u); toast('הקישור הועתק'); } } catch { /* בוטל */ }
+      } finally { cr.disabled = false; }
+    };
     const c = $('#cls'); if (c) c.onclick = async () => {
       // פיילוט: האפליקציה רק מדווחת שבוצע. ההחלטה אם להמשיך להצעה — ניהולית, במאנדי (הליד עובר ל"פיילוט בוצע — ממתין להצעה")
       if (p.engagement === 'פיילוט') { if (!(await confirmBox('סיום הפיילוט?', { ok: 'סיום' }))) return;

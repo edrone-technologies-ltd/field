@@ -8,6 +8,8 @@ import { errText } from '../lib/audit.js';
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const first = n => (n || '').split(' ')[0];
 const hm = iso => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+// מה קורה עכשיו ביום השטח (מהטלפון של ראש הצוות) — המנהל רואה בלי להתקשר
+const LIVE = { en_route: 'בדרך', on_site: 'באתר', working: 'בעבודה', issue: 'תקלה', done: 'נסגר' };
 const ABS = { vacation: 'חופשה', sick: 'מחלה', reserve: 'מילואים', unpaid: 'חופש ללא תשלום', other: 'היעדרות' };
 
 export async function renderOps(el) {
@@ -18,6 +20,7 @@ export async function renderOps(el) {
     <a class="avatar" href="#/menu" aria-label="החשבון שלי">${esc(initials(me.full_name))}</a></header>`;
   if (!el.querySelector('#hm')) el.innerHTML = `${head}<div id="hm" class="stack lg"><div class="skel"></div><div class="skel tall"></div></div>`;
   const home = await import('./home.js');
+  home.warmExtras?.();
   const extra = Promise.all([home.load().then(home.alerts).catch(() => []), attentionItems().catch(() => [])]);
   const t = isoDay(), tm = addDays(t, 1), y = addDays(t, -1), wk = addDays(t, 6);
   const q = async p => { try { const { data } = await p; return data || []; } catch { return []; } };
@@ -123,10 +126,10 @@ export async function renderOps(el) {
   // בבית: שורה אחת לכל יום שטח (שעה · מקום · צוות · רק חריגים). הכרטיס המלא — בפירוט
   const dayRow = w => { const ppl = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
     const cc = u => (w.work_day_crew || []).find(c => c.user_id === u)?.cant_come_at, nc = ppl.filter(cc).length;
-    const miss = w.day === t ? ppl.filter(u => !cc(u) && !openBy.has(u) && !inToday.has(u)).length : ppl.filter(u => u !== w.crew_lead_id && !cc(u) && !(w.work_day_crew || []).find(c => c.user_id === u)?.confirmed_at).length;
+    const miss = w.status === 'done' ? 0 : w.day === t ? ppl.filter(u => !cc(u) && !openBy.has(u) && !inToday.has(u)).length : ppl.filter(u => u !== w.crew_lead_id && !cc(u) && !(w.work_day_crew || []).find(c => c.user_id === u)?.confirmed_at).length;
     const fixIt = nc && w.status === 'planned', tag = fixIt ? 'button' : 'a';   // מישהו לא יגיע → הלחיצה פותחת ישר את ניהול היום
     return `<${tag} class="lrow" ${fixIt ? `type="button" data-da="${w.id}"` : `href="#/day/${w.id}"`}><span class="timebox"><b>${w.report_time ? w.report_time.slice(0, 5) : '—'}</b></span><span class="grow"><b>${esc(shortName(w.projects?.name))}</b><small>${ppl.map(u => (cc(u) ? `<s>${esc(name(u))}</s>` : esc(name(u))) + (u === w.crew_lead_id ? leadMark() : '')).join(' · ') || 'לא שובץ צוות'}</small>
-      <span class="tags">${w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${w.day}"></span>` : ''}${nc ? `<span class="pill bad">${nc > 1 ? nc + ' לא יגיעו' : 'לא יגיע'}</span>` : ''}${miss ? `<span class="pill warn">${miss} ${w.day === t ? 'לא החתימו' : 'לא אישרו'}</span>` : ''}</span></span></${tag}>`; };
+      <span class="tags">${LIVE[w.status] ? `<span class="pill ${w.status === 'done' ? 'ok' : w.status === 'issue' ? 'bad' : 'lime'}">${LIVE[w.status]}</span>` : ''}${w.projects?.site_id && w.status === 'planned' ? `<span data-wx="${w.projects.site_id}|${w.day}"></span>` : ''}${nc ? `<span class="pill bad">${nc > 1 ? nc + ' לא יגיעו' : 'לא יגיע'}</span>` : ''}${miss ? `<span class="pill warn">${miss} ${w.day === t ? 'לא החתימו' : 'לא אישרו'}</span>` : ''}</span></span></${tag}>`; };
 
   // ---- השבוע במבט אחד: 7 ימים, כמה ימי שטח וצבע לפי הבעיה הכי חמורה. לחיצה = היום הזה (בעיות + ימי שטח + שיבוץ) ----
   const wkDays = [0, 1, 2, 3, 4, 5, 6].map(i => addDays(t, i));

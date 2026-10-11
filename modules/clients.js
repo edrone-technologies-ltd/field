@@ -1,5 +1,5 @@
 // תיק לקוח: לקוח (ישות משלמת, מסונכרן מתיק הלקוחות במאנדי) ← אתרים ← פרויקטים. היסטוריית עבודות לכל אתר, אנשי קשר, וקבוצת האם.
-import { sb, isManager, icon, $, $$, esc, backBtn, dm, stLabel, isOpenProject, navButtons } from '../lib/core.js';
+import { sb, isManager, icon, $, $$, esc, backBtn, dm, stLabel, isOpenProject, navButtons, isoDay } from '../lib/core.js';
 const SITE_SEL = 'id,slug,name,address,contact_name,contact_phone,lat,lng,buildings(id,specs(status))';
 const intl = p => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('972') ? d : d.replace(/^0/, '972'); };
 const local = p => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('972') ? '0' + d.slice(3) : d; };
@@ -51,7 +51,7 @@ export async function renderClient(el, id) {
     sb.from('project_signoffs').select('id,project_id,signer_name,created_at,rating,full_ok').in('project_id', pids)]) : [{ data: [] }, { data: [] }];
   const { KIND: VK } = await import('./visits.js');
   const H = [...(vs || []).map(v => ({ d: v.visit_date, t: VK[v.kind] || 'ביקור', s: pname.get(v.project_id), href: `#/visit/${v.id}`, r: v.rating })),
-    ...(sg || []).map(x => ({ d: x.created_at.slice(0, 10), t: 'החתמת לקוח' + (x.signer_name ? ' · ' + x.signer_name : ''), s: pname.get(x.project_id), href: `#/p/${x.project_id}`, r: x.rating })),
+    ...(sg || []).map(x => ({ d: isoDay(new Date(x.created_at)), t: 'החתמת לקוח' + (x.signer_name ? ' · ' + x.signer_name : ''), s: pname.get(x.project_id), href: `#/p/${x.project_id}`, r: x.rating })),
     ...P.filter(p => p.actual_from || p.planned_from).map(p => ({ d: p.actual_from || p.planned_from, t: isOpenProject(p) ? 'עבודה מתוכננת' : 'עבודה', s: p.name, href: `#/p/${p.id}` }))]
     .sort((a, b) => (a.d < b.d ? 1 : -1));
   const rates = [...(vs || []), ...(sg || [])].map(x => x.rating).filter(Boolean), avg = rates.length ? rates.reduce((t, x) => t + x, 0) / rates.length : 0;

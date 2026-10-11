@@ -122,7 +122,7 @@ export async function renderVisit(el, id) {
   const first = n => (n || '').split(' ')[0];
   const st = x => { const t = TK.get(x.task_id); if (!t) return '';
     if (t.status !== 'done' && t.assignee_id === state.user.id) return `<button class="btn primary sm" data-fix="${t.id}">טיפול</button>`;
-    return t.status === 'done' ? `<span class="pill ok">טופל · ${dm(t.done_at.slice(0, 10))}</span>` : t.assignee_id ? `<span class="pill warn">אצל ${esc(first(t.profiles?.full_name))}${t.due ? ' · עד ' + dm(t.due) : ''}</span>` : '<span class="pill">ממתין לשיוך</span>'; };
+    return t.status === 'done' ? `<span class="pill ok">טופל · ${dm(isoDay(new Date(t.done_at)))}</span>` : t.assignee_id ? `<span class="pill warn">אצל ${esc(first(t.profiles?.full_name))}${t.due ? ' · עד ' + dm(t.due) : ''}</span>` : '<span class="pill">ממתין לשיוך</span>'; };
   const row = (lbl, list) => list.length ? `<div class="small muted">${lbl}</div><div class="fphs">${list.map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : '';
   const shots = x => { const t = TK.get(x.task_id), aft = t?.photos?.after || [];
     return aft.length || t?.done_note ? `${row('לפני', PH(x))}${row('אחרי', aft)}${t?.done_note ? `<div class="small">${esc(t.done_note)}</div>` : ''}` : PH(x).length ? `<div class="fphs">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : ''; };
@@ -203,7 +203,7 @@ export async function renderVisitReport(el, id) {
   const strip = (list, tag) => list.length ? `<div class="vpics">${list.map(ph => urls[ph] ? `<div class="vp"><img src="${esc(urls[ph])}" alt="">${tag ? `<span class="tg ${tag === 'אחרי' ? 'a' : ''}">${tag}</span>` : ''}</div>` : '').join('')}</div>` : '';
   const pics = x => { const t = TK.get(x.task_id), aft = t?.status === 'done' ? t.photos?.after || [] : [];
     return aft.length ? strip(PH(x), 'לפני') + strip(aft, 'אחרי') : strip(PH(x)); };
-  const done = x => { const t = TK.get(x.task_id); return t?.status === 'done' ? `<div class="vdone">טופל · ${dm(t.done_at.slice(0, 10))}${t.done_note ? ' — ' + esc(t.done_note) : ''}</div>` : ''; };
+  const done = x => { const t = TK.get(x.task_id); return t?.status === 'done' ? `<div class="vdone">טופל · ${dm(isoDay(new Date(t.done_at)))}${t.done_note ? ' — ' + esc(t.done_note) : ''}</div>` : ''; };
   const SC = { ok: 'ok', note: 'warn', fix: 'bad' };
   el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/visit/${id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ${esc(KIND[v.kind] || 'ביקור')}</b><button class="btn primary sm" id="print">הדפסה / PDF</button></div>
     <div class="creport vrep"><div class="pg flow"><div class="pad">

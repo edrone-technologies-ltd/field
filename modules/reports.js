@@ -119,14 +119,18 @@ export function issueSheet(pid, after, back, dayId = null) {
 export async function renderSummary(el, pid) {
   if (!isManager()) { el.innerHTML = '<div class="empty-line">אין גישה</div>'; return; }
   el.innerHTML = `<div class="skel"></div>`;
-  const [{ data: p }, { data: s }, { data: iss }, { data: reps }] = await Promise.all([
+  const [{ data: p }, { data: s }, { data: iss }, { data: reps }, { data: wd }] = await Promise.all([
     sb.from('projects').select('id,name').eq('id', pid).single(),
     sb.from('project_summaries').select('*').eq('project_id', pid).maybeSingle(),
     sb.from('issues').select('body,created_at,resolution').eq('project_id', pid).order('created_at'),
     sb.from('field_reports').select('report_date,issues').eq('project_id', pid).eq('excluded', false).not('issues', 'is', null).order('report_date'),
+    // ימי השטח מהאפליקציה: איכות שסומנה בסגירת היום + חוסרים בשטח — ממלאים מראש בלי לחכות לסבב מאנדי
+    sb.from('work_days').select('day,quality,missing_items(item,qty)').eq('project_id', pid).eq('status', 'done').order('day'),
   ]);
-  const auto = [...(reps || []).map(r => `${dm(r.report_date)}: ${r.issues}`), ...(iss || []).map(i => `${dm(i.created_at.slice(0, 10))}: ${i.body}${i.resolution ? ' → ' + i.resolution : ''}`)].join('\n');
-  const F = { quality: s?.quality || 0, issues: s?.issues ?? auto, solutions: s?.solutions || (iss || []).filter(i => i.resolution).map(i => i.resolution).join('\n'), lessons: s?.lessons || '', notes: s?.notes || '' };
+  const qs = (wd || []).map(w => +w.quality).filter(Boolean), q0 = qs.length ? Math.round(qs.reduce((a, b) => a + b, 0) / qs.length) : 0;
+  const miss = (wd || []).flatMap(w => (w.missing_items || []).map(m => `${dm(w.day)}: חסר בשטח — ${m.item}${m.qty > 1 ? ' ×' + m.qty : ''}`));
+  const auto = [...(reps || []).map(r => `${dm(r.report_date)}: ${r.issues}`), ...(iss || []).map(i => `${dm(isoDay(new Date(i.created_at)))}: ${i.body}${i.resolution ? ' → ' + i.resolution : ''}`), ...miss].join('\n');
+  const F = { quality: s?.quality || q0, issues: s?.issues ?? auto, solutions: s?.solutions || (iss || []).filter(i => i.resolution).map(i => i.resolution).join('\n'), lessons: s?.lessons || '', notes: s?.notes || '' };
   el.innerHTML = `<header class="phead">${backBtn(`#/p/${pid}/d`)}<h1>סיכום פרויקט</h1></header>
     <div class="stack"><div class="muted">${esc(p?.name || '')}</div>
       <div class="sec"><b>איכות הביצוע</b><div class="stars" id="sq">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-q="${n}" aria-pressed="${F.quality >= n}">★</button>`).join('')}</div></div>
@@ -161,11 +165,11 @@ export async function reportsTab(box, D, { reload }) {
   const feed = [
     ...D.days.filter(d => d.status === 'done' || d.kind === 'report').map(d => ({ at: d.day, html: `<a class="lrow" href="#/day/${d.id}">${thumb(thumbs[d.id] && urls[thumbs[d.id]], 'report')}<span class="grow"><b>דוח יומי · ${dayLabel(d.day)}</b><small>${esc((d.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', '))}${d.gallons != null ? ` · ${nf(d.gallons)} גל׳` : ''}</small></span><span class="pill ${d.status === 'done' ? (d.monday_item_id ? 'ok' : '') : 'warn'}">${d.status === 'done' ? 'נשלח' : 'טיוטה'}</span></a>` })),
     ...D.reps.filter(r => !pushed.has(r.monday_item_id)).map(r => { const p1 = (r.photos || []).find(Boolean); return { at: r.report_date, html: `<button class="lrow" data-mr="${r.monday_item_id}">${thumb(p1 && mUrls[p1], 'report')}<span class="grow"><b>דוח יומי · ${dm(r.report_date)}</b><small>${esc([r.crew, r.work].filter(Boolean).join(' · '))}</small>${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}</span></button>` }; }),
-    ...D.issues.map(i => ({ at: i.created_at.slice(0, 10), html: `<button class="lrow" data-is="${i.id}">${thumb(null, 'alert', i.status === 'open' ? 'warnbg' : '')}<span class="grow"><b>תקלה · ${dm(i.created_at.slice(0, 10))}</b><small>${esc(i.body)}</small></span><span class="pill ${i.status === 'open' ? (i.severity === 'critical' ? 'bad' : 'warn') : 'ok'}">${i.status === 'open' ? 'פתוחה' : 'טופלה'}</span></button>` })),
-    ...(sos || []).map(s => ({ at: s.created_at.slice(0, 10), html: `<button class="lrow" data-so="${s.id}">${thumb(null, 'clipboard', 'okbg')}<span class="grow"><b>החתמת לקוח · ${dm(s.created_at.slice(0, 10))}</b><small>${esc(s.signer_name)}${s.signer_role ? ' · ' + esc(s.signer_role) : ''}${s.rating ? ' · ' + rating(s.rating) : ''}</small></span><span class="pill ${s.full_ok ? 'ok' : 'warn'}">${s.full_ok ? 'אושר' : 'עם הערות'}</span></button>` })),
+    ...D.issues.map(i => ({ at: isoDay(new Date(i.created_at)), html: `<button class="lrow" data-is="${i.id}">${thumb(null, 'alert', i.status === 'open' ? 'warnbg' : '')}<span class="grow"><b>תקלה · ${dm(isoDay(new Date(i.created_at)))}</b><small>${esc(i.body)}</small></span><span class="pill ${i.status === 'open' ? (i.severity === 'critical' ? 'bad' : 'warn') : 'ok'}">${i.status === 'open' ? 'פתוחה' : 'טופלה'}</span></button>` })),
+    ...(sos || []).map(s => ({ at: isoDay(new Date(s.created_at)), html: `<button class="lrow" data-so="${s.id}">${thumb(null, 'clipboard', 'okbg')}<span class="grow"><b>החתמת לקוח · ${dm(isoDay(new Date(s.created_at)))}</b><small>${esc(s.signer_name)}${s.signer_role ? ' · ' + esc(s.signer_role) : ''}${s.rating ? ' · ' + rating(s.rating) : ''}</small></span><span class="pill ${s.full_ok ? 'ok' : 'warn'}">${s.full_ok ? 'אושר' : 'עם הערות'}</span></button>` })),
     ...(vis || []).map(v => { const fx = (v.findings || []).filter(x => x.sev === 'fix').length;
       return { at: v.visit_date, html: `<a class="lrow" href="#/visit/${v.id}">${thumb(null, 'users')}<span class="grow"><b>דוח ביקור · ${VK[v.kind] || ''}</b><small>${dm(v.visit_date)} · ${esc(v.profiles?.full_name || '')} · ${(v.findings || []).length} ממצאים</small></span>${fx ? `<span class="pill bad">${fx} לתיקון</span>` : ''}</a>` }; }),
-    ...(sum ? [{ at: sum.updated_at.slice(0, 10), html: `<a class="lrow" href="#/summary/${pid}">${thumb(null, 'shield')}<span class="grow"><b>סיכום פרויקט פנימי</b><small>${sum.quality ? rating(sum.quality) + ' · ' : ''}עודכן ${dm(sum.updated_at.slice(0, 10))}</small></span><span class="pill">נשמר</span></a>` }] : []),
+    ...(sum ? [{ at: isoDay(new Date(sum.updated_at)), html: `<a class="lrow" href="#/summary/${pid}">${thumb(null, 'shield')}<span class="grow"><b>סיכום פרויקט פנימי</b><small>${sum.quality ? rating(sum.quality) + ' · ' : ''}עודכן ${dm(isoDay(new Date(sum.updated_at)))}</small></span><span class="pill">נשמר</span></a>` }] : []),
   ].sort((a, b) => a.at < b.at ? 1 : -1);
   $('#rlist').innerHTML = `
     <section><div class="sh-row"><h3 class="sh">כל הדוחות</h3>${feed.length ? `<span class="count">${feed.length}</span>` : ''}</div>
@@ -178,7 +182,7 @@ export async function reportsTab(box, D, { reload }) {
       ${isManager() ? `<a class="more center" href="https://edroneil-force.monday.com/boards/5099882177/pulses/${r.monday_item_id}" target="_blank" rel="noopener">פתיחה במאנדי</a>` : ''}<button class="btn ghost block" data-close>סגירה</button>`, sh => $$('[data-z]', sh).forEach(z => z.onclick = () => zoom(z.dataset.z, ''))); });
   $$('[data-is]').forEach(b => b.onclick = async () => { const i = D.issues.find(x => x.id === b.dataset.is);
     const { data: ip } = await sb.from('photos').select('storage_path').eq('issue_id', i.id); const u = await signedUrls('field', (ip || []).map(x => x.storage_path));
-    sheet(`<h3>תקלה · ${dm(i.created_at.slice(0, 10))}</h3><div>${esc(i.body)}</div>${i.resolution ? `<div class="note">טיפול: ${esc(i.resolution)}</div>` : ''}
+    sheet(`<h3>תקלה · ${dm(isoDay(new Date(i.created_at)))}</h3><div>${esc(i.body)}</div>${i.resolution ? `<div class="note">טיפול: ${esc(i.resolution)}</div>` : ''}
       <div class="gallery">${(ip || []).map(x => `<button data-z="${esc(u[x.storage_path])}"><img src="${esc(u[x.storage_path])}" alt=""></button>`).join('')}</div>
       <div class="row-btns"><button class="btn ghost" data-close>סגירה</button>${M && i.status === 'open' ? '<button class="btn primary" id="ifix">סימון כטופלה</button>' : ''}</div>`, (sh, close) => {
       $$('[data-z]', sh).forEach(z => z.onclick = () => zoom(z.dataset.z, ''));
@@ -186,6 +190,6 @@ export async function reportsTab(box, D, { reload }) {
         await enqueue({ kind: 'update', table: 'issues', rowId: i.id, patch: { status: 'closed', resolution: r, closed_by: state.user.id, closed_at: new Date().toISOString() } }); toast('התקלה נסגרה'); reload('d'); };
     }); });
   $$('[data-so]').forEach(b => b.onclick = async () => { const s = sos.find(x => x.id === b.dataset.so); const u = s.signature_path ? await signedUrls('field', [s.signature_path]) : {};
-    sheet(`<h3>החתמת לקוח · ${dm(s.created_at.slice(0, 10))}</h3><div class="menu">${[['חותם', s.signer_name + (s.signer_role ? ' · ' + s.signer_role : '')], ['אישור', s.full_ok ? 'בוצע במלואו ולשביעות רצון' : 'עם הערות'], ['שביעות רצון', s.rating ? `${s.rating}/5` : ''], ['מה בוצע', s.works], ['הערות', s.notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}</div>
+    sheet(`<h3>החתמת לקוח · ${dm(isoDay(new Date(s.created_at)))}</h3><div class="menu">${[['חותם', s.signer_name + (s.signer_role ? ' · ' + s.signer_role : '')], ['אישור', s.full_ok ? 'בוצע במלואו ולשביעות רצון' : 'עם הערות'], ['שביעות רצון', s.rating ? `${s.rating}/5` : ''], ['מה בוצע', s.works], ['הערות', s.notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}</div>
       ${u[s.signature_path] ? `<img src="${esc(u[s.signature_path])}" alt="חתימה" class="sigimg">` : ''}<button class="btn ghost block" data-close>סגירה</button>`); });
 }
