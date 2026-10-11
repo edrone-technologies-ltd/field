@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir } from './lib/core.js';
 
 const app = $('#app');
 // לשוניות תחתונות — מוצגות לפי ההרשאות
@@ -43,7 +43,12 @@ function nav(show, active = '') {
   const T = TABS.filter(t => t.ok()).map(t => `<a href="#/${t.k}" class="${t.k === active ? 'on' : ''}" ${t.k === active ? 'aria-current="page"' : ''}>${icon(t.ic, 23)}<span>${t.t}</span>${t.k === 'inbox' ? '<i class="nb" id="nb" hidden></i>' : ''}</a>`);
   T.splice(Math.floor(T.length / 2), 0, '<button class="tabplus" id="tplus" aria-label="חדש">' + icon('plus', 24) + '</button>');
   n.innerHTML = T.join('');
-  $('#tplus').onclick = quickAdd;
+  $('#tplus').onclick = () => { haptic('medium'); quickAdd(); };
+  // לחיצה על הלשונית הפעילה כשכבר במסך השורש שלה = גלילה לראש (כמו באייפון)
+  n.onclick = e => {
+    const a = e.target.closest('a'); if (!a) return; haptic('tap');
+    if (a.classList.contains('on') && (location.hash || '#/') === a.getAttribute('href') && app.scrollTop > 0) { e.preventDefault(); app.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); }
+  };
   unread();
 }
 // כפתור + : המקום היחיד ליצירת משהו חדש. רשת אחת, מילה אחת לכל פעולה; בתוך פרויקט — הדוח משויך אליו מראש
@@ -138,7 +143,13 @@ export async function pushCard(box) {
   const on = $('#pc-on'); if (on) on.onclick = async () => { try { await enablePush(); c.remove(); toast('ההתראות הופעלו'); } catch (e) { toast(e.message); } };
 }
 window.__pushCard = pushCard;
-function setTheme(v) { if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; try { localStorage.setItem('edrone-theme', v); } catch {} }
+function setTheme(v) { if (v) document.documentElement.dataset.theme = v; else delete document.documentElement.dataset.theme; try { localStorage.setItem('edrone-theme', v); } catch {} themeColor(); }
+// צבע שורת המצב/הדפדפן = רקע האפליקציה בפועל (בהיר/כהה/בחירה ידנית)
+function themeColor() {
+  const m = document.querySelectorAll('meta[name="theme-color"]'); if (!m.length) return;
+  requestAnimationFrame(() => { const c = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim(); if (c) m.forEach(x => x.setAttribute('content', c)); });
+}
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', themeColor); } catch {}
 let deferredInstall;
 addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; installHint(); });
 function installHint() {
@@ -152,9 +163,28 @@ function installHint() {
 // מספר ניווט: מסך איטי שסיים (או נכשל) אחרי שהמשתמש כבר עבר מסך — לא כותב על המסך החדש
 let navSeq = 0;
 export const navToken = () => navSeq;
-async function route() {
+// ---------- מעבר בין מסכים: החלקה קצרה של התוכן (מסך חדש נכנס משמאל, חזרה — מימין), דהייה בין לשוניות ----------
+const isRootHash = h => { const s = (h || '').replace(/^#\/?/, '').split('/'); return s.length === 1 && TABS.some(t => t.k === s[0]); };
+let lastHash = null, rtObs = null, rtT = 0;
+function transition(kind) {
+  rtObs?.disconnect(); clearTimeout(rtT); app.classList.remove('rt-fwd', 'rt-back', 'rt-fade');
+  if (!kind || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  // הקלאס נכנס רק כשהתוכן החדש נכתב (MutationObserver = לפני הציור), כך שהמסך הישן לא "מהבהב" בזמן טעינת המודול
+  rtObs = new MutationObserver(() => {
+    rtObs.disconnect(); rtObs = null; app.classList.add('rt-' + kind);
+    rtT = setTimeout(() => app.classList.remove('rt-' + kind), 360);
+  });
+  rtObs.observe(app, { childList: true });
+}
+app.addEventListener('animationend', e => { if (e.target.parentElement === app && /^rt/.test(e.animationName)) { clearTimeout(rtT); app.classList.remove('rt-fwd', 'rt-back', 'rt-fade'); } });
+const NOANIM = { noAnim: true };
+async function route(ev) {
   const my = ++navSeq;
+  const cur = location.hash || '#/', d = navDir();
+  transition(ev === NOANIM ? '' : !ev ? 'fade' : d === 'same' ? '' : lastHash != null && isRootHash(cur) && isRootHash(lastHash) ? 'fade' : d === 'back' ? 'back' : 'fwd');
+  lastHash = cur; titleReset();
   try { await routeInner(); } catch (e) { console.error(e); if (my !== navSeq) return; app.innerHTML = `<div class="empty-card"><span><b>משהו השתבש בטעינת המסך</b><small>${esc(e.message || e)}</small></span></div><button class="btn ghost block" onclick="location.reload()">רענון</button>`; }
+  finally { if (my === navSeq) { rtObs?.disconnect(); rtObs = null; } }   // מסך שלא החליף תוכן — לא מנפישים מאוחר
 }
 async function routeInner() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
@@ -194,7 +224,7 @@ async function routeInner() {
     case 'expenses': await (await import('./modules/expenses.js')).renderExpenses(app); return;
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
     case 'staff': case 'files': { const m = await import('./modules/staff.js'); return h[1] ? m.renderEmployee(app, h[1], h[2]) : m.renderStaff(app); }
-    case 'signoff': return (await import('./modules/reports.js')).renderSignoff(app, h[1]);
+    case 'signoff': return (await import('./modules/signoff.js')).renderSignoff(app, h[1], h[2] || null);   // #/signoff/<project>[/<work_day>]
     case 'summary': return (await import('./modules/reports.js')).renderSummary(app, h[1]);
     case 'day': return (await import('./modules/today.js')).renderDay(app, h[1]);
     case 'projects': if (guard('projects')) return (await import('./modules/projects.js')).renderProjects(app); return;
@@ -218,7 +248,7 @@ async function boot(how = 'open') {
   if (!(await loadMe())) return renderLogin();
   if (!state.profile.is_active) { await sb.auth.signOut(); return renderLogin('הגישה שלך הושבתה. פנו למשרד.'); }
   addEventListener('hashchange', route);
-  updateNet(); flush(); route();
+  updateNet(); flush(); route(); themeColor();
   import('./lib/track.js').then(m => m.startTracking(how)).catch(() => {});
   // בקשת אחסון קבוע — כדי שהטלפון לא ימחק נתונים שעוד לא נשלחו
   try { navigator.storage?.persist?.(); } catch {}
@@ -234,6 +264,67 @@ if ('serviceWorker' in navigator) {
   });
   navigator.serviceWorker.register('sw.js').then(r => { r.update().catch(() => {}); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') r.update().catch(() => {}); }); }).catch(() => {});
 }
+// ---------- כותרת מתכווצת: כשהכותרת הגדולה יוצאת מהמסך — סרגל עליון דק עם השם (וחץ חזרה) ----------
+const ct = document.createElement('div'); ct.id = 'ctitle'; ct.className = 'ctitle'; ct.setAttribute('aria-hidden', 'true');
+ct.innerHTML = '<span class="ct-s"></span><b class="ct-t"></b><span class="ct-e"></span>';
+document.body.appendChild(ct);
+let ctSrc = null, ctOn = false, ctRaf = 0, ctH = 0;
+const ctFind = () => app.querySelector(':scope > .phead:not(.sticky) h1, :scope > .hhead h1, :scope > .phero .ph-bottom > b');
+function ctFill() {
+  $('.ct-t', ct).textContent = (ctSrc.textContent || '').trim();
+  const hd = ctSrc.closest('.phead,.hhead,.phero'), b = hd?.querySelector('a.back'), s = $('.ct-s', ct);
+  const show = b && (hd.classList.contains('phero') || !document.body.hasAttribute('data-root'));
+  s.innerHTML = show ? `<a class="back" href="${esc(b.getAttribute('href') || '#/')}" tabindex="-1"${b.dataset.hard ? ' data-hard="1"' : ''}>${icon('back', 20)}</a>` : '';
+}
+function ctCheck() {
+  ctRaf = 0;
+  if (!ctSrc || !ctSrc.isConnected) ctSrc = ctFind();
+  if (!ctH) ctH = ct.offsetHeight || 44;
+  const on = !!ctSrc && app.scrollTop > 8 && ctSrc.getBoundingClientRect().bottom < ctH;
+  if (on && !ctOn) ctFill();
+  if (on !== ctOn) { ctOn = on; document.body.classList.toggle('ct-on', on); }
+}
+function titleReset() { ctSrc = null; if (ctOn) { ctOn = false; document.body.classList.remove('ct-on'); } }
+app.addEventListener('scroll', () => { if (!ctRaf) ctRaf = requestAnimationFrame(ctCheck); }, { passive: true });
+addEventListener('resize', () => { ctH = 0; }, { passive: true });
+
+// ---------- משיכה לרענון (מסכים עם הבר התחתון) ----------
+// מאזינים פסיביים בלבד — לא חוסמים גלילה; באייפון הקפיצה הטבעית נשארת, באנדרואיד המחוון לבד
+const ptr = document.createElement('div'); ptr.id = 'ptr'; ptr.className = 'ptr'; ptr.setAttribute('aria-hidden', 'true');
+ptr.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v4.5h-4.5"/></svg>';
+document.body.appendChild(ptr);
+{
+  const TH = 64, NOPTR = 'input,textarea,select,canvas,.mapbox,.wxmap,.leaflet-container,.sig,.sigpad,.rail,.dwrap,.scroll-x,.wxhours,.facades,[data-noptr]';
+  let y0 = null, x0 = 0, decided = false, armed = false, busy = false, raf = 0, dist = 0;
+  const paint = () => { raf = 0; ptr.style.transform = `translate3d(-50%,${dist}px,0) rotate(${dist * 4}deg)`; ptr.style.opacity = Math.min(1, dist / TH); };
+  const hide = () => { ptr.classList.remove('armed', 'spin', 'drag'); ptr.style.transform = ''; ptr.style.opacity = ''; dist = 0; armed = false; };
+  const allowed = () => document.body.classList.contains('has-nav') && !document.querySelector('.bar,.composer,.tourfs') && $('#sheet').hidden;
+  app.addEventListener('touchstart', e => {
+    y0 = null;
+    if (busy || e.touches.length !== 1 || app.scrollTop > 0 || !allowed() || e.target.closest?.(NOPTR)) return;
+    y0 = e.touches[0].clientY; x0 = e.touches[0].clientX; decided = false;
+  }, { passive: true });
+  app.addEventListener('touchmove', e => {
+    if (y0 == null) return;
+    const t = e.touches[0], dy = t.clientY - y0, dx = t.clientX - x0;
+    if (!decided) { if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return; decided = true; if (dy <= 0 || Math.abs(dx) > dy) { y0 = null; return; } ptr.classList.add('drag'); }
+    if (app.scrollTop > 0 || dy <= 0) { y0 = null; hide(); return; }
+    dist = Math.min(TH * 1.5, dy * .5);
+    const a = dist >= TH; if (a !== armed) { armed = a; ptr.classList.toggle('armed', a); if (a) haptic('light'); }
+    if (!raf) raf = requestAnimationFrame(paint);
+  }, { passive: true });
+  const end = async e => {
+    if (y0 == null) return; y0 = null; ptr.classList.remove('drag');
+    if (!armed || e.type === 'touchcancel') { hide(); return; }
+    busy = true; ptr.classList.add('spin'); ptr.style.transform = `translate3d(-50%,${TH}px,0)`; ptr.style.opacity = 1;
+    const t0 = Date.now();
+    try { await Promise.race([route(NOANIM), new Promise(r => setTimeout(r, 10000))]); } catch { /* */ }
+    setTimeout(() => { hide(); busy = false; }, Math.max(0, 450 - (Date.now() - t0)));
+  };
+  app.addEventListener('touchend', end, { passive: true });
+  app.addEventListener('touchcancel', end, { passive: true });
+}
+
 // כל חץ חזרה באפליקציה = המסך הקודם בפועל; כשאין (נכנסו מקישור/התראה) — ה-href הוא מסך האב, בהחלפה
 initNav();
 // באג אייפון (אפליקציית מסך הבית): אחרי שהמקלדת נסגרת המסך נשאר מכווץ — פס מת מתחת לבר התחתון עד סגירת האפליקציה.

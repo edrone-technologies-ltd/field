@@ -20,7 +20,7 @@ export async function renderActivity(el, who = '') {
     sb.rpc('activity_stats', { days: 14 }),
     sb.from('app_events').select('user_id,at,kind,route,device').gte('at', since).order('at', { ascending: false }).limit(300),
     sb.from('audit_log').select('user_id,at,tbl,action').gte('at', since).order('at', { ascending: false }).limit(200)]);
-  if (error) { el.innerHTML = `<div class="empty-line">${esc(error.message)}</div>`; return; }
+  if (error) { el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">פעילות</h1></header><div class="empty-line">הנתונים לא נטענו — נסו שוב</div>`; return; }
   const U = S.users || [], N = new Map(U.map(u => [u.id, u.name])), now = Date.now();
   const on = u => u.seen && now - new Date(u.seen) < 2.5 * 6e4, today = u => u.seen && new Date(u.seen).toDateString() === new Date().toDateString();
   const latestVer = U.map(u => u.ver).filter(Boolean).sort((a, b) => parseInt(b.slice(1)) - parseInt(a.slice(1)))[0];

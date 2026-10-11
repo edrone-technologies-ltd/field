@@ -1,11 +1,14 @@
 // לוח הודעות הנהלה (עם אישור קריאה) + "כל הכבוד" (הוקרה) + בקשות למשרד עם סטטוס ומענה.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, backBtn, initials, ask, signedUrls, zoom } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 const AUD = [['pilot', 'מטיסים'], ['operator', 'מפעילי מערכות'], ['crew_lead', 'ראשי צוות'], ['crew', 'צוות שטח'], ['ops_manager', 'הנהלה ותפעול']];
 const when = iso => { const d = new Date(iso), t = new Date(); return d.toDateString() === t.toDateString() ? 'היום ' + d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' }); };
 async function markRead(id, patch = {}) {
-  const { data } = await sb.from('announcement_reads').update(patch).eq('ann_id', id).eq('user_id', state.user.id).select('ann_id');
-  if (!data?.length) await sb.from('announcement_reads').insert({ ann_id: id, user_id: state.user.id, ...patch });
+  const { data, error } = await sb.from('announcement_reads').update(patch).eq('ann_id', id).eq('user_id', state.user.id).select('ann_id');
+  if (error) return { error };
+  if (!data?.length) return sb.from('announcement_reads').insert({ ann_id: id, user_id: state.user.id, ...patch });
+  return {};
 }
 
 // ---------- לוח הודעות ----------
@@ -33,7 +36,8 @@ export async function renderNews(el) {
     </article>`; }).join('') || `<div class="empty-line">אין הודעות</div>`}</div>`;
   // כל ההודעות שבמסך = נקראו
   if (!M) for (const a of all) if (!mine(a.id)) markRead(a.id);
-  $$('[data-ack]', el).forEach(b => b.onclick = async () => { b.disabled = true; await markRead(b.dataset.ack, { ack_at: new Date().toISOString() }); toast('אושר'); renderNews(el); });
+  $$('[data-ack]', el).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true; const { error } = await markRead(b.dataset.ack, { ack_at: new Date().toISOString() });
+    if (error) { b.disabled = false; return toast(errText(error, 'האישור לא נשלח — נסו שוב')); } toast('אושר'); renderNews(el); });
   $$('[data-who]', el).forEach(b => b.onclick = () => { const a = all.find(x => x.id === b.dataset.who), rd = R.filter(x => x.ann_id === a.id);
     sheet(`<h3>מי קרא</h3><div class="list">${audience(a).map(p => { const r = rd.find(x => x.user_id === p.id);
       return `<div class="lrow"><span class="avatar sm">${esc(initials(p.full_name))}</span><b class="grow">${esc(p.full_name)}</b>${r?.ack_at ? '<span class="pill ok">אישר</span>' : r ? '<span class="pill">קרא</span>' : '<span class="pill muted">עוד לא</span>'}</div>`; }).join('')}</div><button class="btn ghost block" data-close>סגירה</button>`); });
@@ -58,7 +62,7 @@ function compose(kind, people, done) {
       $('#as', s).disabled = true;
       const { error } = await sb.from('announcements').insert({ kind, title, body: $('#ab', s).value.trim() || null, roles: roles.length ? roles : null, recipient_id: who,
         require_ack: !!$('#ar', s)?.checked, pinned: !!$('#ap', s)?.checked, created_by: state.user.id });
-      if (error) { $('#as', s).disabled = false; return toast(error.message); }
+      if (error) { $('#as', s).disabled = false; return toast(errText(error, 'לא פורסם — נסו שוב')); }
       close(); toast('פורסם — נשלחה התראה'); done();
     };
   });
@@ -97,11 +101,13 @@ export async function renderRequests(el) {
     ${closed.length ? `<details class="fold" ${open.length ? '' : 'open'}><summary><span class="sh">טופלו</span><span class="count">${closed.length}</span></summary><div class="stack">${closed.map(card).join('')}</div></details>` : ''}
     ${!rows.length ? `<div class="empty-line">אין בקשות</div>` : ''}</div>`;
   $$('.reqimg', el).forEach(i => i.onclick = () => zoom(i.src, ''));
-  $$('[data-st]', el).forEach(b => b.onclick = async () => { await sb.from('office_requests').update({ status: 'in_progress', handled_by: state.user.id }).eq('id', b.dataset.st); renderRequests(el); });
+  $$('[data-st]', el).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true;
+    const { error } = await sb.from('office_requests').update({ status: 'in_progress', handled_by: state.user.id }).eq('id', b.dataset.st);
+    if (error) { b.disabled = false; return toast(errText(error)); } toast('סומן בטיפול'); renderRequests(el); });
   $$('[data-rp]', el).forEach(b => b.onclick = async () => {
-    const t = await ask('מענה לעובד', { multiline: true, placeholder: 'מה נעשה / מה התשובה', ok: 'שליחה וסגירה' }); if (t == null) return;
+    const t = await ask('מענה לעובד', { multiline: true, placeholder: 'מה נעשה / מה התשובה', ok: 'שליחה וסגירה' }); if (t == null || b.disabled) return; b.disabled = true;
     const { error } = await sb.from('office_requests').update({ status: 'done', reply: t.trim() || 'טופל', handled_by: state.user.id }).eq('id', b.dataset.rp);
-    if (error) return toast(error.message); toast('נשלח לעובד'); renderRequests(el);
+    if (error) { b.disabled = false; return toast(errText(error)); } toast('נשלח לעובד'); renderRequests(el);
   });
   $('#rn').onclick = () => newRequest(() => renderRequests(el));
 }
@@ -122,7 +128,7 @@ async function newRequest(done) {
       if (file) try { const { shrink } = await import('../lib/store.js'); const blob = await shrink(file); photo_path = `${state.user.id}/requests/${crypto.randomUUID()}.jpg`;
         const { error } = await sb.storage.from('field').upload(photo_path, blob, { contentType: 'image/jpeg' }); if (error) throw error; } catch { photo_path = null; toast('התמונה לא עלתה — הבקשה נשלחת בלעדיה'); }
       const { error } = await sb.from('office_requests').insert({ user_id: state.user.id, category: cat, body, photo_path });
-      if (error) { $('#rs', s).disabled = false; return toast(error.message); }
+      if (error) { $('#rs', s).disabled = false; return toast(errText(error, 'הבקשה לא נשלחה — נסו שוב')); }
       close(); toast('נשלח למשרד — תקבל עדכון כשיטופל'); done();
     };
   });

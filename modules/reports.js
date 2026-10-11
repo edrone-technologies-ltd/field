@@ -1,6 +1,7 @@
 // מערכת הדוחות: כל דוח נפתח מתוך פרויקט (או מהבית ← בחירת פרויקט).
 // יומי (מסך יום השטח במצב דוח) · תקלה / אירוע בטיחות · החתמת לקוח · סיכום פרויקט פנימי · אפיון.
 import { sb, state, isManager, can, enqueue, signedUrls, addFieldPhoto, sheet, uid, icon, coverArt, $, $$, esc, nf, toast, zoom, isoDay, dayLabel, dm, confirmBox, goUp, thumbUrls, backBtn } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 const ROLE_CAN_SIGN = () => isManager() || state.profile.role === 'crew_lead';
 const rating = n => `<span class="rating" aria-label="${n} מתוך 5">${icon('star', 12).repeat(n)}</span>`;
@@ -33,7 +34,7 @@ export async function newReport(projectId, links = [], type = null) {
   });
 }
 async function pickProject(then, back) {
-  const { data, error } = await sb.rpc('reportable_projects'); if (error) return toast(error.message);
+  const { data, error } = await sb.rpc('reportable_projects'); if (error) return toast(errText(error, 'רשימת הפרויקטים לא נטענה — נסו שוב'));
   sheet(`<h3>על איזה פרויקט?</h3><input type="search" class="search" id="rq" placeholder="חיפוש פרויקט">
     <div class="list" id="rl">${(data || []).map(p => `<button class="lrow" data-p="${p.id}" data-n="${esc(p.name + ' ' + (p.client_name || ''))}"><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.client_name, p.status_label].filter(Boolean).join(' · '))}</small></span>${p.mine ? '<span class="pill lime">שלי</span>' : ''}</button>`).join('')}</div>
     <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
@@ -64,7 +65,8 @@ function dailyDate(pid, back) {
     $$('[data-d]', s).forEach(c => c.onclick = () => { $('#dd', s).value = c.dataset.d; $$('[data-d]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); });
     $('#dgo', s).onclick = async () => {
       const d = $('#dd', s).value; if (new Date(d + 'T12:00').getDay() === 6) return toast('לא עובדים בשבת');
-      const { data, error } = await sb.rpc('start_report', { p: pid, d }); if (error) return toast(error.message, 4000);
+      const go = $('#dgo', s); if (go.disabled) return; go.disabled = true;
+      const { data, error } = await sb.rpc('start_report', { p: pid, d }); if (error) { go.disabled = false; return toast(errText(error, 'הדוח לא נפתח — נסו שוב'), 4000); }
       close(); location.hash = '#/day/' + data;
     };
   }, { back });
@@ -82,6 +84,7 @@ export function issueSheet(pid, after, back) {
     $('#ip', s).onchange = e => { files = [...e.target.files]; $('#ipn', s).textContent = files.length ? `${files.length} תמונות יצורפו` : ''; };
     $('#isend', s).onclick = async () => {
       const body = $('#ib', s).value.trim(); if (!body) return toast('כתבו מה קרה');
+      if ($('#isend', s).disabled) return; $('#isend', s).disabled = true;
       const row = { id: uid(), project_id: pid, kind: ISSUE_KIND[kind], severity: crit ? 'critical' : 'normal', body: ['רחפן', 'לקוח'].includes(kind) ? `${kind}: ${body}` : body, opened_by: state.user.id };
       await enqueue({ kind: 'insert', table: 'issues', row });
       for (const f of files) await addFieldPhoto(f, { kind: 'issue', project_id: pid, issue_id: row.id });
@@ -100,7 +103,7 @@ export async function renderSignoff(el, pid) {
     sb.from('tasks').select('title,status').eq('project_id', pid).eq('status', 'done'),
     sb.from('field_reports').select('report_date,work').eq('project_id', pid).order('report_date'),
   ]);
-  if (!p) { el.innerHTML = '<div class="empty-line">הפרויקט לא נמצא</div>'; return; }
+  if (!p) { el.innerHTML = `<header class="phead">${backBtn('#/projects')}<h1>החתמת לקוח</h1></header><div class="empty-line">הפרויקט לא נמצא</div>`; return; }
   const dates = [...new Set([...(days || []).map(d => d.day), ...(reps || []).map(r => r.report_date)])].sort();
   const works = [...new Set([...(days || []).flatMap(d => d.work_types || []), ...(reps || []).flatMap(r => (r.work || '').split(', ').filter(Boolean))])];
   const summary = [works.join(' · '), dates.length ? `${dates.length === 1 ? 'יום עבודה אחד' : dates.length + ' ימי עבודה'}${dates.length ? ` (${dm(dates[0])}${dates.length > 1 ? '–' + dm(dates.at(-1)) : ''})` : ''}` : '', (tasks || []).length ? `${tasks.length} משימות בוצעו` : ''].filter(Boolean).join('\n');
@@ -152,6 +155,7 @@ export async function renderSummary(el, pid) {
   $$('#sq [data-q]').forEach(b => b.onclick = () => { F.quality = +b.dataset.q; $$('#sq [data-q]').forEach(x => x.setAttribute('aria-pressed', +x.dataset.q <= F.quality)); });
   const bar = document.createElement('div'); bar.className = 'bar'; bar.innerHTML = '<button class="btn primary" id="sgo">שמירת הסיכום</button>'; document.body.appendChild(bar);
   $('#sgo').onclick = async () => {
+    if ($('#sgo').disabled) return; $('#sgo').disabled = true;
     const row = { project_id: pid, quality: F.quality || null, issues: $('#f1').value.trim() || null, solutions: $('#f2').value.trim() || null, lessons: $('#f3').value.trim() || null, notes: $('#f4').value.trim() || null, updated_by: state.user.id };
     await enqueue({ kind: 'insert', table: 'project_summaries', row }); toast('הסיכום נשמר'); goUp('#/p/' + pid + '/d');
   };
@@ -199,7 +203,7 @@ export async function reportsTab(box, D, { reload, schedule }) {
       <div class="row-btns"><button class="btn ghost" data-close>סגירה</button>${M && i.status === 'open' ? '<button class="btn primary" id="ifix">סימון כטופלה</button>' : ''}</div>`, (sh, close) => {
       $$('[data-z]', sh).forEach(z => z.onclick = () => zoom(z.dataset.z, ''));
       const f = $('#ifix', sh); if (f) f.onclick = async () => { close(); const { ask } = await import('../lib/core.js'); const r = await ask('איך טופל?', { multiline: true, ok: 'סגירת התקלה' }); if (r == null) return;
-        await enqueue({ kind: 'update', table: 'issues', rowId: i.id, patch: { status: 'closed', resolution: r, closed_by: state.user.id, closed_at: new Date().toISOString() } }); reload('d'); };
+        await enqueue({ kind: 'update', table: 'issues', rowId: i.id, patch: { status: 'closed', resolution: r, closed_by: state.user.id, closed_at: new Date().toISOString() } }); toast('התקלה נסגרה'); reload('d'); };
     }); });
   $$('[data-so]').forEach(b => b.onclick = async () => { const s = sos.find(x => x.id === b.dataset.so); const u = s.signature_path ? await signedUrls('field', [s.signature_path]) : {};
     sheet(`<h3>החתמת לקוח · ${dm(s.created_at.slice(0, 10))}</h3><div class="menu">${[['חותם', s.signer_name + (s.signer_role ? ' · ' + s.signer_role : '')], ['אישור', s.full_ok ? 'בוצע במלואו ולשביעות רצון' : 'עם הערות'], ['שביעות רצון', s.rating ? `${s.rating}/5` : ''], ['מה בוצע', s.works], ['הערות', s.notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}</div>

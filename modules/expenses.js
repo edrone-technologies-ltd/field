@@ -1,6 +1,7 @@
 // הוצאות שטח: צילום קבלה → קטגוריה, סכום, פרויקט → אישור מנהל → נכנס לעלות הפרויקט (ולמאנדי) ולייצוא להנהלת החשבונות.
 import { sb, state, isManager, can, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, ask, dm, signedUrls, isoDay, backBtn, replaceHash } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
+import { errText } from '../lib/audit.js';
 
 export const CATS = { fuel: 'דלק', parking: 'חניה', toll: 'כביש אגרה', food: 'אוכל', lodging: 'לינה', materials: 'חומרים / ציוד קטן', other: 'אחר' };
 const ST = { pending: ['ממתין לאישור', 'warn'], approved: ['אושר', 'ok'], rejected: ['נדחה', 'bad'] };
@@ -26,10 +27,13 @@ export async function renderExpenses(el) {
   const reload = () => renderExpenses(el);
   if (/^#\/expenses\/new/.test(location.hash)) { replaceHash('#/expenses', false); newExpense(null, reload); }   // מה"+" — בלי כפתור במסך
   $$('[data-z]', el).forEach(i => i.onclick = async () => (await import('../lib/core.js')).zoom(i.dataset.z, 'קבלה'));
-  $$('[data-ok]', el).forEach(b => b.onclick = async () => { const { error } = await sb.from('expenses').update({ status: 'approved', manager_id: state.user.id, decided_at: new Date().toISOString() }).eq('id', b.dataset.ok); if (error) return toast(error.message); toast('אושר'); reload(); });
-  $$('[data-no]', el).forEach(b => b.onclick = async () => { const r = await ask('למה נדחה?', { ok: 'דחייה' }); if (r == null) return;
-    const { error } = await sb.from('expenses').update({ status: 'rejected', manager_id: state.user.id, manager_reply: r, decided_at: new Date().toISOString() }).eq('id', b.dataset.no); if (error) return toast(error.message); reload(); });
-  const x = $('#xls'); if (x) x.onclick = () => exportXls(rows || []);
+  // אישור/דחייה: נועלים את שני הכפתורים של השורה עד תשובת השרת
+  const lock = (b, on) => b.parentElement.querySelectorAll('button').forEach(x => x.disabled = on);
+  $$('[data-ok]', el).forEach(b => b.onclick = async () => { if (b.disabled) return; lock(b, true);
+    const { error } = await sb.from('expenses').update({ status: 'approved', manager_id: state.user.id, decided_at: new Date().toISOString() }).eq('id', b.dataset.ok); if (error) { lock(b, false); return toast(errText(error)); } toast('אושר'); reload(); });
+  $$('[data-no]', el).forEach(b => b.onclick = async () => { const r = await ask('למה נדחה?', { ok: 'דחייה' }); if (r == null || b.disabled) return; lock(b, true);
+    const { error } = await sb.from('expenses').update({ status: 'rejected', manager_id: state.user.id, manager_reply: r, decided_at: new Date().toISOString() }).eq('id', b.dataset.no); if (error) { lock(b, false); return toast(errText(error)); } toast('נדחה — העובד קיבל הודעה'); reload(); });
+  const x = $('#xls'); if (x) x.onclick = () => exportXls(rows || []).catch(() => toast('הייצוא לא הצליח — בדקו קליטה ונסו שוב'));
 }
 
 export async function newExpense(projectId, done, back) {
@@ -51,6 +55,7 @@ export async function newExpense(projectId, done, back) {
     $('#xgo', s).onclick = async () => {
       const amount = +$('#xa', s).value; if (!(amount > 0)) return toast('חסר סכום');
       if (!file && !(await (await import('../lib/core.js')).confirmBox('בלי קבלה?', { body: 'בלי צילום קבלה ההוצאה עלולה לא להיות מוכרת.', ok: 'לשלוח בכל זאת' }))) return;
+      const go = $('#xgo', s); if (go.disabled) return; go.disabled = true;
       const id = uid(); let receipt_path = null;
       if (file) { receipt_path = `${state.user.id}/receipts/${id}.jpg`; await enqueue({ kind: 'file', path: receipt_path, blob: await shrink(file, 1800, 0.8), type: 'image/jpeg' }); }
       await enqueue({ kind: 'insert', table: 'expenses', row: { id, user_id: state.user.id, category: cat, amount, day: $('#xd', s).value, vendor: $('#xv', s).value.trim() || null, note: $('#xn', s).value.trim() || null,

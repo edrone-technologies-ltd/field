@@ -1,7 +1,8 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls , folderGrid, coverArt, backBtn } from '../lib/core.js';
+import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls , folderGrid, coverArt, coverFor, backBtn, confirmBox } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { airBtn } from '../lib/wx.js';
+import { errText } from '../lib/audit.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
 const DENS = ['נמוכה', 'בינונית', 'גבוהה'];
@@ -17,7 +18,7 @@ const STAT = { new: ['', 'לא מולא'], draft: ['warn', 'טיוטה'], done: 
 async function fetchSites() {
   try {
     const { data, error } = await sb.from('sites')
-      .select('id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,kind,lead_group,lead_stage,visit_date,lead_owner,buildings(id,specs(status,days_expected))')
+      .select('id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,kind,lead_group,lead_stage,visit_date,lead_owner,merged_into,monday_spec_item_id,lat,lng,buildings(id,specs(status,days_expected)),projects(status_label,monday_group,closed_summary)')
       .eq('is_active', true).order('name');
     if (error) throw error;
     await cache.set('sites', data); return data;
@@ -47,12 +48,20 @@ export async function renderSites(el) {
       <span class="t"><b>${esc(s.name)}</b><small>${esc(sub)}</small>${!lead ? `<span class="progress"><i style="width:${n ? Math.round(done / n * 100) : 0}%"></i></span>` : ''}</span>
       ${lead ? (done === n && n ? '<span class="pill ok">בוצע</span>' : draft || done ? '<span class="pill warn">בתהליך</span>' : `<span class="chev">${icon('chev', 18)}</span>`) : `<span class="pill ${done === n && n ? 'ok' : done ? 'warn' : ''}">${done}/${n}</span>`}</button>`; };
   // תיקייה לכל אתר/ליד, בשלוש קבוצות ברורות במקום שלבי מאנדי: לסיור · הושלם · ארכיון (סגור)
-  const STAGE = s => { if (s.kind !== 'lead') { const { n, done } = st(s); return done === n && n ? 'done' : 'open'; }
+  // השלב נקבע מהעובדות באפליקציה קודם (מה אופיין, האם יש פרויקט), ורק אחר כך מהקבוצה במאנדי. null = לא מוצג
+  const closedP = x => x.monday_group === 'group_mm5052gw' || /^הסתיים|שולם/.test(x.status_label || '') || x.closed_summary;
+  const STAGE = s => {
+    if (s.merged_into) return null;                                    // ליד ששויך לאתר קיים — מוצג רק האתר
+    const { n, done } = st(s), P = s.projects || [];
+    if (P.length && P.every(closedP)) return 'arch';                  // כל הפרויקטים באתר הסתיימו
+    if (!n) return P.length ? 'arch' : null;                           // אתר פרויקט בלי מבנים — אין מה לאפיין
+    if (s.kind !== 'lead') return done === n || (done && (P.length || s.monday_spec_item_id)) ? 'done' : 'open';
     const g = s.lead_group || '';
-    return /הצעה נשלחה|לא אושרה|הומרו/.test(g) ? 'arch' : /אפיון בוצע|קבלן משנה/.test(g) ? 'done' : 'open'; };
+    if (/הצעה נשלחה|לא אושרה|הומרו/.test(g)) return 'arch';
+    return done === n || /אפיון בוצע|קבלן משנה/.test(g) ? 'done' : 'open'; };
   const GROUPS = [['open', 'לסיור ואפיון'], ['done', 'אפיון הושלם'], ['arch', 'ארכיון']];
   const folder = s => { const { n, done, draft } = st(s), lead = s.kind === 'lead';
-    return { href: lead && n === 1 ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, img: (s.cover_path && urls[s.cover_path]) || coverArt(s.name), title: s.name,
+    return { href: lead && n === 1 ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, img: coverFor(s, s.cover_path && urls[s.cover_path]), title: s.name,
       sub: lead ? [s.contact_name, s.visit_date ? 'סיור ' + dm(s.visit_date) : null].filter(Boolean).join(' · ') : `${n} מבנים`,
       pill: n > 1 ? `${done}/${n}` : done === n && n ? 'בוצע' : draft || done ? 'בתהליך' : '', tone: done === n && n ? 'ok' : done || draft ? 'warn' : '' }; };
   const draw = q => {
@@ -87,7 +96,7 @@ async function bindSiteMap(s, after) {
       const { error } = await sb.storage.from('plans').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
       const { error: e2 } = await sb.rpc('set_site_map', { s: s.id, path }); if (e2) throw e2;
       s.map_path = path; await cache.set('site:' + s.slug, s); toast('המפה נשמרה'); after ? after() : bindSiteMap(s);
-    } catch (e) { toast(e.message || 'ההעלאה נכשלה'); }
+    } catch (e) { toast(errText(e, 'ההעלאה נכשלה — נסו שוב')); }
   };
 }
 
@@ -97,6 +106,7 @@ function siteTools(s, opts = {}) {
   t.push(`<button class="stile" type="button" data-st="map">${s.map_path ? '<span class="stimg" id="stmap"></span>' : `<span class="mic">${icon('photo', 19)}</span>`}<b>מפת האתר</b>${s.map_path ? '' : '<small>אין עדיין · העלאה</small>'}</button>`);
   t.push(`<button class="stile ${s.lat ? '' : 'todo'}" type="button" data-st="loc"><span class="mic ${s.lat ? 'ok' : ''}">${icon('pin', 19)}</span><b>${s.lat ? 'ניווט ותחזית' : 'שמירת מיקום'}</b>${s.lat ? '<small>Waze · Maps · 4 ימים</small>' : ''}</button>`);
   if (isManager()) t.push(`<button class="stile" type="button" data-st="task"><span class="mic">${icon('send', 19)}</span><b>משימה לצוות</b><small>${s.contact_name ? 'ליצור קשר עם ' + esc(s.contact_name.split(' ')[0]) : 'מעקב על הליד'}</small></button>`);
+  if (isManager() && s.kind === 'lead') t.push(`<button class="stile" type="button" data-st="merge"><span class="mic">${icon('folder', 19)}</span><b>שיוך לאתר קיים</b></button>`);
   if (can('finance') && opts.price) t.push(`<button class="stile" type="button" data-st="price"><span class="mic">${icon('cash', 19)}</span><b>הערכת מחיר</b><small>${opts.days ? nf(opts.days) + ' ימי עבודה' : 'אחרי הזנת ימים'}</small></button>`);
   return `<div class="stools">${t.join('')}</div>`;
 }
@@ -112,6 +122,22 @@ function bindSiteTools(s, opts = {}) {
     if (k === 'loc') sheet(`<h3>${esc(s.name)}</h3>${siteLocHtml(s)}${s.map_path && can('specs') ? `<button class="btn ghost block" id="mapre">${icon('photo', 18)} החלפת מפת האתר</button>` : ''}<button class="btn ghost block" data-close>סגירה</button>`, sh => {
       bindSiteLoc(s); const m = $('#mapre', sh); if (m) m.onclick = () => sheet(`<h3>מפת האתר</h3>${siteMapHtml(s)}<button class="btn ghost block" data-close>סגירה</button>`, () => bindSiteMap(s, () => location.reload()));
     });
+    // ליד שכבר אופיין כאתר (או שיש לו פרויקט) — מאחדים לרשומה אחת: הליד יוצא מהרשימות והאפיון מתקשר אליו במאנדי
+    if (k === 'merge') {
+      const { data: all } = await sb.from('sites').select('id,slug,name,kind,buildings(id)').neq('kind', 'lead').eq('is_active', true).order('name');
+      const words = s.name.split(/[\s—–\-,()]+/).filter(w => w.length > 2);
+      const score = x => words.filter(w => x.name.includes(w)).length;
+      const list = (all || []).sort((a, b) => score(b) - score(a) || a.name.localeCompare(b.name));
+      return sheet(`<h3 class="sh">שיוך ${esc(s.name)}</h3><input type="search" class="search" id="mq" placeholder="חיפוש אתר">
+        <div class="list" id="ml">${list.map(x => `<button class="lrow" data-to="${x.id}" data-slug="${esc(x.slug)}" data-n="${esc(x.name)}"><span class="grow"><b>${esc(x.name)}</b><small>${(x.buildings || []).length} מבנים</small></span></button>`).join('')}</div>`, (sh, close) => {
+        $('#mq', sh).oninput = e => $$('[data-n]', sh).forEach(r => r.hidden = e.target.value && !r.dataset.n.includes(e.target.value.trim()));
+        $$('[data-to]', sh).forEach(r => r.onclick = async () => {
+          if (!(await confirmBox(`לאחד את הליד עם "${r.dataset.n}"?`, { ok: 'איחוד' }))) return;
+          r.disabled = true; const { error } = await sb.rpc('merge_lead', { lead: s.id, target: r.dataset.to });
+          if (error) { r.disabled = false; return toast(errText(error, 'האיחוד נכשל')); }
+          close(); toast('אוחד — הליד יתעדכן במאנדי'); location.hash = '#/site/' + r.dataset.slug; });
+      });
+    }
     if (k === 'task') return (await import('./tasks.js')).newTask({ site: s, title: s.kind === 'lead' ? `ליצור קשר${s.contact_name ? ' עם ' + s.contact_name : ''} ולתאם פגישת אפיון` : '' });
     if (k === 'price') sheet(`<div class="card" id="price"></div><button class="btn ghost block" data-close>סגירה</button>`, () => priceCard(s, opts.days));
   });
@@ -133,7 +159,7 @@ function bindSiteLoc(s) {
       const { latitude: la, longitude: ln, accuracy } = pos.coords;
       if (accuracy > 300) toast(`דיוק נמוך (${Math.round(accuracy)} מ׳) — כדאי לנסות בחוץ`, 3500);
       const { error } = await sb.rpc('set_site_location', { s: s.id, la, ln, acc: Math.round(accuracy) });
-      if (error) { b.disabled = false; b.textContent = 'שמירה'; return toast(error.message); }
+      if (error) { b.disabled = false; b.textContent = 'שמירה'; return toast(errText(error, 'המיקום לא נשמר — נסו שוב')); }
       Object.assign(s, { lat: la, lng: ln, geo_source: 'manual', geo_at: new Date().toISOString() }); toast('מיקום האתר נשמר'); redraw();
     }, () => { b.disabled = false; b.textContent = 'שמירה'; toast('לא התקבלה הרשאת מיקום'); }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   };
@@ -175,9 +201,9 @@ async function pickOnMap(s, done) {
     };
     $('#mqs', sh).onclick = find; $('#mq', sh).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); find(); } };
     $('#msave', sh).onclick = async () => {
-      if (!pos) return;
+      if (!pos || $('#msave', sh).disabled) return; $('#msave', sh).disabled = true;
       const { error } = await sb.rpc('set_site_location', { s: s.id, la: pos.lat, ln: pos.lng, acc: null, src: 'map' });
-      if (error) return toast(error.message);
+      if (error) { $('#msave', sh).disabled = false; return toast(errText(error, 'המיקום לא נשמר — נסו שוב')); }
       Object.assign(s, { lat: pos.lat, lng: pos.lng, geo_source: 'map', geo_at: new Date().toISOString() }); close(); toast('מיקום האתר נשמר'); done();
     };
   });
@@ -237,7 +263,7 @@ async function priceCard(s, days) {
 export async function renderSite(el, slug, tab = 'b') {
   el.innerHTML = `<div class="skel"></div>`;
   const s = await fetchSite(slug);
-  if (!s) { el.innerHTML = `<div class="empty-line">האתר לא נמצא</div>`; return; }
+  if (!s) { el.innerHTML = `<header class="phead">${backBtn('#/specs')}<h1 class="grow">אפיונים</h1></header><div class="empty-line">האתר לא נמצא</div>`; return; }
   const n = s.buildings.length, done = s.buildings.filter(b => b.spec?.status === 'done').length;
   const days = s.buildings.reduce((t, b) => t + Number(b.spec?.days_expected || 0), 0);
   const thumbs = await signedUrls('plans', s.buildings.map(b => b.plan_images[0]?.storage_path).filter(Boolean));
@@ -264,15 +290,15 @@ export async function renderSite(el, slug, tab = 'b') {
       return `<button class="item" data-b="${b.id}">${th ? `<img src="${esc(th)}" alt="">` : ''}<span class="t"><b>${esc(b.name)}</b><small>${esc(b.subtitle ? b.subtitle + ' · ' : '')}${meta}</small></span><span class="pill ${c}">${t}</span></button>`;
     }).join('')}</div>`).join('');
   body.insertAdjacentHTML('beforeend', `<button class="btn ghost block addb" id="addb">${icon('plus', 18)} הוספת מבנה</button>`);
-  $('#addb').onclick = async () => { const n = await ask('שם המבנה', { placeholder: 'למשל: בניין B, אגף מזרחי', ok: 'הוספה' }); if (!n) return;
-    const { data, error } = await sb.rpc('add_building', { s: s.id, n }); if (error) return toast(error.message); location.hash = `#/b/${slug}/${data}`; };
+  $('#addb').onclick = async () => { const n = await ask('שם המבנה', { placeholder: 'למשל: בניין B, אגף מזרחי', ok: 'הוספה' }); if (!n || $('#addb').disabled) return; $('#addb').disabled = true;
+    const { data, error } = await sb.rpc('add_building', { s: s.id, n }); if (error) { $('#addb').disabled = false; return toast(errText(error, 'המבנה לא נוסף — נסו שוב')); } location.hash = `#/b/${slug}/${data}`; };
   $$('[data-b]', body).forEach(b => b.onclick = () => location.hash = `#/b/${slug}/${b.dataset.b}`);
 }
 
 // ---------- טופס אפיון ----------
 export async function renderBuilding(el, slug, bid) {
   const s = await fetchSite(slug); const b = s?.buildings.find(x => x.id === bid);
-  if (!b) { el.innerHTML = `<div class="empty-line">המבנה לא נמצא</div>`; return; }
+  if (!b) { el.innerHTML = `<header class="phead">${backBtn(s ? '#/site/' + slug : '#/specs')}<h1 class="grow">אפיון</h1></header><div class="empty-line">המבנה לא נמצא</div>`; return; }
   const spec = b.spec; let form = { ...spec, floors: spec.floors ?? (b.floors != null ? Math.round(b.floors) : null) }; let dirty = false;
   const editable = can('specs');
   const plans = await signedUrls('plans', b.plan_images.map(p => p.storage_path));

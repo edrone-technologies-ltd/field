@@ -1,5 +1,5 @@
 // תיק לקוח: לקוח (ישות משלמת, מסונכרן מתיק הלקוחות במאנדי) ← אתרים ← פרויקטים. היסטוריית עבודות לכל אתר, אנשי קשר, וקבוצת האם.
-import { sb, isManager, icon, $, $$, esc, backBtn, dm, stLabel } from '../lib/core.js';
+import { sb, isManager, icon, $, $$, esc, backBtn, dm, stLabel, isOpenProject } from '../lib/core.js';
 
 const ARCH = 'group_mm5052gw';
 const range = p => { const f = p.actual_from || p.planned_from, t = p.actual_to || p.planned_to; return f ? (t && t !== f ? `${dm(f)}–${dm(t)}` : dm(f)) : ''; };
@@ -29,7 +29,7 @@ export async function renderClient(el, id) {
   const { data: c } = await sb.from('clients').select('*').eq('id', id).maybeSingle();
   if (!c) { el.innerHTML = `<header class="phead">${backBtn('#/clients')}<h1>תיק לקוח</h1></header><div class="empty-line">הלקוח לא נמצא</div>`; return; }
   const [{ data: ps }, { data: sites }, { data: sib }] = await Promise.all([
-    sb.from('projects').select('id,name,site_id,status_label,monday_group,planned_from,planned_to,actual_from,actual_to,field_days_actual,work_days(status)').eq('client_id', id),
+    sb.from('projects').select('id,name,site_id,status_label,monday_group,closed_summary,planned_from,planned_to,actual_from,actual_to,field_days_actual,work_days(status)').eq('client_id', id),
     sb.from('sites').select('id,slug,name,address,contact_name,contact_phone').eq('client_id', id),
     c.grp ? sb.from('clients').select('id,name').eq('grp', c.grp).neq('id', id).order('name') : Promise.resolve({ data: [] })]);
   const P = (ps || []).sort((a, b) => ((b.actual_from || b.planned_from || '') > (a.actual_from || a.planned_from || '') ? 1 : -1));
@@ -41,7 +41,7 @@ export async function renderClient(el, id) {
   if (missing.length) { const { data: ms } = await sb.from('sites').select('id,slug,name,address,contact_name,contact_phone').in('id', missing); (ms || []).forEach(m => Object.assign(S.get(m.id), m)); }
   const days = p => Math.max(Number(p.field_days_actual || 0), (p.work_days || []).filter(w => w.status === 'done').length);
   const prow = p => `<a class="lrow" href="#/p/${p.id}"><span class="grow"><b>${esc(p.name)}</b><small>${[range(p), days(p) ? `${days(p)} ימי שטח` : ''].filter(Boolean).join(' · ')}</small></span><span class="pill ${p.monday_group === ARCH ? '' : String(p.status_label || '').startsWith('הסתיים') || p.status_label === 'שולם ✓' ? 'ok' : 'lime'}">${p.monday_group === ARCH ? 'ארכיון' : esc(stLabel(p.status_label))}</span></a>`;
-  const active = P.filter(p => p.monday_group !== ARCH && !String(p.status_label || '').startsWith('הסתיים') && p.status_label !== 'שולם ✓');
+  const active = P.filter(isOpenProject);
   const years = [...new Set(P.map(yr).filter(Boolean))];
   el.innerHTML = `<header class="phead">${backBtn('#/clients')}<h1 class="grow">${esc(c.name)}</h1></header>
     <div class="stack lg">

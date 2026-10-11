@@ -1,5 +1,6 @@
 // ניהול מערכת: צוות, תפקידים, ומי רואה איזה מודול. admin בלבד (נאכף גם בשרת).
-import { sb, state, $, $$, esc, toast, ROLE_HE, FIELD_HE, initials, sheet, icon, leadMark } from '../lib/core.js';
+import { sb, state, $, $$, esc, toast, ROLE_HE, FIELD_HE, initials, sheet, icon, leadMark, confirmBox, replaceHash } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 const ROLES = ['admin', 'ops_manager', 'surveyor', 'crew_lead', 'crew', 'partner'];
 export async function renderAdmin(el) {
@@ -34,22 +35,27 @@ export async function renderAdmin(el) {
       ${people.filter(p => !['admin', 'ops_manager'].includes(p.role)).map(p => `<tr><td>${esc(p.full_name)}</td>${sites.map(s => `<td><input type="checkbox" data-sm="${s.id}|${p.id}" ${sm.some(x => x.site_id === s.id && x.user_id === p.id) ? 'checked' : ''}></td>`).join('')}</tr>`).join('') || `<tr><td colspan="9" class="muted">אין עובדים לשיוך</td></tr>`}
     </tbody></table></div>
 
-    <h3 class="sh">סנכרון מאנדי</h3>
-    ${logs.length ? `<div class="scroll-x card"><table class="t"><tr><th>מתי</th><th>כיוון</th><th>מה</th><th>מצב</th></tr>${logs.map(l => `<tr><td>${new Date(l.created_at).toLocaleString('he-IL')}</td><td>${l.direction === 'to_monday' ? 'למאנדי' : 'ממאנדי'}</td><td>${esc(l.entity)}</td><td><span class="pill ${l.status === 'ok' ? 'ok' : l.status === 'error' ? 'bad' : 'warn'}">${l.status}</span></td></tr>`).join('')}</table></div>` : `<div class="empty-line">אין פעולות סנכרון</div>`}
+    <h3 class="sh" id="sync">סנכרון מאנדי</h3>
+    ${logs.length ? `<div class="scroll-x card"><table class="t"><tr><th>מתי</th><th>כיוון</th><th>מה</th><th>מצב</th></tr>${logs.map(l => `<tr><td>${new Date(l.created_at).toLocaleString('he-IL')}</td><td>${l.direction === 'to_monday' ? 'למאנדי' : 'ממאנדי'}</td><td>${esc(l.entity)}${l.status === 'error' && l.error ? `<small class="muted">${esc(String(l.error).slice(0, 120))}</small>` : ''}</td><td><span class="pill ${l.status === 'ok' ? 'ok' : l.status === 'error' ? 'bad' : 'warn'}">${l.status}</span></td></tr>`).join('')}</table></div>` : `<div class="empty-line">אין פעולות סנכרון</div>`}
     </div>`;
-  $$('[data-role]').forEach(s => s.onchange = async () => { const { error } = await sb.from('profiles').update({ role: s.value }).eq('id', s.dataset.role); toast(error ? 'לא נשמר' : 'התפקיד עודכן'); });
-  $$('[data-act]').forEach(c => c.onchange = async () => { const { error } = await sb.from('profiles').update({ is_active: c.checked }).eq('id', c.dataset.act); toast(error ? 'לא נשמר' : c.checked ? 'הגישה הופעלה' : 'הגישה נחסמה'); });
+  $$('[data-role]').forEach(s => { let prev = s.value; s.onchange = async () => { s.disabled = true; const { error } = await sb.from('profiles').update({ role: s.value }).eq('id', s.dataset.role); s.disabled = false;
+    if (error) { s.value = prev; return toast(errText(error, 'התפקיד לא עודכן — נסו שוב')); } prev = s.value; toast('התפקיד עודכן'); }; });
+  $$('[data-act]').forEach(c => c.onchange = async () => { if (!c.checked && !(await confirmBox('לחסום את הגישה?', { body: 'העובד לא יוכל להיכנס לאפליקציה.', ok: 'חסימה', danger: true }))) { c.checked = true; return; }
+    c.disabled = true; const { error } = await sb.from('profiles').update({ is_active: c.checked }).eq('id', c.dataset.act); c.disabled = false;
+    if (error) { c.checked = !c.checked; return toast(errText(error, 'לא נשמר — נסו שוב')); } toast(c.checked ? 'הגישה הופעלה' : 'הגישה נחסמה'); });
   $$('[data-rm]').forEach(c => c.onchange = async () => {
     const [role, module] = c.dataset.rm.split('|');
     const q = c.checked ? sb.from('role_modules').insert({ role, module }) : sb.from('role_modules').delete().eq('role', role).eq('module', module);
-    const { error } = await q; toast(error ? 'לא נשמר' : 'ההרשאה עודכנה');
+    c.disabled = true; const { error } = await q; c.disabled = false; if (error) { c.checked = !c.checked; return toast(errText(error, 'לא נשמר — נסו שוב')); } toast('ההרשאה עודכנה');
   });
   $$('[data-sm]').forEach(c => c.onchange = async () => {
     const [site_id, user_id] = c.dataset.sm.split('|');
     const q = c.checked ? sb.from('site_members').insert({ site_id, user_id }) : sb.from('site_members').delete().eq('site_id', site_id).eq('user_id', user_id);
-    const { error } = await q; toast(error ? 'לא נשמר' : 'השיוך עודכן');
+    c.disabled = true; const { error } = await q; c.disabled = false; if (error) { c.checked = !c.checked; return toast(errText(error, 'לא נשמר — נסו שוב')); } toast('השיוך עודכן');
   });
   usageCard(el); teamsCard(people);
+  // קישור עמוק ליומן הסנכרון (#/admin/sync) — מההתראה "הסנכרון נעצר" / "שליחה למאנדי נכשלה"
+  if (location.hash.startsWith('#/admin/sync')) { replaceHash('#/admin', false); $('#sync')?.scrollIntoView({ block: 'start' }); }
 }
 
 // צוותי שטח: מטיס + מפעיל מערכות, ואחד מהם ראש צוות (מקבל אוטומטית הרשאת ראש צוות)
@@ -78,13 +84,15 @@ async function teamsCard(people) {
         $$('[data-pilot],[data-operator]', s).forEach(x => x.setAttribute('aria-pressed', f[(x.dataset.pilot ? 'pilot' : 'operator') + '_id'] === (x.dataset.pilot || x.dataset.operator)));
         lead(); }));
       lead();
-      const d = $('#tdel', s); if (d) d.onclick = async () => { await sb.from('teams').update({ active: false }).eq('id', t.id); close(); toast('הצוות פורק'); teamsCard(people); };
+      const d = $('#tdel', s); if (d) d.onclick = async () => { if (!(await confirmBox(`לפרק את ${t.name}?`, { ok: 'פירוק', danger: true }))) return;
+        const { error } = await sb.from('teams').update({ active: false }).eq('id', t.id); if (error) return toast(errText(error, 'לא נשמר — נסו שוב')); toast('הצוות פורק'); teamsCard(people); };
       $('#tsv', s).onclick = async () => {
         if (!f.pilot_id || !f.operator_id) return toast('חסר מטיס או מפעיל מערכות');
         if (!f.lead_id) return toast('מי ראש הצוות?');
+        const sv = $('#tsv', s); if (sv.disabled) return; sv.disabled = true;
         const row = { name: $('#tn', s).value.trim() || f.name, pilot_id: f.pilot_id, operator_id: f.operator_id, lead_id: f.lead_id };
         const { error } = t ? await sb.from('teams').update(row).eq('id', t.id) : await sb.from('teams').insert(row);
-        if (error) return toast(error.message); close(); toast('נשמר'); renderAdmin(document.getElementById('app'));
+        if (error) { sv.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); } close(); toast('נשמר'); renderAdmin(document.getElementById('app'));
       };
     });
   };

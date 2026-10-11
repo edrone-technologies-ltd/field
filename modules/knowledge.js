@@ -2,6 +2,7 @@
 // בחינם: סרטונים לא נשמרים בשרת שלנו (רק קישור). לשרת עולים רק PDF ותמונות עד 10MB.
 // "צפיתי והבנתי" = מעקב הדרכה; פריט "חובה" מופיע בבית לכל מי שעוד לא אישר.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, confirmBox, signedUrls, backBtn, initials, replaceHash, goUp, zoom } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 // קהלי יעד: ריק = כולם. מנהלים רואים הכל תמיד
 const AUD = [['pilot', 'מטיסים'], ['operator', 'מפעילי מערכות'], ['crew_lead', 'ראשי צוות'], ['crew', 'כל צוות השטח'], ['surveyor', 'סוקר'], ['ops_manager', 'הנהלה ותפעול']];
@@ -72,7 +73,7 @@ export async function renderKbItem(el, id) {
         : x.video_url ? `<a class="btn ghost block" href="${esc(x.video_url)}" target="_blank" rel="noopener">${icon('send', 18)} פתיחת הסרטון</a>` : ''}
       ${x.body ? `<div class="card kbbody">${esc(x.body).replace(/\n/g, '<br>')}</div>` : ''}
       ${files.some(isImg) ? `<div class="kbshots">${files.filter(isImg).map((f, i) => `<figure><img src="${esc(urls[f.path] || '')}" alt="${esc(f.name.replace(/\.\w+$/, ''))}" loading="lazy"><figcaption>${i + 1}. ${esc(f.name.replace(/^\d+[-_ ]*/, '').replace(/\.\w+$/, ''))}</figcaption></figure>`).join('')}</div>` : ''}
-      ${files.some(f => !isImg(f)) ? `<section><h3 class="sh">מסמכים</h3><div class="list">${files.filter(f => !isImg(f)).map(f => `<a class="lrow" href="${esc(urls[f.path] || '#')}" target="_blank" rel="noopener"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
+      ${files.some(f => !isImg(f)) ? `<section><h3 class="sh">מסמכים</h3><div class="list">${files.filter(f => !isImg(f)).map(f => urls[f.path] ? `<a class="lrow" href="${esc(urls[f.path])}" target="_blank" rel="noopener"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b></span><span class="chev">${icon('chev', 18)}</span></a>` : `<div class="lrow"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b><small>לא זמין כרגע</small></span></div>`).join('')}</div></section>` : ''}
       ${x.quiz?.length ? `<section class="card stack" id="kbquiz"></section>` : ''}
       ${x.sign_required ? `<section class="card stack" id="kbsign"></section>` : ''}
       ${!x.quiz?.length && !x.sign_required ? (v?.confirmed_at && kbDone(x, v) ? `<div class="acked center">${icon('check', 16)} צפית ואישרת</div>` : `<button class="btn primary block big" id="kbok">צפיתי והבנתי</button>`) : ''}
@@ -82,7 +83,7 @@ export async function renderKbItem(el, id) {
   const ok = $('#kbok'); if (ok) ok.onclick = async () => {
     ok.disabled = true;
     const { error } = await markView(id, { confirmed_at: new Date().toISOString() });
-    if (error) { ok.disabled = false; return toast(error.message); }
+    if (error) { ok.disabled = false; return toast(errText(error)); }
     toast('נרשם — תודה'); renderKbItem(el, id);
   };
   const ed = $('#kbed'); if (ed) ed.onclick = async () => editKb(x, await cats());
@@ -117,7 +118,8 @@ function drawQuiz(x, v, el, id) {
   $$('.qz', box).forEach(z => $$('.qopt', z).forEach(b => b.onclick = () => { ans[+z.dataset.q] = +b.dataset.o; $$('.qopt', z).forEach(y => y.classList.toggle('on', y === b)); }));
   $('#qsend', box).onclick = async () => {
     if (ans.filter(a => a != null).length < x.quiz.length) return toast('יש שאלות בלי תשובה');
-    const { data, error } = await sb.rpc('kb_grade', { item: id, answers: x.quiz.map((_, i) => ans[i]) }); if (error) return toast(error.message);
+    const qs = $('#qsend', box); if (qs.disabled) return; qs.disabled = true;
+    const { data, error } = await sb.rpc('kb_grade', { item: id, answers: x.quiz.map((_, i) => ans[i]) }); qs.disabled = false; if (error) return toast(errText(error, 'הבדיקה לא נשלחה — נסו שוב'));
     $$('.qz', box).forEach(z => z.classList.toggle('wrong', data.wrong.includes(+z.dataset.q + 1)));
     if (data.passed) { toast(`עברת · ${data.score}%`); renderKbItem(el, id); }
     else $('#qres', box).innerHTML = `<div class="note">ציון ${data.score}% — צריך ${data.need}%</div>`;
@@ -139,9 +141,10 @@ function drawSign(x, v, el, id) {
   $('#sclr', box).onclick = () => { g.clearRect(0, 0, c.width, c.height); drew = false; };
   $('#ssend', box).onclick = async () => {
     if (!drew) return toast('חסרה חתימה');
+    const sb2 = $('#ssend', box); if (sb2.disabled) return; sb2.disabled = true;
     const now = new Date().toISOString();
     const { error } = await markView(id, { signed_at: now, signature: c.toDataURL('image/png'), confirmed_at: now });
-    if (error) return toast(error.message); toast('נחתם — תודה'); renderKbItem(el, id);
+    if (error) { sb2.disabled = false; return toast(errText(error, 'החתימה לא נשמרה — נסו שוב')); } toast('נחתם — תודה'); renderKbItem(el, id);
   };
 }
 
@@ -188,14 +191,14 @@ async function editKb(x, C) {
         if (file.size > 10485760) { toast(`${file.name}: מעל 10MB — עדיף קישור מדרייב`, 4000); continue; }
         const path = `${crypto.randomUUID()}/${file.name.replace(/[^\w.֐-׿-]+/g, '_')}`;
         const { error } = await sb.storage.from('kb').upload(path, file, { contentType: file.type });
-        if (error) { toast(error.message); continue; }
+        if (error) { toast(errText(error, `${file.name} לא עלה`)); continue; }
         f.files.push({ path, name: file.name });
       }
       drawFiles();
     };
     const del = $('#kdel', s); if (del) del.onclick = async () => {
-      if (!(await confirmBox('למחוק את ההדרכה?', { body: 'כולל רישום מי צפה. אי אפשר לשחזר.', ok: 'מחיקה' }))) return;
-      const { error } = await sb.from('kb_items').delete().eq('id', x.id); if (error) return toast(error.message);
+      if (!(await confirmBox('למחוק את ההדרכה?', { body: 'כולל רישום מי צפה. אי אפשר לשחזר.', ok: 'מחיקה', danger: true }))) return;
+      const { error } = await sb.from('kb_items').delete().eq('id', x.id); if (error) return toast(errText(error, 'לא נמחק — נסו שוב'));
       close(); toast('נמחק'); goUp('#/kb');
     };
     $('#ks', s).onclick = async () => {
@@ -208,8 +211,8 @@ async function editKb(x, C) {
       if (!row.title) return toast('חסרה כותרת');
       $('#ks', s).disabled = true;
       const q = x ? sb.from('kb_items').update(row).eq('id', x.id).select('id').single() : sb.from('kb_items').insert({ ...row, created_by: state.user.id }).select('id').single();
-      const { data, error } = await q; if (error) { $('#ks', s).disabled = false; return toast(error.message); }
-      if (qs.length) { const { error: e2 } = await sb.from('kb_quiz_keys').upsert({ item_id: data.id, answers: qs.map(q => q.a) }); if (e2) return toast(e2.message); }
+      const { data, error } = await q; if (error) { $('#ks', s).disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); }
+      if (qs.length) { const { error: e2 } = await sb.from('kb_quiz_keys').upsert({ item_id: data.id, answers: qs.map(q => q.a) }); if (e2) { $('#ks', s).disabled = false; return toast(errText(e2, 'מפתח התשובות לא נשמר — נסו שוב')); } }
       else await sb.from('kb_quiz_keys').delete().eq('item_id', data.id);
       close(); toast(row.required && !x?.required ? 'נשמר — נשלחה התראה לצוות' : 'נשמר');
       location.hash = '#/kb/' + data.id; if (x) dispatchEvent(new HashChangeEvent('hashchange'));

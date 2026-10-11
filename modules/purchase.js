@@ -16,8 +16,9 @@ export async function renderPurchase(el) {
   $('#pb').innerHTML = `
     ${lows.length ? `<section><h3 class="sh">מתחת למינימום</h3><div class="alist">${lows.map(c => `<button class="arow warn" type="button" data-quick="${c.monday_item_id}"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(c.name)}</b><small>במלאי ${c.stock} ${esc(c.unit || '')} · מינימום ${c.min_qty}</small></span><span class="pill warn">להזמין</span></button>`).join('')}</div></section>` : ''}
     <section><h3 class="sh">הבקשות${isManager() ? '' : ' שלי'}</h3>${(reqs || []).length ? `<div class="list">${reqs.map(r => { const [t, c] = ST[r.status] || ['', ''];
-      return `<div class="lrow"><span class="grow"><b>${esc(r.title)}</b><small>${dm(r.created_at.slice(0, 10))} · ${esc(r.profiles?.full_name || '')}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}</small>
-        <small>${esc((r.purchase_lines || []).map(l => `${l.name} ×${l.qty}`).join(' · '))}</small></span><span class="pill ${c}">${t}</span></div>`; }).join('')}</div>` : '<div class="empty-line">אין בקשות</div>'}</section>
+      const open = isManager() && r.monday_item_id && ['submitted', 'pending'].includes(r.status), tag = open ? 'a' : 'div';
+      return `<${tag} class="lrow"${open ? ` href="https://edroneil-force.monday.com/boards/5099908084/pulses/${esc(r.monday_item_id)}" target="_blank" rel="noopener"` : ''}><span class="grow"><b>${esc(r.title)}</b><small>${dm(r.created_at.slice(0, 10))} · ${esc(r.profiles?.full_name || '')}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}</small>
+        <small>${esc((r.purchase_lines || []).map(l => `${l.name} ×${l.qty}`).join(' · '))}</small></span><span class="pill ${c}">${t}</span></${tag}>`; }).join('')}</div>` : '<div class="empty-line">אין בקשות</div>'}</section>
     <details class="fold"><summary><span class="sh">מצב מלאי</span><span class="count">${(cat || []).length}</span></summary><div class="list">${(cat || []).map(c => `<div class="lrow kv"><span class="grow"><b>${esc(c.name)}</b></span><span class="pill ${low(c) ? 'warn' : 'ok'}">${c.stock ?? '—'} ${esc(c.unit || '')}</span></div>`).join('')}</div></details>`;
   if (/^#\/purchase\/new/.test(location.hash)) { replaceHash('#/purchase', false); newRequest(cat || []); }   // מה"+" — בלי כפתור במסך
   $$('[data-quick]').forEach(b => b.onclick = () => newRequest(cat || [], b.dataset.quick));
@@ -44,6 +45,7 @@ export async function newRequest(cat, preselect) {
       const lines = cat.filter(c => Q[c.monday_item_id] > 0).map(c => ({ catalog_monday_id: c.monday_item_id, name: c.name, qty: Q[c.monday_item_id], unit: c.order_unit || c.unit, unit_price: c.price_per_order }))
 ;
       if (!lines.length) return toast('לא נבחרו פריטים');
+      const go = $('#rgo', s); if (go.disabled) return; go.disabled = true;
       const proj = (projects || []).find(p => p.id === $('#rp', s).value);
       const id = uid(), title = `${lines.map(l => l.name).slice(0, 2).join(' + ')}${lines.length > 2 ? ` ועוד ${lines.length - 2}` : ''}${proj ? ' — ' + proj.name : ''}`;
       await enqueue({ kind: 'insert', table: 'purchase_requests', row: { id, title, requested_by: state.user.id, project_id: proj?.id || null, needed_by: $('#rd', s).value || null, notes: $('#rn', s).value.trim() || null, total: Math.round(total() * 100) / 100 } });

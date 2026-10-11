@@ -1,14 +1,14 @@
 // מזג אוויר וטיסה: מפת האתרים הפעילים (כל אתר בצבע הסטטוס שלו), ולכל אתר — פסק טיסה, 5 נתונים (רוח, משבים, גשם, סבירות לגשם, Kp)
 // וציר שעות לניתוח היום. בהשראת UAV Forecast. ספים כמו בשיבוץ. הצבעים מבוססי שקיפות — קריאים גם בבהיר וגם בכהה.
-import { sb, $, $$, esc, icon, backBtn, dm, HE_D1, replaceHash } from '../lib/core.js';
+import { sb, $, $$, esc, icon, backBtn, dm, HE_D1, replaceHash, toast, isOpenProject } from '../lib/core.js';
 
 import { ARCH, T, VERDICT, kpSeries, forecast, hourData, dayLevel, airBtn } from '../lib/wx.js';
 
 async function sitesList() {
-  const { data } = await sb.from('projects').select('id,name,status_label,monday_group,planned_from,site_id,sites(id,slug,name,lat,lng,address)').not('site_id', 'is', null);
+  const { data } = await sb.from('projects').select('id,name,status_label,monday_group,closed_summary,planned_from,site_id,sites(id,slug,name,lat,lng,address)').not('site_id', 'is', null);
   const today = new Date().toLocaleDateString('en-CA'), m = new Map();
   for (const p of data || []) {
-    if (!p.sites?.lat || p.monday_group === ARCH || String(p.status_label || '').startsWith('הסתיים') || p.status_label === 'שולם ✓') continue;
+    if (!p.sites?.lat || !isOpenProject(p)) continue;
     const s = m.get(p.sites.id) || { ...p.sites, next: null, projects: [] }; s.projects.push({ id: p.id, name: p.name, from: p.planned_from });
     if (p.planned_from && p.planned_from >= today && (!s.next || p.planned_from < s.next)) s.next = p.planned_from;
     m.set(s.id, s);
@@ -100,6 +100,8 @@ export async function renderWeather(el, siteId = '') {
     } catch { $('#wres', el).innerHTML = '<div class="empty-line">החיפוש לא זמין כרגע</div>'; }
   };
   $('#wqs', el).onclick = find; $('#wq', el).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); find(); } };
-  $('#wme', el).onclick = () => navigator.geolocation?.getCurrentPosition(p => { map?.setView([p.coords.latitude, p.coords.longitude], 11); setPoint(p.coords.latitude, p.coords.longitude, 'המיקום שלי'); }, () => {}, { enableHighAccuracy: false, timeout: 10000 });
+  $('#wme', el).onclick = () => { const b = $('#wme', el); if (!navigator.geolocation) return toast('הטלפון לא תומך במיקום'); if (b.disabled) return; b.disabled = true;
+    navigator.geolocation.getCurrentPosition(p => { b.disabled = false; map?.setView([p.coords.latitude, p.coords.longitude], 11); setPoint(p.coords.latitude, p.coords.longitude, 'המיקום שלי'); },
+      () => { b.disabled = false; toast('לא התקבל מיקום — בדקו את הרשאת המיקום'); }, { enableHighAccuracy: false, timeout: 10000 }); };
   if (sel >= 0) draw(); else setPoint(31.2524, 34.7908, 'באר שבע');
 }

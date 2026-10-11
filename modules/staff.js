@@ -2,6 +2,7 @@
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, initials, ROLE_HE, dm, replaceHash } from '../lib/core.js';
 import { computeMonth, hhmm, ymd, DEFAULTS } from '../lib/labor.js';
 import { estimatePay, PAY_TYPES } from '../lib/pay.js';
+import { errText } from '../lib/audit.js';
 
 const isAdmin = () => state.profile.role === 'admin';
 const nis = x => '₪' + Math.round(x || 0).toLocaleString('he-IL');
@@ -31,7 +32,7 @@ export async function renderStaff(el) {
   const M = await monthData(active.map(p => p.id), thisMonth());
   const open = new Set((M.__open || []).map(s => s.user_id));
   const soon = (docs || []).filter(d => (new Date(d.expires_on) - new Date()) / 864e5 <= 45);
-  $('#sl').innerHTML = `${soon.length ? `<div class="alist">${soon.map(d => `<a class="arow warn" href="#/staff/${d.user_id}/docs"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(active.find(p => p.id === d.user_id)?.full_name || '')} · ${esc(d.title)}</b><small>בתוקף עד ${new Date(d.expires_on).toLocaleDateString('he-IL')}</small></span></a>`).join('')}</div>` : ''}
+  $('#sl').innerHTML = `${soon.length ? `<div class="alist">${soon.map(d => `<a class="arow warn" href="#/staff/${d.user_id}/docs"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(active.find(p => p.id === d.user_id)?.full_name || '')} · ${esc(d.title)}</b><small>בתוקף עד ${new Date(d.expires_on).toLocaleDateString('he-IL')}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
     <div class="list">${active.map(p => { const pr = (prof || []).find(x => x.user_id === p.id), R = M[p.id], r = (rates || []).find(x => x.user_id === p.id);
       return `<a class="lrow" href="#/staff/${p.id}"><span class="avatar sm">${esc(initials(p.full_name))}</span><span class="grow"><b>${esc(p.full_name)}${open.has(p.id) ? ' <span class="cl-dot inline"></span>' : ''}</b>
         <small>${esc(pr?.job_title || ROLE_HE[p.role] || '')}${pr?.employment_type && pr.employment_type !== 'עובד' ? ' · ' + esc(pr.employment_type) : ''} · ${hhmm(R?.totals.net || 0)}ש׳ החודש</small></span>
@@ -72,8 +73,9 @@ async function infoTab(box, p) {
   $('#edit', box).onclick = () => sheet(`<h3>עריכת פרטים · ${esc(p.full_name)}</h3>${F.map(([k, l, t]) => `<label class="field">${l}${t === 'long' ? `<textarea data-f="${k}" rows="2">${esc(e?.[k] || '')}</textarea>` : `<input type="${t === 'date' ? 'date' : 'text'}" data-f="${k}" value="${esc(e?.[k] || '')}">`}</label>`).join('')}
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="sv">שמירה</button></div>`, (s, close) => {
     $('#sv', s).onclick = async () => {
+      const sv = $('#sv', s); if (sv.disabled) return; sv.disabled = true;
       const row = { user_id: p.id, updated_at: new Date().toISOString() }; $$('[data-f]', s).forEach(i => row[i.dataset.f] = i.value.trim() || null);
-      const { error } = await sb.from('employee_profile').upsert(row); if (error) return toast(error.message); close(); toast('נשמר'); infoTab(box, p);
+      const { error } = await sb.from('employee_profile').upsert(row); if (error) { sv.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); } close(); toast('נשמר'); infoTab(box, p);
     };
   });
 }
@@ -96,10 +98,10 @@ async function payTab(box, p) {
         ${est ? `<div class="menu">${[['בסיס', nis(est.base)], [est.type === 'global' ? 'גלובלי / נוספות' : 'שעות נוספות ושבת', nis(est.ot)], ...(est.travel ? [['נסיעות', nis(est.travel)]] : [])].map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${v}</b></span></div>`).join('')}</div>` : '<div class="empty-line">אין תנאי שכר</div>'}
         ${(est?.notes || []).map(n => `<div class="arow warn card-like"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small class="fl">${esc(n)}</small></span></div>`).join('')}</section>`;
     $$('[data-pt]', box).forEach(b => b.onclick = () => { collect(); P.pay_type = b.dataset.pt; draw(); });
-    $('#psv', box).onclick = async () => { collect();
+    $('#psv', box).onclick = async () => { const ps = $('#psv', box); if (ps.disabled) return; ps.disabled = true; collect();
       const row = { user_id: p.id, pay_type: P.pay_type, hourly_rate: P.pay_type === 'hourly' ? num(P.hourly_rate) : null, monthly_salary: P.pay_type !== 'hourly' ? num(P.monthly_salary) : null,
         global_ot_amount: P.pay_type === 'global' ? num(P.global_ot_amount) : null, global_ot_hours: P.pay_type === 'global' ? num(P.global_ot_hours) : null, travel_per_day: num(P.travel_per_day), pay_notes: P.pay_notes || null, updated_at: new Date().toISOString() };
-      const { error } = await sb.from('employee_rates').upsert(row); if (error) return toast(error.message); toast('תנאי השכר נשמרו'); draw(); };
+      const { error } = await sb.from('employee_rates').upsert(row); if (error) { ps.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); } toast('תנאי השכר נשמרו'); draw(); };
   };
   const num = x => x === '' || x == null ? null : Number(x);
   const collect = () => { const g = id => $('#' + id, box)?.value; if (g('ph') != null) P.hourly_rate = g('ph'); if (g('pm') != null) P.monthly_salary = g('pm'); if (g('pg') != null) P.global_ot_amount = g('pg'); if (g('pgh') != null) P.global_ot_hours = g('pgh'); P.travel_per_day = g('pt'); P.pay_notes = g('pn'); };

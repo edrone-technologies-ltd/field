@@ -2,6 +2,7 @@
 // המנהל כותב ומשבץ תמונות; הצוות רואה את אותו מסמך (ובמסך היום — את היום שלו). ניתן להדפסה כ-PDF מטעם E-Drone.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, signedUrls, zoom, dm, dayLabel, isoDay } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
+import { errText } from '../lib/audit.js';
 
 const KIND = { facade: 'אפיון', site: 'אפיון', obstacle: 'מכשול', before: 'לפני', after: 'אחרי', general: 'שטח', report: 'דוח קודם' };
 
@@ -31,7 +32,7 @@ export async function renderPlan(el, pid, print = false) {
     sb.from('tasks').select('id,title,day_no,method,instructions,risk,building_id,work_day_id,status').eq('project_id', pid).neq('phase', 'מעקב').neq('status', 'dropped').order('day_no').order('seq'),
     sb.from('work_days').select('id,day,status,report_time,kind').eq('project_id', pid).neq('kind', 'report').order('day'),
     sb.from('plan_days').select('*').eq('project_id', pid).order('day_no')]);
-  if (!p) { el.innerHTML = '<div class="empty-line">הפרויקט לא נמצא</div>'; return; }
+  if (!p) { el.innerHTML = `<header class="phead"><a class="back" href="#/p/${pid}" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">תכנית עבודה</h1></header><div class="empty-line">הפרויקט לא נמצא</div>`; return; }
   const P = await pool(p);
   const R = new Map((rows || []).map(r => [r.day_no, r]));
   const nums = [...new Set([...(tasks || []).map(t => t.day_no).filter(Boolean), ...R.keys()])].sort((a, b) => a - b);
@@ -72,7 +73,7 @@ export async function renderPlan(el, pid, print = false) {
   if (!M) return;
   const save = async (n, patch) => {
     const { error } = await sb.from('plan_days').upsert({ project_id: pid, day_no: n, ...patch, updated_by: state.user.id, updated_at: new Date().toISOString() });
-    if (error) toast(error.message); else { R.set(n, { ...(R.get(n) || { photos: [] }), ...patch }); }
+    if (error) { toast(errText(error, 'לא נשמר — נסו שוב')); return false; } R.set(n, { ...(R.get(n) || { photos: [] }), ...patch }); return true;
   };
   // הטקסט נשמר תוך כדי הקלדה (השהיה קצרה) ובעזיבת השדה; התיבה גדלה עם הטקסט
   const grow = t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; };
@@ -80,9 +81,9 @@ export async function renderPlan(el, pid, print = false) {
     const go = () => { clearTimeout(tm); const n = +t.dataset.body; return save(n, { body: t.value, photos: R.get(n)?.photos?.length ? R.get(n).photos : photosOf(n) }); };
     t.oninput = () => { grow(t); clearTimeout(tm); tm = setTimeout(go, 900); addEventListener('hashchange', () => tm && go(), { once: true }); }; t.onchange = go; });
   $$('[data-pick]', el).forEach(b => b.onclick = () => picker(+b.dataset.pick));
-  $('#padd').onclick = async () => { const n = (nums.at(-1) || 0) + 1; await save(n, { body: '', photos: [] }); renderPlan(el, pid); };
+  $('#padd').onclick = async e => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; const n = (nums.at(-1) || 0) + 1; if (await save(n, { body: '', photos: [] })) renderPlan(el, pid); else b.disabled = false; };
   const g = $('#pgen'); if (g) g.onclick = async () => {
-    g.disabled = true; const { data, error } = await sb.rpc('generate_work_plan', { p: pid }); if (error) { g.disabled = false; return toast(error.message, 4000); }
+    if (g.disabled) return; g.disabled = true; const { data, error } = await sb.rpc('generate_work_plan', { p: pid }); if (error) { g.disabled = false; return toast(errText(error, 'התכנית לא נבנתה — נסו שוב'), 4000); }
     toast(`נבנו ${data} ימי עבודה`); renderPlan(el, pid);
   };
 
@@ -102,11 +103,12 @@ export async function renderPlan(el, pid, print = false) {
             const { error } = await sb.storage.from('field').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
             await sb.from('photos').insert({ storage_path: path, project_id: pid, site_id: p.site_id, kind: 'site', uploaded_by: state.user.id, caption: 'תכנית עבודה' });
             sel.add('f:' + path);
-          } catch (er) { toast(er.message || 'התמונה לא עלתה'); }
+          } catch (er) { toast(errText(er, 'התמונה לא עלתה — נסו שוב')); }
         }
         await save(n, { photos: [...sel], body: R.get(n)?.body ?? $(`[data-body="${n}"]`)?.value ?? '' }); close(); renderPlan(el, pid);
       };
-      $('#pok', sh).onclick = async () => { await save(n, { photos: [...sel], body: R.get(n)?.body ?? $(`[data-body="${n}"]`)?.value ?? '' }); close(); renderPlan(el, pid); };
+      $('#pok', sh).onclick = async () => { const b = $('#pok', sh); if (b.disabled) return; b.disabled = true;
+        if (await save(n, { photos: [...sel], body: R.get(n)?.body ?? $(`[data-body="${n}"]`)?.value ?? '' })) { close(); toast('נשמר'); renderPlan(el, pid); } else b.disabled = false; };
     });
   }
 }

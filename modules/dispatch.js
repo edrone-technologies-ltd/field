@@ -1,5 +1,6 @@
 // לוח שיבוץ שבועי (מנהלים): מי עובד איפה בכל יום. התנגשויות (שני פרויקטים באותו יום) והיעדרויות מסומנות. הקשה על תא ריק = שיבוץ.
-import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, HE_D1, isoDay, dm, replaceHash, leadMark } from '../lib/core.js';
+import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, HE_D1, isoDay, dm, replaceHash, leadMark, isOpenProject } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const sunday = s => addDays(s, -new Date(s + 'T12:00:00').getDay());
@@ -18,7 +19,7 @@ export async function renderDispatch(el, start, o = {}) {
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).order('full_name'),
     sb.from('work_days').select('id,day,status,project_id,crew_lead_id,gust_max,weather_alerted,projects(name,site_id),work_day_crew(user_id)').gte('day', start).lte('day', end),
     sb.from('absences').select('user_id,kind,date_from,date_to,status').neq('status', 'rejected').lte('date_from', end).gte('date_to', start),
-    sb.from('projects').select('id,name,status_label,monday_group,planned_from,planned_to,site_id').neq('monday_group', 'group_mm5052gw').order('name'),
+    sb.from('projects').select('id,name,status_label,monday_group,closed_summary,planned_from,planned_to,site_id').neq('monday_group', 'group_mm5052gw').order('name').then(r => ({ ...r, data: (r.data || []).filter(isOpenProject) })),
   ]);
   const staff = (people || []).filter(p => ['crew', 'crew_lead', 'ops_manager'].includes(p.role) || (wds || []).some(w => w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id)));
   const cell = (p, d) => {
@@ -28,13 +29,15 @@ export async function renderDispatch(el, start, o = {}) {
     return `<td class="${conflict ? 'conf' : ''} ${d === isoDay() ? 'today' : ''}" data-u="${p.id}" data-d="${d}">${a ? `<span class="dchip abs ${a.status === 'pending' ? 'pend' : ''}">${ABS[a.kind]}${a.status === 'pending' ? '?' : ''}</span>` : ''}
       ${mine.map(w => `<span class="dchip ${w.status === 'done' ? 'done' : ''} ${w.weather_alerted ? 'wx' : ''}" data-w="${w.id}" title="${esc(w.projects?.name || '')}">${esc((w.projects?.name || '').split(/[—–-]/)[0].trim().slice(0, 14))}${w.crew_lead_id === p.id ? leadMark() : ''}</span>`).join('')}</td>`;
   };
+  // רענון אחרי שיבוץ: מריצים מחדש את המסך הנוכחי (לו״ז או לוח שיבוץ) — מוגדר לפני המסלול הצר, שגם הוא משתמש בו
+  const reload = () => dispatchEvent(new HashChangeEvent('hashchange'));
   if (innerWidth < 700) return dayList();
   const conflicts = staff.flatMap(p => days.filter(d => (wds || []).filter(w => w.day === d && (w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id))).length > 1).map(d => `${p.full_name.split(' ')[0]} ב-${dm(d)}`));
-  $('#db').innerHTML = `${conflicts.length ? `<div class="arow bad card-like"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>התנגשות שיבוץ</b><small>${esc(conflicts.join(' · '))}</small></span></div>` : ''}
+  $('#db').innerHTML = `${conflicts.length ? `<button class="arow bad card-like" type="button" id="dconf"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>התנגשות שיבוץ</b><small>${esc(conflicts.join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
     <div class="dwrap"><table class="dgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
       <tbody>${staff.map(p => `<tr><th class="who">${esc(p.full_name.split(' ')[0])}${p.is_pilot ? ' <small>מטיס</small>' : ''}</th>${days.map(d => cell(p, d)).join('')}</tr>`).join('')}</tbody></table></div>`;
-  const reload = () => renderDispatch(el, start);
   $('td.conf', el)?.scrollIntoView({ inline: 'center', block: 'nearest' });   // רק התנגשות מצדיקה קפיצה; בלי זה מתחילים מיום א׳
+  const dc = $('#dconf', el); if (dc) dc.onclick = () => $('td.conf', el)?.scrollIntoView({ inline: 'center', block: 'center', behavior: 'smooth' });
   $$('.dchip[data-w]', el).forEach(c => c.onclick = e => { e.stopPropagation(); location.hash = '#/day/' + c.dataset.w; });
   $$('td[data-u]', el).forEach(td => td.onclick = () => {
     const p = staff.find(x => x.id === td.dataset.u), d = td.dataset.d, mine = (wds || []).filter(w => w.day === d && (w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id)));
@@ -42,10 +45,11 @@ export async function renderDispatch(el, start, o = {}) {
       ${mine.length ? `<div class="list">${mine.map(w => `<div class="lrow"><span class="grow"><b>${esc(w.projects?.name || '')}</b></span><button class="chip" data-rm="${w.id}">הסרה מהיום</button></div>`).join('')}</div>` : ''}
       <label class="field">שיבוץ לפרויקט<select id="ap"><option value="">בחירת פרויקט…</option>${(projects || []).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>
       <div class="row-btns"><button class="btn ghost" data-close>סגירה</button><button class="btn primary" id="ago">שיבוץ</button></div>`, (s, close) => {
-      $('#ago', s).onclick = async () => { const pid = $('#ap', s).value; if (!pid) return toast('בחרו פרויקט');
-        const { error } = await sb.rpc('assign_day', { p: pid, d, u: p.id }); if (error) return toast(error.message, 5000); close(); toast('שובץ — העובד קיבל הודעה'); reload(); };
-      $$('[data-rm]', s).forEach(b => b.onclick = async () => { if (!(await confirmBox('להסיר מהיום?', { ok: 'הסרה' }))) return;
-        const { error } = await sb.rpc('unassign_day', { w: b.dataset.rm, u: p.id }); if (error) return toast(error.message); reload(); });
+      const go = $('#ago', s);
+      go.onclick = async () => { const pid = $('#ap', s).value; if (!pid) return toast('בחרו פרויקט'); if (go.disabled) return; go.disabled = true;
+        const { error } = await sb.rpc('assign_day', { p: pid, d, u: p.id }); if (error) { go.disabled = false; return toast(errText(error, 'השיבוץ לא נשמר — נסו שוב'), 5000); } close(); toast('שובץ — העובד קיבל הודעה'); reload(); };
+      $$('[data-rm]', s).forEach(b => b.onclick = async () => { if (!(await confirmBox(`להסיר את ${p.full_name.split(' ')[0]} מהיום?`, { ok: 'הסרה', danger: true }))) return;
+        const { error } = await sb.rpc('unassign_day', { w: b.dataset.rm, u: p.id }); if (error) return toast(errText(error, 'ההסרה לא נשמרה — נסו שוב')); toast('הוסר מהיום'); reload(); });
     });
   });
 
@@ -59,7 +63,7 @@ export async function renderDispatch(el, start, o = {}) {
       const busy = new Map(); wd.forEach(w => new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean)).forEach(u => busy.set(u, (busy.get(u) || 0) + 1)));   // ראש צוות שגם בצוות = פעם אחת
       const free = !need.length && !wd.length && !ab.length;
       return `<section class="dday ${d === isoDay() ? 'today' : ''} ${free ? 'free' : ''}"><div class="ddh"><b>${HE_D1[dow]} ${dm(d)}</b>${d === isoDay() ? '<span class="pill lime">היום</span>' : ''}${free ? '<span class="muted">פנוי</span>' : ''}<span class="grow"></span>${dow < 6 ? `<button class="hbtn" type="button" data-add="${d}" aria-label="שיבוץ">${icon('plus', 18)}</button>` : ''}</div>
-        ${need.map(x => `<a class="dline need" href="#/p/${x.id}"><span class="grow"><b>${esc(x.name)}</b><small>מתוכנן במאנדי</small></span>${x.site_id ? `<span data-wx="${x.site_id}|${d}"></span>` : ''}<span class="pill warn">לשבץ</span></a>`).join('')}
+        ${need.map(x => `<button type="button" class="dline need" data-need="${x.id}" data-d="${d}"><span class="grow"><b>${esc(x.name)}</b><small>מתוכנן במאנדי</small></span>${x.site_id ? `<span data-wx="${x.site_id}|${d}"></span>` : ''}<span class="pill warn">לשבץ</span></button>`).join('')}
         ${wd.map(w => { const crew = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
           return `<a class="dline ${w.status === 'done' ? 'done' : ''}" href="#/day/${w.id}"><span class="grow"><b>${esc(w.projects?.name || '')}</b><small>${crew.map(u => esc(NM.get(u) || '') + (u === w.crew_lead_id ? leadMark() : '') + ((busy.get(u) || 0) > 1 ? `<span class="dwarn" title="משובץ פעמיים" aria-label="משובץ פעמיים">${icon('alert', 14)}</span>` : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${w.status === 'done' ? '<span class="pill ok">בוצע</span>' : w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${d}"></span>` : ''}</a>`; }).join('')}
         ${ab.map(a => `<div class="dline abs"><span class="grow"><small>${esc(NM.get(a.user_id) || '')}: ${ABS[a.kind]}${a.status === 'pending' ? ' (ממתין לאישור)' : ''}</small></span></div>`).join('')}
@@ -67,20 +71,23 @@ export async function renderDispatch(el, start, o = {}) {
     }).join('');
     import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
     $$('.ddh', box).forEach(h => { const b = $('[data-add]', h); if (b) h.onclick = e => { if (!e.target.closest('[data-add]')) b.click(); }; });
-    $$('[data-add]', box).forEach(b => b.onclick = () => {
-      const d = b.dataset.add;
+    $$('[data-add]', box).forEach(b => b.onclick = () => assign(b.dataset.add));
+    $$('[data-need]', box).forEach(b => b.onclick = () => assign(b.dataset.d, b.dataset.need));
+    function assign(d, pre = '') {
       sheet(`<h3>שיבוץ · ${HE_D1[new Date(d + 'T12:00').getDay()]} ${dm(d)}</h3>
-        <label class="field">פרויקט<select id="ap"><option value="">בחירת פרויקט…</option>${(projects || []).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>
+        <label class="field">פרויקט<select id="ap"><option value="">בחירת פרויקט…</option>${(projects || []).map(x => `<option value="${x.id}" ${x.id === pre ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
         <div class="field">מי<div class="chips">${staff.map(p => `<button type="button" class="chip" data-p="${p.id}" aria-pressed="false">${esc(p.full_name.split(' ')[0])}</button>`).join('')}</div></div>
         <div class="row-btns"><button class="btn ghost" data-close>סגירה</button><button class="btn primary" id="ago">שיבוץ</button></div>`, (s2, close) => {
         $$('[data-p]', s2).forEach(c => c.onclick = () => c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') !== 'true'));
-        $('#ago', s2).onclick = async () => {
+        const go = $('#ago', s2);
+        go.onclick = async () => {
           const pid = $('#ap', s2).value, us = $$('[data-p][aria-pressed="true"]', s2).map(c => c.dataset.p);
           if (!pid || !us.length) return toast('בחרו פרויקט ואנשים');
-          for (const u of us) { const { error } = await sb.rpc('assign_day', { p: pid, d, u }); if (error) return toast(error.message, 5000); }
-          close(); toast('שובץ'); reload();
+          if (go.disabled) return; go.disabled = true; let n = 0;
+          for (const u of us) { const { error } = await sb.rpc('assign_day', { p: pid, d, u }); if (error) { toast(errText(error, 'השיבוץ לא נשמר — נסו שוב'), 5000); if (n) { close(); reload(); } else go.disabled = false; return; } n++; }
+          close(); toast(n > 1 ? `שובצו ${n} — קיבלו הודעה` : 'שובץ — העובד קיבל הודעה'); reload();
         };
       });
-    });
+    }
   }
 }

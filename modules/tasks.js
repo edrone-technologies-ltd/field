@@ -2,6 +2,7 @@
 // עם חיוג / וואטסאפ / מייל לאיש הקשר וסימון "בוצע". כל פעולה נחתמת ביומן הפעולות.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials, ask, signedUrls, zoom } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
+import { errText } from '../lib/audit.js';
 
 const SEL = 'id,title,instructions,due,status,assignee_id,created_by,site_id,project_id,done_at,photos,sites(name,slug,contact_name,contact_phone),projects(name)';
 const emailIn = t => (String(t || '').match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [])[0];
@@ -45,11 +46,11 @@ export async function myTasks(box) {
     const t = mine.find(x => x.id === b.dataset.done);
     if (t?.project_id) return completeTask(t, () => myTasks(box));   // משימת שטח: סימון עם תיעוד
     const note = await ask('מה סוכם?', { multiline: true, placeholder: 'למשל: נקבעה פגישה ל-12.10 בשעה 10:00 (לא חובה)', ok: 'סימון בוצע', optional: true });
-    if (note == null) return;
+    if (note == null || b.disabled) return;
     b.disabled = true;
     const { error } = await sb.from('tasks').update({ status: 'done', done_by: me, done_at: new Date().toISOString(), done_note: note.trim() || null }).eq('id', b.dataset.done);
-    if (error) { b.disabled = false; return toast(error.message); }
-    toast('סומן כבוצע — עודכן גם במאנדי'); myTasks(box);
+    if (error) { b.disabled = false; return toast(errText(error)); }
+    b.closest('.card')?.classList.add('leaving'); toast('סומן כבוצע — עודכן גם במאנדי'); myTasks(box);
   });
 }
 
@@ -68,10 +69,10 @@ export async function newTask({ site, title = '', notes = '', project = null, on
     $$('[data-u]', s).forEach(c => c.onclick = () => { who = c.dataset.u; $$('[data-u]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); });
     $('#nts', s).onclick = async () => {
       const t = $('#ntt', s).value.trim(); if (!t) return toast('מה המשימה?'); if (!who) return toast('למי המשימה?');
-      $('#nts', s).disabled = true;
+      if ($('#nts', s).disabled) return; $('#nts', s).disabled = true;
       const { data: ins, error } = await sb.from('tasks').insert({ title: t, instructions: $('#ntn', s).value.trim() || null, due: $('#ntd', s).value || null, assignee_id: who,
         site_id: site?.id || null, project_id: project, phase: 'מעקב', status: 'todo', created_by: state.user.id, is_extra: true }).select('id').single();
-      if (error) { $('#nts', s).disabled = false; return toast(error.message); }
+      if (error) { $('#nts', s).disabled = false; return toast(errText(error, 'המשימה לא נפתחה — נסו שוב')); }
       close(); toast('המשימה נפתחה — נשלחה התראה'); const h = $('#mytasks'); if (h) myTasks(h); if (onDone) onDone(ins.id);
     };
   });
@@ -100,17 +101,17 @@ export function completeTask(t, onDone) {
             after.push(path);
           }
           Object.assign(urls, await signedUrls('field', after));
-        } catch (er) { toast(er.message || 'התמונה לא עלתה'); }
+        } catch (er) { toast(errText(er, 'התמונה לא עלתה — נסו שוב')); }
         draw();
       };
     };
     Object.assign(urls, await signedUrls('field', [...before, ...after]).catch(() => ({}))); draw();
     $('#cok', s).onclick = async () => {
       if (before.length && !after.length) return toast('צריך תמונה של אחרי הטיפול');
-      $('#cok', s).disabled = true;
+      if ($('#cok', s).disabled) return; $('#cok', s).disabled = true;
       const patch = { status: 'done', done_by: state.user.id, done_at: new Date().toISOString(), done_note: $('#cn', s).value.trim() || null, photos: { before, after } };
       const { error } = await sb.from('tasks').update(patch).eq('id', t.id);
-      if (error) { $('#cok', s).disabled = false; return toast(error.message); }
+      if (error) { $('#cok', s).disabled = false; return toast(errText(error)); }
       Object.assign(t, patch); close(); toast('סומן כטופל'); onDone && onDone();
     };
   });

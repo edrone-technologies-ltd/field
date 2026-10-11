@@ -1,5 +1,6 @@
 // קליטת עובד: צ'קליסט שמחושב מהנתונים (onboarding_status בשרת). העובד רואה מה עליו לעשות; המנהל רואה הכל ומסמן "ציוד נמסר".
 import { sb, state, isManager, icon, $, $$, esc, toast, backBtn, enablePush } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 const GO = { training: '#/kb', sign: '#/kb', push: 'push', id: 'office', form101: 'office', drive: 'office', height: 'office' };
 
@@ -13,10 +14,11 @@ function list(items, { mgr, u, redraw }) {
   }).join('')}</div>`;
 }
 function bind(box, u, redraw) {
-  const p = $('[data-push]', box); if (p) p.onclick = async () => { try { await enablePush(); toast('ההתראות הופעלו'); redraw(); } catch (e) { toast(e.message); } };
-  $$('[data-mark]', box).forEach(b => b.onclick = async () => {
+  const p = $('[data-push]', box); if (p) p.onclick = async () => { if (p.disabled) return; p.disabled = true;
+    try { await enablePush(); toast('ההתראות הופעלו'); redraw(); } catch (e) { p.disabled = false; toast(errText(e, 'ההתראות לא הופעלו — בדקו את הרשאות הטלפון')); } };
+  $$('[data-mark]', box).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true;
     const { error } = await sb.from('onboarding_marks').upsert({ user_id: u, key: b.dataset.mark, done_by: state.user.id });
-    if (error) return toast(error.message); toast('סומן'); redraw();
+    if (error) { b.disabled = false; return toast(errText(error)); } toast('סומן'); redraw();
   });
 }
 const ring = (d, n) => `<div class="ring" style="--p:${Math.round(d / n * 100)}"><b>${d}/${n}</b></div>`;

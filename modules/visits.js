@@ -2,6 +2,7 @@
 // ממצאי "לתיקון" עוברים בלחיצה אחת לצ'קליסט הפרויקט — הכל במקום אחד, התראה אחת.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, backBtn, signedUrls, zoom, isoDay, dm, goUp } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
+import { errText } from '../lib/audit.js';
 
 export const KIND = { crew_check: 'ביקורת צוות בשטח', client_tour: 'סיור עם לקוח', quality: 'בקרת איכות', other: 'ביקור אחר' };
 const FIELD = ['ops_manager', 'crew_lead', 'crew', 'surveyor', 'admin'];
@@ -63,7 +64,7 @@ export async function renderVisitForm(el, pid, vid) {
           x.photos = [...PH(x), path]; delete x.photo;
         }
         Object.assign(urls, await signedUrls('field', PH(x)));
-      } catch (e) { toast(e.message || 'התמונה לא עלתה'); }
+      } catch (e) { toast(errText(e, 'התמונה לא עלתה — נסו שוב')); }
       draw();
     };
     $$('[data-fp]').forEach(inp => inp.onchange = () => inp.files.length && upload([...inp.files], f.findings[+inp.dataset.fp]));
@@ -76,7 +77,7 @@ export async function renderVisitForm(el, pid, vid) {
         client_feedback: f.client_feedback || null, rating: f.rating || null, summary: f.summary || null };
       $('#vsave').disabled = true;
       const { data, error } = vid ? await sb.from('project_visits').update(row).eq('id', vid).select('id').single() : await sb.from('project_visits').insert(row).select('id').single();
-      if (error) { $('#vsave').disabled = false; return toast(error.message); }
+      if (error) { $('#vsave').disabled = false; return toast(errText(error, 'הדוח לא נשמר — נסו שוב')); }
       const n = await toChecklist(data.id, pid, f, who.id, who.due);
       toast(n ? `דוח הביקור נשמר · ${n} פריטים בצ'קליסט` : 'דוח הביקור נשמר'); location.replace(`#/visit/${data.id}`);
     };
@@ -126,8 +127,9 @@ export async function renderVisit(el, id) {
     sheet(`<h3>למי לטפל?</h3><div class="small muted">${unas.length} פריטים</div><div class="list">${U.map(u => `<button class="lrow" data-u="${u.id}"><b class="grow">${esc(u.full_name)}</b></button>`).join('')}</div>
       <label class="field">עד מתי (לא חובה)<input type="date" id="adue"></label><button class="btn ghost block" data-close>ביטול</button>`, (s2, close) => {
       $$('[data-u]', s2).forEach(x => x.onclick = async () => {
+        if (x.disabled) return; const all = $$('[data-u]', s2); all.forEach(y => y.disabled = true);
         const { error } = await sb.from('tasks').update({ assignee_id: x.dataset.u, due: $('#adue', s2).value || null }).in('id', unas.map(t => t.id));
-        if (error) return toast(error.message); close(); toast('שויך — נשלחה התראה אחת'); renderVisit(el, id);
+        if (error) { all.forEach(y => y.disabled = false); return toast(errText(error, 'השיוך לא נשמר — נסו שוב')); } close(); toast('שויך — נשלחה התראה אחת'); renderVisit(el, id);
       });
     });
   };
@@ -149,7 +151,7 @@ async function toChecklist(vid, pid, f, assignee = null, due = null) {
   const rows = P.map(x => ({ project_id: pid, title: x.text.trim().slice(0, 120), instructions: `מדוח ביקור · ${KIND[f.kind]} · ${dm(f.visit_date)}`, phase: 'מעקב', status: 'todo', is_extra: true, created_by: state.user.id,
     assignee_id: assignee, due: due || null, photos: { before: PH(x) } }));
   const { data, error } = await sb.from('tasks').insert(rows).select('id');
-  if (error) { toast(error.message); return null; }
+  if (error) { toast(errText(error, 'הפריטים לא נוספו לצ׳קליסט — נסו שוב')); return null; }
   P.forEach((x, k) => x.task_id = data[k]?.id);
   await sb.from('project_visits').update({ findings: f.findings, todo: f.todo }).eq('id', vid);
   return P.length;
@@ -171,7 +173,7 @@ export async function renderVisitReport(el, id) {
   const [{ data: v }, { data: co }] = await Promise.all([
     sb.from('project_visits').select('*, projects(name,client_name,sites(name,address))').eq('id', id).maybeSingle(),
     sb.from('app_settings').select('value').eq('key', 'company').maybeSingle()]);
-  if (!v) { el.innerHTML = '<div class="empty-line">הדוח לא נמצא</div>'; return; }
+  if (!v) { el.innerHTML = `<header class="phead">${backBtn('#/reports')}<h1>דוח ביקור</h1></header><div class="empty-line">הדוח לא נמצא</div>`; return; }
   const F = v.findings || [], T = v.todo || [], ids = [...F, ...T].map(x => x.task_id).filter(Boolean);
   const { data: tk } = ids.length ? await sb.from('tasks').select('id,status,done_at,done_note,photos').in('id', ids) : { data: [] };
   const TK = new Map((tk || []).map(t => [t.id, t]));

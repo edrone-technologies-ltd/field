@@ -1,7 +1,7 @@
 // פרויקטים: מרכז הביצוע. סקירה ממאנדי + אתר ואפיון, תכנית עבודה מהאפיון, שיבוץ ימים, צ'אט צוות, תקלות וסיכום.
 import { navButtons, replaceHash, thumbUrls , stLabel } from '../lib/core.js';
 import { facadeOrder } from '../lib/sun.js';
-import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, folderGrid, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, backBtn } from '../lib/core.js';
+import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, folderGrid, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, backBtn, HE_D1, leadMark, coverFor, skeleton } from '../lib/core.js';
 
 const ARCHIVE = 'group_mm5052gw';
 const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'הסתיים — ממתין לתשלום': 'ok', 'הסתיים — להוצאת חשבונית': 'ok' };   // שלבי עבודה = אפור
@@ -17,7 +17,7 @@ export async function renderProjects(el) {
   el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>פרויקטים</h1></header><input type="search" id="pq" class="search" placeholder="חיפוש פרויקט או לקוח"><div class="tabs" id="pf"><button aria-selected="true" data-f="a">פתוחים</button><button aria-selected="false" data-f="d">הסתיימו</button></div><div id="pl" class="list"><div class="skel"></div></div>`;
   let rows;
   try {
-    const { data, error } = await sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,monday_group,site_id,cover_path,work_days(id,day,status),tasks(status)').order('planned_from', { nullsFirst: false });
+    const { data, error } = await sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,monday_group,site_id,cover_path,closed_summary,lat,lng,sites(lat,lng),work_days(id,day,status),tasks(status)').order('planned_from', { nullsFirst: false });
     if (error) throw error; rows = data || []; await cache.set('projects', rows);
   } catch { rows = (await cache.get('projects')) || []; }
   const t = isoDay();
@@ -27,7 +27,7 @@ export async function renderProjects(el) {
   let F = 'a';
   const draw = (f = F) => {
     F = f; const q = ($('#pq')?.value || '').trim();
-    const list = rows.filter(p => (f === 'a') === !(p.monday_group === ARCHIVE || String(p.status_label).startsWith('הסתיים')))
+    const list = rows.filter(p => (f === 'a') === !(p.monday_group === ARCHIVE || String(p.status_label).startsWith('הסתיים') || p.closed_summary))
       .filter(p => !q || (p.name + ' ' + (p.client_name || '')).includes(q))
       .sort((a, b) => (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((b.planned_from || '') > (a.planned_from || '') ? 1 : -1));
     $('#pl').innerHTML = list.length ? folderGrid(list.map(p => {
@@ -43,7 +43,7 @@ export async function renderProjects(el) {
 
 // ---------- פרויקט ----------
 export async function renderProject(el, id, tab = 'o') {
-  el.innerHTML = `<div class="skel"></div>`;
+  el.innerHTML = skeleton('detail');
   const ck = 'proj:' + id; let D;
   try {
     const [{ data: p, error }, { data: tasks }, { data: days }, { data: issues }, { data: reps }, fin, { data: sites }, { data: team }, { data: drones }] = await Promise.all([
@@ -68,7 +68,7 @@ export async function renderProject(el, id, tab = 'o') {
   const openIss = D.issues.filter(i => i.status === 'open').length;
 
   const coverUrl = p.cover_path ? (await signedUrls('media', [p.cover_path]).catch(() => ({})))[p.cover_path] : null;
-  el.innerHTML = `<div class="phero"><span class="img" style="background-image:url('${coverUrl || coverArt(p.name)}')"></span>
+  el.innerHTML = `<div class="phero"><span class="img" style="background-image:url('${coverFor(p, coverUrl)}')"></span>
       <a class="back glass" href="#/projects" aria-label="חזרה">${icon('back', 20)}</a>
       <span class="ph-bottom"><span class="pill ${TONE[p.status_label] ?? ''}">${esc(stLabel(p.status_label))}</span><b>${esc(p.name)}</b><small>${esc(p.client_name || '')}</small></span></div>
     <div class="tabs" id="pt">${TABS.map(([k, t]) => `<button data-t="${k}" aria-selected="${k === tab || (tab === 'i' && k === 'o')}">${t}</button>`).join('')}</div>
@@ -101,18 +101,45 @@ export async function renderProject(el, id, tab = 'o') {
   // ----- סקירה -----
   // לו"ז דו-כיווני: מה שמתוכנן במאנדי מול מה ששובץ באפליקציה
   const wdays = (a, b) => { let n = 0; for (let d = new Date(a + 'T12:00'); isoDay(d) <= b; d.setDate(d.getDate() + 1)) if (d.getDay() < 5) n++; return n || 1; };
-  function schedCard() {
-    if (!M || !p.planned_from || (p.planned_to || p.planned_from) < isoDay()) return '';
-    const fut = D.days.filter(d => d.day >= isoDay() && d.status !== 'done').map(d => d.day).sort();
-    const mr = p.planned_to && p.planned_to !== p.planned_from ? `${dm(p.planned_from)}–${dm(p.planned_to)}` : dayLabel(p.planned_from);
-    if (!fut.length) return `<div class="arow card-like warn"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>מתוכנן ${mr} · עוד לא שובץ צוות</b><small>מהלו"ז במאנדי</small></span><button class="btn primary sm" id="schm">שיבוץ</button></div>`;
-    if (fut[0] !== p.planned_from && p.planned_from >= isoDay()) return `<div class="arow card-like warn"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>במאנדי התאריך השתנה ל-${mr}</b><small>בשיבוץ: ${dm(fut[0])}${fut.length > 1 ? '–' + dm(fut.at(-1)) : ''}</small></span><button class="btn primary sm" id="schm">עדכון שיבוץ</button></div>`;
-    return '';
+  // לו"ז הפרויקט: הטווח (מסונכרן עם מאנדי בשני הכיוונים) + ימי השטח. מנהל: שינוי תאריכים, שיבוץ, העברת יום
+  function schedSection() {
+    const t = isoDay(), up = D.days.filter(d => d.status !== 'done' && d.day >= t).sort((a, b) => a.day < b.day ? -1 : 1), done = D.days.filter(d => d.status === 'done').length;
+    const out = up.length && p.planned_from && (up[0].day < p.planned_from || up.at(-1).day > (p.planned_to || p.planned_from));
+    if (!M && !up.length) return '';
+    const crewOf = d => [...new Map([[d.crew_lead_id, null], ...(d.work_day_crew || []).map(c => [c.user_id, c])]).keys()].filter(Boolean)
+      .map(u => { const c = (d.work_day_crew || []).find(x => x.user_id === u); return esc((c?.profiles?.full_name || D.team.find(x => x.id === u)?.full_name || '').split(' ')[0]) + (u === d.crew_lead_id ? leadMark() : ''); }).join(' · ');
+    return `<section id="sched"><div class="sh-row"><h3 class="sh">לו״ז</h3>${M ? '<button class="more" id="dates">שינוי תאריכים</button>' : ''}</div>
+      <div class="list">
+        <div class="lrow"><span class="mic">${icon('calendar', 19)}</span><span class="grow">${p.planned_from ? `<b>${dm(p.planned_from)} – ${dm(p.planned_to || p.planned_from)}</b><small>${(n => n === 1 ? 'יום עבודה אחד' : n + ' ימי עבודה')(wdays(p.planned_from, p.planned_to || p.planned_from))}${done ? ` · ${done} בוצעו` : ''}</small>` : '<b>אין תאריכים</b>'}</span>${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : p.dates_dirty ? '<span class="pill">מתעדכן במאנדי</span>' : ''}</div>
+        ${up.map(d => `<a class="lrow" href="#/day/${d.id}"><span class="datebox ${d.day === t ? 'now' : ''}"><b>${+d.day.slice(8)}</b><small>${d.day === t ? 'היום' : HE_D1[new Date(d.day + 'T12:00').getDay()]}</small></span>
+          <span class="grow"><b>${d.report_time ? 'יציאה ' + d.report_time.slice(0, 5) : 'יום שטח'}${d.is_last_day ? ' · יום אחרון' : ''}</b><small>${crewOf(d) || 'לא שובץ צוות'}</small></span>${M && d.status === 'planned' ? `<button class="chip" data-mv="${d.id}" data-day="${d.day}">העברה</button>` : ''}</a>`).join('')}
+        ${M ? `<button class="addrow" id="schm">${icon('plus', 18)} ${up.length ? 'שיבוץ מחדש' : 'שיבוץ ימים'}</button>` : ''}
+      </div></section>`;
+  }
+  function bindSched(box) {
+    const ds = $('#dates', box); if (ds) ds.onclick = () => sheet(`<h3 class="sh">תאריכי הפרויקט</h3>
+      <div class="row"><label class="field grow">התחלה<input type="date" id="df" value="${p.planned_from || ''}"></label><label class="field grow">סיום<input type="date" id="dt" value="${p.planned_to || p.planned_from || ''}"></label></div>
+      <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="dgo">שמירה</button></div>`, (s2, close) => {
+      $('#df', s2).onchange = e => { const to = $('#dt', s2); if (!to.value || to.value < e.target.value) to.value = e.target.value; };
+      $('#dgo', s2).onclick = async e => { const f = $('#df', s2).value, to = $('#dt', s2).value || f; if (!f) return toast('בחרו תאריך');
+        e.target.disabled = true; const { data: n, error } = await sb.rpc('set_project_dates', { p: id, d_from: f, d_to: to });
+        if (error) { e.target.disabled = false; return toast(error.message); }
+        close(); toast(n ? `התאריכים עודכנו · ${n} ימי שטח הוזזו` : 'התאריכים עודכנו'); reload('o'); };
+    });
+    const sm = $('#schm', box); if (sm) sm.onclick = () => { const st = p.planned_from && p.planned_from >= isoDay() ? p.planned_from : isoDay(); scheduleSheet({ start: st, end: p.planned_to && p.planned_to >= st ? p.planned_to : undefined }); };
+    $$('[data-mv]', box).forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation();
+      sheet(`<h3 class="sh">העברת יום שטח</h3><label class="field">לתאריך<input type="date" id="md" value="${b.dataset.day}"></label>
+        <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="mgo">העברה</button></div>`, (s2, close) => {
+        $('#mgo', s2).onclick = async e2 => { const d = $('#md', s2).value; if (!d || d === b.dataset.day) return close();
+          const dow = new Date(d + 'T12:00').getDay(); if (dow === 6 && !(await confirmBox('שבת — להעביר בכל זאת?', { ok: 'העברה' }))) return;
+          e2.target.disabled = true; const { error } = await sb.rpc('move_day', { w: b.dataset.mv, d });
+          if (error) { e2.target.disabled = false; return toast(error.message); }
+          close(); toast(`הועבר ל${dayLabel(d)} · הצוות קיבל עדכון`); reload('o'); };
+      }); });
   }
   function overview(box) {
     const tot = D.tasks.filter(x => x.status !== 'dropped').length, done = D.tasks.filter(x => x.status === 'done').length;
     const dDone = D.days.filter(d => d.status === 'done').length, f = D.fin, s = p.sites;
-    const next = D.days.find(d => d.day >= isoDay() && d.status !== 'done');
     const open = D.issues.filter(i => i.status === 'open');
     const range = p.planned_from ? (p.planned_to && p.planned_to !== p.planned_from ? `${dm(p.planned_from)}–${dm(p.planned_to)}` : dm(p.planned_from)) : null;
     const appPlan = tot || D.days.length;
@@ -121,11 +148,10 @@ export async function renderProject(el, id, tab = 'o') {
     const tel = s?.contact_phone ? s.contact_phone.replace(/\D/g, '').replace(/^0/, '') : '';
     const wxDay = (() => { const t = isoDay(), nx = D.days.filter(d => d.day >= t && d.status !== 'done').map(d => d.day).sort()[0];
       return nx || (p.planned_from && (p.planned_to || p.planned_from) >= t ? (p.planned_from > t ? p.planned_from : t) : null); })();
-    box.innerHTML = `${schedCard()}${p.site_id && wxDay ? `<span data-wxcard="${p.site_id}|${wxDay}|תחזית ל${dayLabel(wxDay)}"></span>` : ''}
+    box.innerHTML = `${schedSection()}${p.site_id && wxDay ? `<span data-wxcard="${p.site_id}|${wxDay}|תחזית ל${dayLabel(wxDay)}"></span>` : ''}
       ${kpiRow(appPlan
-        ? [[tot && Math.round(done / tot * 100) + '%', 'מהתכנית בוצע'], [D.days.length && `${dDone}/${D.days.length}`, 'ימי שטח']]
+        ? [[tot && Math.round(done / tot * 100) + '%', 'מהתכנית בוצע']]
         : [[range, 'לו"ז'], [fdays && `${fdays}${p.field_days_planned ? '/' + nf(p.field_days_planned) : ''}`, 'ימי שטח'], [D.reps.length, 'דוחות שטח']])}
-      ${next ? `<a class="arow card-like" href="#/day/${next.id}"><span class="aic ok">${icon('calendar', 20)}</span><span class="grow"><b>יום השטח הבא: ${dayLabel(next.day)}</b><small>${next.report_time ? 'יציאה ' + next.report_time.slice(0, 5) + ' · ' : ''}${next.site_arrival ? 'באתר ' + next.site_arrival.slice(0, 5) + ' · ' : ''}${esc((next.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', '))}</small></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
       ${open.length ? `<section><h3 class="sh">תקלות פתוחות</h3><div class="alist">${open.map(i => `<div class="arow ${i.severity === 'critical' ? 'bad' : 'warn'}"><span class="aic">${icon('alert', 20)}</span><span class="grow"><b>${esc(i.body)}</b><small>${KIND_HE[i.kind] || ''} · ${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span>${M ? `<button class="chip" data-x="${i.id}">טופל</button>` : ''}</div>`).join('')}</div></section>` : ''}
       <div class="menu">
         ${M && p.client_id ? `<a class="lrow kv" href="#/client/${p.client_id}"><span class="mic">${icon('users', 19)}</span><span class="grow"><small>לקוח</small><b>${esc(p.client_name || '')}</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
@@ -145,7 +171,7 @@ export async function renderProject(el, id, tab = 'o') {
     $$('[data-act]', box).forEach(r => r.onclick = () => r.dataset.act === 'site' ? siteSheet() : notesSheet());
     if (p.site_id) { const cb = document.createElement('div'); $('.menu', box)?.after(cb); import('../lib/contacts.js').then(m => m.renderContacts(cb, { siteId: p.site_id, clientId: p.client_id, org: p.client_name || p.sites?.name, title: 'אנשי קשר באתר' })); }
     import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
-    const sm = $('#schm', box); if (sm) sm.onclick = () => scheduleSheet({ start: p.planned_from < isoDay() ? isoDay() : p.planned_from, n: wdays(p.planned_from < isoDay() ? isoDay() : p.planned_from, p.planned_to || p.planned_from) });
+    bindSched(box);
     const sh = $('#share', box); if (sh) sh.onclick = shareSheet;
   }
   async function shareSheet() {
@@ -272,11 +298,14 @@ export async function renderProject(el, id, tab = 'o') {
   async function scheduleSheet(pre = {}) {
     const { data: teams } = await sb.from('teams').select('id,name,pilot_id,operator_id,lead_id').eq('active', true).order('sort');
     const maxDay = Math.max(0, ...D.tasks.map(t => t.day_no || 0)) || Number(p.field_days_planned) || 1;
+    // תאריך סיום ← מספר ימי עבודה (בלי שבת, ושישי רק אם סומן). הפוך: התחלה + n ימי עבודה ← תאריך סיום
+    const workday = (d, fri) => { const g = new Date(d + 'T12:00').getDay(); return g !== 6 && (g !== 5 || fri); };
+    const endOf = (st, n) => { let d = st, k = 0; for (let g = 0; g < 90; g++) { if (workday(d, false) && ++k >= n) return d; const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + 1); d = isoDay(x); } return d; };
     let start = pre.start || (() => { const d = new Date(Date.now() + 864e5); while ([5, 6].includes(d.getDay())) d.setDate(d.getDate() + 1); return isoDay(d); })();
     const leads = D.team.filter(x => ['crew_lead', 'ops_manager', 'admin'].includes(x.role));
     sheet(`<h3>שיבוץ ימי עבודה</h3>
-      <label class="field">מתחילים ב-<input type="date" id="sd" value="${start}"></label>
-      <label class="field">מספר ימים<input type="number" id="sn" min="1" value="${pre.n || maxDay}"></label>
+      <div class="row"><label class="field grow">התחלה<input type="date" id="sd" value="${start}"></label><label class="field grow">סיום<input type="date" id="sde" value="${pre.end || endOf(start, pre.n || maxDay)}"></label></div>
+      <input type="hidden" id="sn" value="${pre.n || maxDay}"><div class="small muted" id="snn"></div>
       ${(teams || []).length ? `<div class="field">צוות<div class="chips">${teams.map(t => `<button type="button" class="chip" data-team="${t.id}" aria-pressed="false">${esc(t.name)}</button>`).join('')}</div></div>` : ''}
       <label class="field">ראש צוות<select id="sl">${leads.map(x => `<option value="${x.id}">${esc(x.full_name)}</option>`).join('')}</select></label>
       <div class="field">צוות<div class="chips">${D.team.map(x => `<button class="chip" data-u="${x.id}" aria-pressed="false">${esc(x.full_name)}</button>`).join('')}</div></div>
@@ -319,7 +348,10 @@ export async function renderProject(el, id, tab = 'o') {
           + list.map(x => `<button type="button" class="wxday ${x.skip ? 'skip' : ''} ${x.bad ? 'bad' : ''}" data-wd="${x.d}"><b>${dayLabel(x.d)}</b><small>${x.w ? `משבים ${Math.round(x.w.g)}${x.w.r >= 0.5 ? ` · גשם ${x.w.r.toFixed(1)}` : ''}` : 'אין תחזית עדיין'}</small><small>${x.skip ? 'מדולג' : 'עבודה'}</small></button>`).join('');
         $$('[data-wd]', s).forEach(b => b.onclick = () => { const x = list.find(y => y.d === b.dataset.wd); manual.set(x.d, !x.skip); drawWx(); });
       };
-      $('#sd', s).onchange = $('#sn', s).oninput = $('#sfr', s).onchange = $('#se', s).onchange = drawWx;
+      const syncN = () => { const a = $('#sd', s), b = $('#sde', s); if (!a.value) return; if (!b.value || b.value < a.value) b.value = a.value;
+        let n = 0; for (let d = a.value; d <= b.value; d = add1(d)) if (workday(d, $('#sfr', s).checked)) n++;
+        $('#sn', s).value = n || 1; $('#snn', s).textContent = `${n || 1} ימי עבודה`; drawWx(); };
+      $('#sd', s).onchange = $('#sde', s).onchange = $('#sfr', s).onchange = syncN; $('#se', s).onchange = drawWx; syncN();
       // יציאה מהמשרד = הגעה − נסיעה (כביש × מקדם תנועה) − העמסה. המנהל יכול לשנות ידנית
       let travelMin = null, touched = false; const Dp = { office: [31.2524, 34.7908], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15 };
       const recalc = () => {

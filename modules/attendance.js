@@ -2,6 +2,9 @@
 import { sb, state, isManager, can, cache, enqueue, sheet, uid, icon, $, $$, esc, toast, confirmBox, ask, HE_DOW, HE_D1, dm, replaceHash } from '../lib/core.js';
 import { computeMonth, inShabbat, CATS, hhmm, ymd, DEFAULTS } from '../lib/labor.js';
 import { estimatePay, PAY_TYPES } from '../lib/pay.js';
+import { errText } from '../lib/audit.js';
+// כפתור ששולח לשרת: נועל עד שמסתיים (בלי לחיצה כפולה), משחרר בשגיאה
+const lock = (b, on) => { if (b) b.disabled = on; };
 
 let SETTINGS = null;
 async function settings() {
@@ -53,7 +56,7 @@ async function consent() {
       <p>אין קליטה או GPS? אפשר להחתים בלי מיקום. אפשר לעיין ברישום ולבקש תיקון בכל זמן.</p></div>
     <div class="row-btns"><button class="btn ghost" id="cn">לא עכשיו</button><button class="btn primary" id="cy">קראתי ומסכים</button></div>`, (s, close) => {
     $('#cn', s).onclick = () => { close(); res(false); };
-    $('#cy', s).onclick = async () => { const t = new Date().toISOString(); state.profile.attendance_consent_at = t; await enqueue({ kind: 'update', table: 'profiles', rowId: state.user.id, patch: { attendance_consent_at: t } }); close(); res(true); };
+    $('#cy', s).onclick = async () => { if ($('#cy', s).disabled) return; $('#cy', s).disabled = true; const t = new Date().toISOString(); state.profile.attendance_consent_at = t; await enqueue({ kind: 'update', table: 'profiles', rowId: state.user.id, patch: { attendance_consent_at: t } }); close(); res(true); };
   }));
 }
 export async function clockIn(after) {
@@ -112,7 +115,7 @@ export async function clockCard(box) {
     }
     if (!open) suggestIn(el);
     if (open) { tick = setInterval(() => { const t = $('#cl-t'); if (t) t.textContent = elapsed() + ' שעות'; else clearInterval(tick); }, 30000); $('#cl-out').onclick = () => clockOut(open, draw); }
-    else $('#cl-in').onclick = () => clockIn(draw);
+    else { const ci = $('#cl-in'); ci.onclick = async () => { if (ci.disabled) return; ci.disabled = true; try { await clockIn(draw); } finally { if (ci.isConnected) ci.disabled = false; } }; }
   };
   draw();
 }
@@ -144,8 +147,9 @@ function requestSheet(sh, month, done) {
       if (!reason) return toast('חובה לכתוב סיבה');
       const a = new Date(`${d}T${st}:00`); let b = new Date(`${d}T${en}:00`); if (b <= a) b = new Date(+b + 864e5);
       if (b > new Date(Date.now() + 5 * 6e4)) return toast('אי אפשר לדווח שעה עתידית');
+      const ro = $('#ro', s); if (ro.disabled) return; lock(ro, true);
       const { error } = await sb.from('shift_requests').insert({ user_id: state.user.id, shift_id: sh?.id || null, req_start: a.toISOString(), req_end: b.toISOString(), req_break: 0, reason });
-      if (error) return toast(error.message, 4000);
+      if (error) { lock(ro, false); return toast(errText(error, 'הבקשה לא נשלחה — נסו שוב'), 4000); }
       close(); toast('נשלח לאישור המנהל'); done && done();
     };
   });
@@ -160,9 +164,9 @@ function bindDecide(root, reload) {
   $$('[data-dec]', root).forEach(b => b.onclick = async () => {
     const ok = b.dataset.ok === '1';
     const reply = await ask(ok ? 'אישור הבקשה' : 'דחיית הבקשה', { multiline: true, placeholder: ok ? 'תגובה לעובד (לא חובה)' : 'למה נדחה? (חובה)', ok: ok ? 'אישור' : 'דחייה', optional: ok });
-    if (reply == null) return;
+    if (reply == null || b.disabled) return; const btns = [...b.parentElement.querySelectorAll('button')]; btns.forEach(x => lock(x, true));
     const { error } = await sb.rpc('decide_shift_request', { rid: b.dataset.dec, ok, reply: reply.trim() });
-    if (error) return toast(error.message, 4000); toast(ok ? 'אושר — השעות עודכנו' : 'נדחה — העובד קיבל הודעה'); reload();
+    if (error) { btns.forEach(x => lock(x, false)); return toast(errText(error), 4000); } toast(ok ? 'אושר — השעות עודכנו' : 'נדחה — העובד קיבל הודעה'); reload();
   });
 }
 const decideBtns = r => `<div class="row-btns"><button class="btn ghost sm" data-dec="${r.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-dec="${r.id}" data-ok="1">אישור</button></div>`;
@@ -181,8 +185,9 @@ function absenceSheet(month, done) {
     $$('[data-k]', s).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); });
     $('#ao', s).onclick = async () => {
       const f = $('#af', s).value, t = $('#at', s).value; if (!f || !t || t < f) return toast('בדקו את התאריכים');
+      const ao = $('#ao', s); if (ao.disabled) return; lock(ao, true);
       const { error } = await sb.from('absences').insert({ user_id: state.user.id, kind, date_from: f, date_to: t, note: $('#an', s).value.trim() || null });
-      if (error) return toast(error.message, 4000); close(); toast('נשלח לאישור המנהל'); done && done();
+      if (error) { lock(ao, false); return toast(errText(error, 'הדיווח לא נשלח — נסו שוב'), 4000); } close(); toast('נשלח לאישור המנהל'); done && done();
     };
   });
 }
@@ -195,9 +200,9 @@ function bindAbsDecide(root, reload) {
   $$('[data-adec]', root).forEach(b => b.onclick = async () => {
     const ok = b.dataset.ok === '1';
     const reply = await ask(ok ? 'אישור ההיעדרות' : 'דחיית ההיעדרות', { multiline: true, placeholder: ok ? 'תגובה (לא חובה)' : 'למה נדחה? (חובה)', ok: ok ? 'אישור' : 'דחייה', optional: ok });
-    if (reply == null) return;
+    if (reply == null || b.disabled) return; const btns = [...b.parentElement.querySelectorAll('button')]; btns.forEach(x => lock(x, true));
     const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, manager_reply: reply || null, decided_at: new Date().toISOString() }).eq('id', b.dataset.adec);
-    if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); reload();
+    if (error) { btns.forEach(x => lock(x, false)); return toast(errText(error)); } toast(ok ? 'אושר' : 'נדחה — העובד קיבל הודעה'); reload();
   });
 }
 
@@ -250,11 +255,12 @@ export async function renderHours(el, userId, month) {
 </section>
     ${isManager() && (edits || []).length ? `<details class="fold"><summary><span class="sh">יומן תיקונים</span><span class="count">${edits.length}</span></summary><div class="list">${edits.map(e => `<div class="lrow kv"><span class="grow"><small>${new Date(e.at).toLocaleString('he-IL')}</small><b>${esc(e.reason || '')}</b></span></div>`).join('')}</div></details>` : ''}`;
   const reload = () => renderHours(el, me ? null : userId, month);
-  $('#wok')?.addEventListener('click', async () => { const { error } = await sb.rpc('worker_approve_month', { m: monthStart(month) }); if (error) return toast(error.message); toast('אישרת את השעות'); reload(); });
-  $('#mok')?.addEventListener('click', async () => {
+  $('#wok')?.addEventListener('click', async e => { const w = e.currentTarget; if (w.disabled) return; lock(w, true); const { error } = await sb.rpc('worker_approve_month', { m: monthStart(month) }); if (error) { lock(w, false); return toast(errText(error)); } toast('אישרת את השעות'); reload(); });
+  $('#mok')?.addEventListener('click', async e => {
+    const mk = e.currentTarget; if (mk.disabled) return;
     if (R.days.some(d => d.shifts.some(s => !s.end_at))) return toast('יש משמרת פתוחה — מתקנים לפני אישור');
     if (!(await confirmBox(`לאשר ולנעול את ${monthName(month)}?`, { body: 'אחרי הנעילה אי אפשר לשנות שעות בחודש הזה.', ok: 'אישור ונעילה' }))) return;
-    const { error } = await sb.from('attendance_months').upsert({ user_id: userId, month: monthStart(month), manager_ok_at: new Date().toISOString(), manager_id: state.user.id, locked: true }); if (error) return toast(error.message); reload();
+    lock(mk, true); const { error } = await sb.from('attendance_months').upsert({ user_id: userId, month: monthStart(month), manager_ok_at: new Date().toISOString(), manager_id: state.user.id, locked: true }); if (error) { lock(mk, false); return toast(errText(error)); } toast('החודש אושר ונעל'); reload();
   });
   $$('[data-req]').forEach(b => b.onclick = () => requestSheet((shifts || []).find(x => x.id === b.dataset.req), month, reload));
   $('#reqadd')?.addEventListener('click', () => requestSheet(null, month, reload));
@@ -268,10 +274,12 @@ export async function renderHours(el, userId, month) {
       <label class="field">סיבה (חובה — נשמר ביומן)<input type="text" id="er" placeholder="למשל: שכח להחתים יציאה, אושר מול ראש הצוות"></label>
       <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="eo">שמירה</button></div>`, (s, close) => {
       $('#eo', s).onclick = async () => {
+        if (!$('#er', s).value.trim()) return toast('חובה לכתוב סיבה');
+        const eo = $('#eo', s); if (eo.disabled) return; lock(eo, true);
         const d = $('#ed', s).value, st = new Date(`${d}T${$('#es', s).value}:00`), en0 = new Date(`${d}T${$('#ee', s).value}:00`);
         const en = en0 <= st ? new Date(+en0 + 864e5) : en0;   // יציאה אחרי חצות = למחרת
         const { error } = await sb.rpc('manager_set_shift', { sid: sh?.id || null, uid: userId, s: st.toISOString(), e: en.toISOString(), brk: 0, reason: $('#er', s).value });
-        if (error) return toast(error.message, 4000); close(); toast('נשמר'); reload();
+        if (error) { lock(eo, false); return toast(errText(error, 'לא נשמר — נסו שוב'), 4000); } close(); toast('נשמר'); reload();
       };
     });
   };
@@ -327,7 +335,7 @@ async function loadXLSX() {
 }
 async function exportXlsx(month, rows, abs, rates, S) {
   toast('מכין קובץ…');
-  let X; try { X = await loadXLSX(); } catch { return toast('אין חיבור — נסו שוב'); }
+  let X; try { X = await loadXLSX(); } catch { return toast('אין קליטה — נסו שוב כשיש חיבור'); }
   const payOf = id => rates.find(r => r.user_id === id) || null;
   const rateOf = id => { const r = payOf(id); return r?.pay_type === 'hourly' || (!r?.pay_type && r?.hourly_rate) ? Number(r.hourly_rate) : null; };
   const [y, m] = month.split('-').map(Number), nDays = new Date(y, m, 0).getDate();

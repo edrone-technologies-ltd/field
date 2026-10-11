@@ -45,7 +45,7 @@ export async function renderDay(el, id) {
     D = { clockH, specPh, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
     await cache.set(ck, D);
   } catch { D = await cache.get(ck); }
-  if (!D) { el.innerHTML = `<div class="empty-line">היום לא נמצא או שאין קליטה</div>`; return; }
+  if (!D) { el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">יום שטח</h1></header><div class="empty-line">היום לא נמצא או שאין קליטה</div>`; return; }
   // תמונות שעוד בתור (צולמו בלי קליטה) נספרות ומוצגות
   try { const pend = await pendingPhotos(m => m.work_day_id === id); D.photos = D.photos.filter(p => !p.url && !pend.some(x => x.photoId === p.id)).concat(pend.map(x => ({ id: x.photoId, kind: x.meta.kind, storage_path: x.path, url: URL.createObjectURL(x.blob) }))); } catch {}
   D.local = (await cache.get(ck + ':local')) || { stage: null, checks: {}, loaded: null };
@@ -274,10 +274,12 @@ export async function renderDay(el, id) {
     const dr = D.day.drone, blocked = dr?.health === 'grounded' || (dr?.health === 'warning' && !D.day.drone_ack);
     bar.innerHTML = `<button class="btn ghost" id="bk">חזרה</button><button class="btn primary" id="out" ${blocked ? 'disabled' : ''}>יוצאים לאתר</button>`;
     bar.querySelector('#bk').onclick = () => { D.local.stage = 0; keep(); draw(); };
-    bar.querySelector('#out').onclick = async () => {
+    bar.querySelector('#out').onclick = async e => {
+      const ob = e.currentTarget; if (ob.disabled) return;
       const req = D.day.equip_required?.length ? D.day.equip_required : (D.S.equip_default || []);
       const miss = req.filter(x => !D.local.loaded.includes(x));
       if (miss.length && !(await confirmBox(`יוצאים בלי ${miss.length} פריטים?`, { body: miss.join(' · ') + ' — יירשם כחוסר ויעבור למשרד', ok: 'יוצאים' }))) return;
+      ob.disabled = true;
       for (const m of miss) { const row = { id: uid(), work_day_id: D.day.id, item: m, qty: 1, reported_by: state.user.id }; D.missing.push(row); await insert('missing_items', row); }
       const now = new Date().toISOString();
       await save('work_days', { departed_at: now, status: 'en_route', equip_loaded: D.local.loaded, drone_ack: !!D.day.drone_ack });
@@ -287,13 +289,14 @@ export async function renderDay(el, id) {
     };
   }
   function bindSite(bar) {
-    const a = $('#arrive'); if (a) a.onclick = async () => { await save('work_days', { arrived_at: new Date().toISOString(), status: 'on_site' }); draw(); };
+    const a = $('#arrive'); if (a) a.onclick = async () => { if (a.disabled) return; a.disabled = true; await save('work_days', { arrived_at: new Date().toISOString(), status: 'on_site' }); draw(); };
     $$('[data-chk]').forEach(c => c.onchange = () => { D.local.checks[c.dataset.chk] = c.checked; keep(); draw(); });
     const items = (D.S.safety_checks || []).concat(D.day.drone_id || D.day.method === 'רחפן' ? (D.S.preflight_checks || []) : []);
     const allOk = items.every((t, i) => D.local.checks[i] || D.checks.some(c => c.item === t && c.ok));
     const before = D.photos.some(p => p.kind === 'before');
     bar.innerHTML = `<button class="btn primary" id="start" ${D.day.arrived_at && allOk && before ? '' : 'disabled'}>מתחילים לעבוד</button>`;
-    bar.querySelector('#start').onclick = async () => {
+    bar.querySelector('#start').onclick = async e => {
+      if (e.currentTarget.disabled) return; e.currentTarget.disabled = true;
       for (const [i, t] of items.entries()) if (!D.checks.some(c => c.item === t)) { const row = { id: uid(), work_day_id: D.day.id, item: t, ok: true, checked_by: state.user.id }; D.checks.push(row); await insert('safety_checks', row); }
       await save('work_days', { status: 'working', opened_at: D.day.opened_at || new Date().toISOString() });
       toast('עבודה בטוחה'); draw();
@@ -314,6 +317,7 @@ export async function renderDay(el, id) {
     });
     $('#addtask').onclick = async () => {
       const title = await ask('מה הלקוח ביקש?', { placeholder: 'למשל: ניקוי שלט הכניסה', ok: 'הוספה' }); if (!title) return;
+      toast('המשימה נוספה');
       const row = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, title, phase: 'תוספת', is_extra: true, status: 'todo', seq: 999, planned_date: D.day.day };
       D.tasks.push(row); await insert('tasks', row); draw();
     };
@@ -394,6 +398,7 @@ export async function renderDay(el, id) {
         $('#ip', s).onchange = e => { ph = e.target.files[0]; $('#ipn', s).textContent = ph ? 'התמונה תצורף' : ''; };
         $('#isend', s).onclick = async () => {
           const body = $('#ib', s).value.trim(); if (!body) return toast('כתבו מה קרה');
+          if ($('#isend', s).disabled) return; $('#isend', s).disabled = true;
           const row = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, kind: ISSUE_KIND[kind] || 'other', severity: crit ? 'critical' : 'normal',
             body: kind === 'רחפן' || kind === 'לקוח' ? `${kind}: ${body}` : body, opened_by: state.user.id, equipment_id: kind === 'רחפן' ? D.day.drone_id : null };
           D.issues.push(row); await insert('issues', row);
@@ -409,6 +414,7 @@ export async function renderDay(el, id) {
       $('[id="mq+"]', s).onclick = () => $('#mq', s).value = +$('#mq', s).value + 1;
       $('#msend', s).onclick = async () => {
         const item = $('#mi', s).value.trim(); if (!item) return toast('מה חסר?');
+        if ($('#msend', s).disabled) return; $('#msend', s).disabled = true;
         const row = { id: uid(), work_day_id: D.day.id, item, qty: +$('#mq', s).value || 1, reported_by: state.user.id };
         D.missing.push(row); await insert('missing_items', row); close(); toast('נרשם ונשלח למשרד'); draw();
       };

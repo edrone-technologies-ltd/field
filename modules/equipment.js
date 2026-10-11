@@ -1,5 +1,6 @@
 // ציוד: מצב הצי והציוד, היסטוריית תקלות, ודיווח תקלה בציוד. מצב הרחפנים מגיע מלוח בריאות הצי במאנדי.
-import { sb, state, isManager, cache, enqueue, sheet, uid, $, $$, esc, toast, dm, isoDay, icon, backBtn } from '../lib/core.js';
+import { sb, state, isManager, cache, enqueue, sheet, uid, $, $$, esc, toast, dm, isoDay, icon, backBtn, replaceHash } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 const KIND = { drone: 'רחפנים', vehicle: 'רכבים', trailer: 'נגררים', pump: 'משאבות', battery: 'סוללות', other: 'אחר' };
 const HEALTH = { ok: ['תקין', 'ok'], warning: ['במעקב', 'warn'], grounded: ['מקורקע', 'bad'], maintenance: ['בטיפול', 'warn'] };
@@ -37,9 +38,10 @@ export async function renderEquipment(el) {
       <b>תקלות</b>${mine.length ? `<div class="list">${mine.map(i => `<div class="lrow"><span class="grow"><b>${esc(i.body)}</b><small>${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span><span class="pill ${i.status === 'open' ? 'warn' : 'ok'}">${i.status === 'open' ? 'פתוחה' : 'טופלה'}</span></div>`).join('')}</div>` : '<div class="empty-line">אין תקלות</div>'}
       <textarea id="eb" placeholder="דיווח תקלה בציוד הזה"></textarea>
       <div class="row"><button class="btn ghost grow" data-close>סגירה</button><button class="btn primary grow" id="es">דיווח</button></div>`, (s, close) => {
-      $$('[data-h]', s).forEach(b => b.onclick = async () => { r.health = b.dataset.h; await enqueue({ kind: 'update', table: 'equipment', rowId: r.id, patch: { health: r.health, health_date: isoDay() } }); close(); draw(); });
+      $$('[data-h]', s).forEach(b => b.onclick = async () => { r.health = b.dataset.h; await enqueue({ kind: 'update', table: 'equipment', rowId: r.id, patch: { health: r.health, health_date: isoDay() } }); close(); toast(`${r.name}: ${HEALTH[r.health][0]}`); draw(); });
       $('#es', s).onclick = async () => {
         const body = $('#eb', s).value.trim(); if (!body) return toast('מה התקלה?');
+        if ($('#es', s).disabled) return; $('#es', s).disabled = true;
         const row = { id: uid(), equipment_id: r.id, kind: 'equipment', body: `${r.name}: ${body}`, opened_by: state.user.id, status: 'open', severity: 'normal', created_at: new Date().toISOString() };
         iss.unshift(row); const { created_at, ...ins } = row; await enqueue({ kind: 'insert', table: 'issues', row: ins }); close(); toast('התקלה נרשמה'); draw();
       };
@@ -51,10 +53,14 @@ export async function renderEquipment(el) {
       <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="ago">הוספה</button></div>`, (s, close) => {
       $('#ago', s).onclick = async () => {
         const name = $('#an', s).value.trim(); if (!name) return toast('חסר שם');
+        const go = $('#ago', s); if (go.disabled) return; go.disabled = true;
         const { data, error } = await sb.from('equipment').insert({ kind: $('#ak', s).value, name, serial: $('#as', s).value || null }).select().single();
-        if (error) return toast(error.message); rows.push(data); close(); draw();
+        if (error) { go.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); } rows.push(data); close(); toast('הפריט נוסף'); draw();
       };
     });
   }
   draw();
+  // קישור עמוק לכלי מסוים (#/equipment/<id>) — מההתראות בבית: נפתח ישר הפירוט שלו
+  const want = location.hash.split('/')[2];
+  if (want) { replaceHash('#/equipment', false); const r = rows.find(x => x.id === want); if (r) detail(r); }
 }

@@ -1,5 +1,6 @@
 // תיק אישי: מסמכים (רישיונות, ת"ז, תעודות, חוזה, 101) ותלושי שכר. עובד — צפייה בשלו. מנהלים — העלאה ומחיקה; תלושים — מנהלי מערכת בלבד.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, confirmBox, uid, initials, ROLE_HE, isoDay } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 export const KINDS = { payslip: 'תלוש שכר', license: 'רישיון', id: 'תעודה מזהה', certificate: 'תעודה / הסמכה', contract: 'חוזה העסקה', form101: 'טופס 101', other: 'אחר' };
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
@@ -26,9 +27,10 @@ function docList(docs, { manage, reload }) {
     $$('[data-open]', root).forEach(b => b.onclick = () => openDoc(docs.find(x => x.id === b.dataset.open)));
     $$('[data-del]', root).forEach(b => b.onclick = async () => {
       const d = docs.find(x => x.id === b.dataset.del);
-      if (!(await confirmBox('למחוק את המסמך?', { body: d.kind === 'payslip' ? 'תלוש ' + mName(d.month) : d.title, ok: 'מחיקה', danger: true }))) return;
-      await sb.storage.from('hr').remove([d.storage_path]); const { error } = await sb.from('employee_docs').delete().eq('id', d.id);
-      if (error) return toast(error.message); toast('נמחק'); reload();
+      if (!(await confirmBox('למחוק את המסמך?', { body: d.kind === 'payslip' ? 'תלוש ' + mName(d.month) : d.title, ok: 'מחיקה', danger: true })) || b.disabled) return;
+      b.disabled = true;   // קודם הרשומה (אם נכשל — הקובץ נשאר שלם), ואז הקובץ
+      const { error } = await sb.from('employee_docs').delete().eq('id', d.id);
+      if (error) { b.disabled = false; return toast(errText(error, 'לא נמחק — נסו שוב')); } await sb.storage.from('hr').remove([d.storage_path]).catch(() => {}); toast('נמחק'); reload();
     });
   } };
 }
@@ -97,9 +99,9 @@ async function uploadDoc(userId, kind, file, meta) {
   const id = uid(), ext = (file.name.split('.').pop() || 'pdf').toLowerCase().slice(0, 5);
   const path = `${userId}/${kind}/${id}.${ext}`;
   const { error: e1 } = await sb.storage.from('hr').upload(path, file, { contentType: file.type || 'application/pdf' });
-  if (e1) return e1.message;
+  if (e1) return errText(e1, 'הקובץ לא עלה — נסו שוב');
   const { error: e2 } = await sb.from('employee_docs').insert({ id, user_id: userId, kind, storage_path: path, mime: file.type, uploaded_by: state.user.id, ...meta });
-  if (e2) { await sb.storage.from('hr').remove([path]); return e2.message; }
+  if (e2) { await sb.storage.from('hr').remove([path]); return errText(e2, 'המסמך לא נשמר — נסו שוב'); }
   return null;
 }
 
@@ -121,7 +123,8 @@ function bulkPayslips(people, done) {
       const sel = $$('select[data-i]', s).map(x => ({ f: files[+x.dataset.i], u: x.value }));
       if (!sel.length) return toast('לא נבחרו קבצים'); if (sel.some(x => !x.u)) return toast('יש קובץ בלי עובד');
       const m = $('#bm', s).value; $('#bgo', s).disabled = true; let ok = 0;
-      for (const x of sel) { $('#bgo', s).textContent = `מעלה ${ok + 1}/${sel.length}…`; const err = await uploadDoc(x.u, 'payslip', x.f, { title: `תלוש ${m}`, month: m + '-01' }); if (err) { toast(err, 4000); break; } ok++; }
+      for (const x of sel) { $('#bgo', s).textContent = `מעלה ${ok + 1}/${sel.length}…`; const err = await uploadDoc(x.u, 'payslip', x.f, { title: `תלוש ${m}`, month: m + '-01' });
+        if (err) { toast(`${ok ? `הועלו ${ok} · ` : ''}${x.f.name}: ${err}`, 5000); if (ok) { files = files.filter(f => !sel.slice(0, ok).some(y => y.f === f)); $('#bf', s).onchange({ target: { files } }); } $('#bgo', s).disabled = false; $('#bgo', s).textContent = 'העלאה'; if (ok) done(); return; } ok++; }
       close(); toast(`הועלו ${ok} תלושים`); done();
     };
   });

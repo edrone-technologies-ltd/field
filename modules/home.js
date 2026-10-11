@@ -1,6 +1,8 @@
 // בית: עונה רק על "מה קורה היום ומה צריך אותי". כל השאר בלשוניות.
 // מנהל → מסך הבקרה (ops.js). עובד שטח: שעון · מחכה לך · היום שלי · הימים הקרובים. יצירת כל דבר חדש — רק בכפתור +.
-import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel } from '../lib/core.js';
+import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel, toast, isOpenProject } from '../lib/core.js';
+import { needsList, bindNeeds } from './attention.js';
+import { errText } from '../lib/audit.js';
 
 const today = () => isoDay();
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
@@ -9,21 +11,21 @@ const ARCHIVE = 'group_mm5052gw';
 export const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'הסתיים — ממתין לתשלום': 'ok', 'הסתיים — להוצאת חשבונית': 'ok' };   // שאר השלבים — אפור ניטרלי
 const DAY_ST = { planned: 'מתוכנן', en_route: 'בדרך', on_site: 'באתר', working: 'בעבודה', issue: 'תקלה', done: 'נסגר' };
 const RANK = { 'בביצוע': 0, 'תואם - ממתין לביצוע': 1, 'אושר מול לקוח': 2, 'קביעת מועד': 3, 'תקוע': 4 };
-const isOpen = p => p.monday_group !== ARCHIVE && !String(p.status_label || '').startsWith('הסתיים');
+const isOpen = isOpenProject;
 const mineDay = w => w.crew_lead_id === state.user.id || (w.work_day_crew || []).some(c => c.user_id === state.user.id);
 
 export async function load() {
   const q = async (p) => { try { const { data, error } = await p; if (error) throw error; return data || []; } catch { return null; } };
   const t = today(), since = addDays(t, -14), M = isManager();
   const [projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq] = await Promise.all([
-    q(sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id')),
+    q(sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id,closed_summary,lat,lng,sites(lat,lng)')),
     q(sb.from('field_reports').select('monday_item_id,project_id,project_label,report_date,crew,work,had_issues,issues,photos').gte('report_date', since).order('report_date', { ascending: false })),
     M ? q(sb.from('spec_visits').select('*')) : [],
     q(sb.from('equipment').select('id,name,health,health_detail,health_date').eq('kind', 'drone').order('name')),
-    M ? q(sb.from('profiles').select('full_name,role,is_pilot,pilot_license_expiry,is_active')) : [],
+    M ? q(sb.from('profiles').select('id,full_name,role,is_pilot,pilot_license_expiry,is_active')) : [],
     q(sb.from('work_days').select('id,day,status,report_time,site_arrival,project_id,crew_lead_id,is_last_day,day_goal,gust_max,wind_max,weather_alerted,work_day_crew(user_id,confirmed_at,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
     M ? q(sb.from('sync_log').select('created_at').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)) : [],
-    M ? q(sb.from('sync_log').select('entity,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],
+    M ? q(sb.from('sync_log').select('entity,entity_id,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],
     q(sb.rpc('my_inbox')),
     M ? q(sb.from('shift_requests').select('id,user_id').eq('status', 'pending')) : [],
   ]);
@@ -33,31 +35,47 @@ export async function load() {
 }
 
 // ---------- מה דורש טיפול: מקובץ, הכי חמור קודם ----------
+// פרויקט אחד → ישר אליו; כמה → רשימה של בדיוק אותם פרויקטים
+const pick = (ps, tab = '') => ps.length === 1 ? { href: `#/p/${ps[0].id}${tab}` } : { list: ps.map(p => ({ href: `#/p/${p.id}${tab}`, t: p.name, s: p.client_name || '' })) };
 export function alerts(d) {
   const out = [], t = today(), P = d.projects || [];
   const gr = (d.drones || []).filter(x => x.health === 'grounded');
-  if (gr.length) out.push({ tone: 'bad', ic: 'drone', title: gr.length > 1 ? `${gr.length} רחפנים מקורקעים` : `רחפן ${gr[0].name} מקורקע`, sub: gr.length > 1 ? gr.map(x => x.name).join(' · ') : firstLine(gr[0].health_detail), href: '#/equipment' });
-  (d.drones || []).filter(x => x.health === 'warning').forEach(x => out.push({ tone: 'warn', ic: 'drone', title: `רחפן ${x.name} במעקב`, sub: firstLine(x.health_detail), href: '#/equipment' }));
+  if (gr.length) out.push({ tone: 'bad', ic: 'drone', title: gr.length > 1 ? `${gr.length} רחפנים מקורקעים` : `רחפן ${gr[0].name} מקורקע`, sub: gr.length > 1 ? gr.map(x => x.name).join(' · ') : firstLine(gr[0].health_detail), href: gr.length > 1 ? '#/equipment' : `#/equipment/${gr[0].id}` });
+  (d.drones || []).filter(x => x.health === 'warning').forEach(x => out.push({ tone: 'warn', ic: 'drone', title: `רחפן ${x.name} במעקב`, sub: firstLine(x.health_detail), href: `#/equipment/${x.id}` }));
   const stuck = P.filter(p => p.status_label === 'תקוע' && isOpen(p));
-  if (stuck.length) out.push({ tone: 'bad', ic: 'alert', title: stuck.length > 1 ? `${stuck.length} פרויקטים תקועים` : `פרויקט תקוע: ${stuck[0].name}`, sub: stuck.length > 1 ? stuck.map(p => p.name).join(' · ') : stuck[0].client_name, href: stuck.length > 1 ? '#/projects' : '#/p/' + stuck[0].id });
+  if (stuck.length) out.push({ tone: 'bad', ic: 'alert', title: stuck.length > 1 ? `${stuck.length} פרויקטים תקועים` : `פרויקט תקוע: ${stuck[0].name}`, sub: stuck.length > 1 ? stuck.map(p => p.name).join(' · ') : stuck[0].client_name, ...pick(stuck) });
+  // תאריך הסיום עבר (ביותר מיומיים), אין ימי שטח עתידיים, והפרויקט עדיין פתוח → לסגור (לשונית הסיכום)
+  const ahead = new Set((d.wdays || []).filter(w => w.day >= t && w.status !== 'done').map(w => w.project_id));
+  const ended = P.filter(p => isOpen(p) && p.status_label !== 'תקוע' && !ahead.has(p.id) && (p.planned_to || p.actual_to) && daysBetween(p.planned_to || p.actual_to, t) > 2);
+  if (ended.length) out.push({ tone: 'warn', ic: 'calendar', title: ended.length > 1 ? `${ended.length} פרויקטים שהסתיימו ועדיין פתוחים` : `הסתיים ב-${dm(ended[0].planned_to || ended[0].actual_to)} ועדיין פתוח`, sub: ended.length > 1 ? ended.map(p => p.name).join(' · ') : ended[0].name, ...pick(ended, '/s') });
   const last = new Map(); (d.reports || []).forEach(r => { if (r.project_id && !last.has(r.project_id)) last.set(r.project_id, r); });
   const mism = P.filter(p => { const r = last.get(p.id); return r && daysBetween(r.report_date, t) <= 7 && p.status_label !== 'בביצוע' && isOpen(p); });
-  if (mism.length) out.push({ tone: 'warn', ic: 'report', title: mism.length > 1 ? `${mism.length} פרויקטים בשטח שהסטטוס שלהם במאנדי לא "בביצוע"` : `עובדים בשטח, אבל במאנדי הסטטוס "${mism[0].status_label}"`, sub: mism.map(p => p.name).join(' · '), href: mism.length > 1 ? '#/projects' : '#/p/' + mism[0].id });
+  if (mism.length) out.push({ tone: 'warn', ic: 'report', title: mism.length > 1 ? `${mism.length} פרויקטים בשטח שהסטטוס שלהם במאנדי לא "בביצוע"` : `עובדים בשטח, אבל במאנדי הסטטוס "${mism[0].status_label}"`, sub: mism.map(p => p.name).join(' · '), ...pick(mism) });
   const iss = (d.reports || []).filter(r => r.had_issues && daysBetween(r.report_date, t) <= 7);
-  if (iss.length) out.push({ tone: 'warn', ic: 'alert', title: `${iss.length} דוחות עם תקלות השבוע`, sub: [...new Set(iss.map(r => r.project_label))].join(' · '), href: '#/reports' });
+  const ip = [...new Map(iss.filter(r => r.project_id).map(r => [r.project_id, { id: r.project_id, name: r.project_label, client_name: dm(r.report_date) }])).values()];
+  if (iss.length) out.push({ tone: 'warn', ic: 'alert', title: `${iss.length} דוחות עם תקלות השבוע`, sub: [...new Set(iss.map(r => r.project_label))].join(' · '), ...(ip.length ? pick(ip, '/d') : { href: '#/reports' }) });
   (d.team || []).filter(p => p.is_active && p.is_pilot && p.pilot_license_expiry).forEach(p => {
     const left = daysBetween(t, p.pilot_license_expiry);
-    if (left <= 45) out.push({ tone: left <= 14 ? 'bad' : 'warn', ic: 'shield', title: `רישיון המטיס של ${p.full_name.split(' ')[0]} ${left < 0 ? 'פג' : `פג בעוד ${left} ימים`}`, sub: `בתוקף עד ${dm(p.pilot_license_expiry)}` });
+    if (left <= 45) out.push({ tone: left <= 14 ? 'bad' : 'warn', ic: 'shield', title: `רישיון המטיס של ${p.full_name.split(' ')[0]} ${left < 0 ? 'פג' : `פג בעוד ${left} ימים`}`, sub: `בתוקף עד ${dm(p.pilot_license_expiry)}`, href: `#/staff/${p.id}` });
   });
   if ((d.shiftReq || []).length) out.push({ k: 'shiftreq', tone: 'warn', ic: 'clock', title: `${d.shiftReq.length} בקשות תיקון שעות ממתינות לאישור`, sub: 'עובדים ששכחו להחתים או ביקשו עריכה', href: '#/attendance' });
-  if ((d.pushErr || []).length) out.push({ tone: 'warn', ic: 'alert', title: 'שליחה למאנדי נכשלה', sub: String(d.pushErr[0].error || '').slice(0, 90) });
-  const nd = (d.visits || []).filter(v => !v.visit_date);
-  if (nd.length) out.push({ tone: '', ic: 'calendar', title: `${nd.length} סיורי אפיון בלי תאריך`, sub: nd.map(v => v.lead_name).join(' · ') });
+  // שליחה למאנדי נכשלה: לפריט עצמו (יום שטח / פרויקט / דוח ביקור / רכש); אחרת — יומן הסנכרון (מנהל מערכת)
+  const PE = [...new Map((d.pushErr || []).map(e => [e.entity + ':' + e.entity_id, e])).values()];
+  if (PE.length) { const one = PE.length === 1 ? errHref(PE[0]) : null;
+    out.push({ tone: 'warn', ic: 'alert', title: PE.length > 1 ? `${PE.length} פריטים לא עברו למאנדי` : 'שליחה למאנדי נכשלה', sub: [...new Set(PE.map(e => ENT_HE[e.entity] || 'עדכון'))].join(' · '),
+      href: one || (can('admin') ? '#/admin/sync' : ''), list: !one && !can('admin') && PE.some(errHref) ? PE.filter(errHref).map(e => ({ href: errHref(e), t: ENT_HE[e.entity] || 'עדכון', s: '' })) : null }); }
+  // סיור בלי תאריך: לליד עצמו (איש קשר + משימה לצוות לתיאום); כמה — רשימה של בדיוק אותם לידים
+  const nd = (d.visits || []).filter(v => !v.visit_date), lead = v => `#/site/lead-${v.monday_item_id}`;
+  if (nd.length) out.push({ tone: '', ic: 'calendar', title: nd.length > 1 ? `${nd.length} סיורי אפיון בלי תאריך` : `סיור אפיון בלי תאריך · ${nd[0].lead_name}`, sub: nd.length > 1 ? nd.map(v => v.lead_name).join(' · ') : nd[0].owner || '',
+    ...(nd.length > 1 ? { list: nd.map(v => ({ href: lead(v), t: v.lead_name, s: v.owner || '' })) } : { href: lead(nd[0]) }) });
   const rank = { bad: 0, warn: 1, '': 2 };
   return out.sort((a, b) => rank[a.tone] - rank[b.tone]);
 }
+const ENT_HE = { work_day: 'דוח יומי', spec: 'אפיון', issue: 'תקלה', missing: 'חוסר בשטח', message: 'הודעה', signoff: 'החתמת לקוח', summary: 'סיכום פרויקט', task: 'משימה', task_board: 'משימה',
+  visit: 'דוח ביקור', purchase: 'בקשת רכש', contact: 'איש קשר', project_close: 'סגירת פרויקט', project_start: 'פתיחת פרויקט', schedule: 'תאריכי פרויקט' };
+const errHref = e => !e.entity_id ? null : e.entity === 'work_day' ? `#/day/${e.entity_id}` : ['summary', 'project_close', 'project_start', 'schedule'].includes(e.entity) ? `#/p/${e.entity_id}`
+  : e.entity === 'visit' ? `#/visit/${e.entity_id}` : e.entity === 'purchase' ? '#/purchase' : null;
 const firstLine = s => (s || '').split('\n')[0].replace(/^[^֐-׿A-Za-z0-9]+/, '').slice(0, 90);
-export const alertRow = a => `<${a.href ? `a href="${a.href}"` : 'div'} class="arow ${a.tone}"><span class="aic">${icon(a.ic, 20)}</span><span class="grow"><b>${esc(a.title)}</b>${a.sub ? `<small>${esc(a.sub)}</small>` : ''}</span>${a.href ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</${a.href ? 'a' : 'div'}>`;
 
 // ---------- לו"ז: ימי שטח מהאפליקציה + טווחי פרויקטים ממאנדי + סיורי אפיון ----------
 export function schedule(d, from, n) {
@@ -75,7 +93,7 @@ export function evRow(it) {
   if (it.kind === 'w') { const w = it.w; const crew = (w.work_day_crew || []).map(c => c.profiles?.full_name?.split(' ')[0]).filter(Boolean).join(', ');
     return `<a class="ev ${w.status === 'done' ? 'ok' : 'lime'}" href="#/day/${w.id}"><b>${esc(it.p?.name || 'יום שטח')}</b><small>יום שטח${w.report_time ? ' · ' + w.report_time.slice(0, 5) : ''}${crew ? ' · ' + esc(crew) : ''}${w.status !== 'planned' ? ' · ' + DAY_ST[w.status] : ''}${w.gust_max != null ? ` · ${w.weather_alerted ? '⚠ ' : ''}משבים ${w.gust_max}` : ''}</small></a>`; }
   if (it.kind === 'p') return `<a class="ev ${TONE[it.p.status_label] ?? ''}" href="#/p/${it.p.id}"><b>${esc(it.p.name)}</b><small>${esc(stLabel(it.p.status_label))}${it.p.client_name ? ' · ' + esc(it.p.client_name) : ''}</small></a>`;
-  return `<div class="ev blue"><b>סיור אפיון · ${esc(it.v.lead_name)}</b><small>${esc(it.v.owner || '')}</small></div>`;
+  return `<a class="ev blue" href="#/site/lead-${esc(it.v.monday_item_id)}"><b>סיור אפיון · ${esc(it.v.lead_name)}</b><small>${esc(it.v.owner || '')}</small></a>`;
 }
 const dayWord = s => s === addDays(today(), 1) ? 'מחר' : `יום ${HE_DOW[new Date(s + 'T12:00').getDay()]} ${dm(s)}`;
 const empty = (ic, title, sub, tone = '') => `<div class="empty-card ${tone}"><span class="ei">${icon(ic, 26)}</span><span><b>${title}</b><small>${sub}</small></span></div>`;
@@ -112,14 +130,15 @@ const dayRow = (w, byId) => { const me = (w.work_day_crew || []).find(c => c.use
   <span class="grow"><b>${esc(byId.get(w.project_id)?.name || '')}</b><small>${w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) : ''}${w.is_last_day ? ' · יום אחרון' : ''}${me?.confirmed_at && w.status === 'planned' ? ' · אישרת הגעה ✓' : ''}</small></span><span class="pill ${w.status === 'done' ? 'ok' : w.status === 'planned' ? '' : 'lime'}">${DAY_ST[w.status]}</span></a>
   ${needConfirm ? `<button class="btn primary sm block" data-confirm="${w.id}">מאשר הגעה</button>` : ''}</div>`; };
 function bindConfirm(root) {
-  $$('[data-confirm]', root).forEach(b => b.onclick = async () => { b.disabled = true; const { error } = await sb.rpc('confirm_day', { d: b.dataset.confirm });
-    if (error) { b.disabled = false; return; } b.outerHTML = '<div class="acked" style="text-align:center">אישרת הגעה ✓</div>'; });
+  $$('[data-confirm]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true; const { error } = await sb.rpc('confirm_day', { d: b.dataset.confirm });
+    if (error) { b.disabled = false; return toast(errText(error, 'האישור לא נשלח — נסו שוב')); } toast('אישרת הגעה'); b.outerHTML = '<div class="acked" style="text-align:center">אישרת הגעה ✓</div>'; });
 }
 // ---------- כל מה שלטיפול ----------
 export async function renderAlerts(el) {
-  el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1>לטיפול</h1></header><div id="al" class="alist"><div class="skel"></div></div>`;
-  const d = await load(); const A = alerts(d);
-  $('#al').innerHTML = A.map(alertRow).join('') || empty('shield', 'הכל תחת שליטה', '', 'ok');
+  el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1>לטיפול</h1></header><div id="al"><div class="skel"></div></div>`;
+  const d = await load(); const A = alerts(d).map(a => ({ ...a, ic: icon(a.ic, 20) })), box = $('#al'); if (!box) return;
+  box.innerHTML = A.length ? needsList(A, { limit: 99, head: false, id: 'alerts' }) : empty('shield', 'הכל תחת שליטה', '', 'ok');
+  bindNeeds(box, A, () => renderAlerts(el));
 }
 
 // ---------- לו"ז ----------
@@ -181,7 +200,7 @@ async function pendingAcks() {
     <div class="mb">${esc(m.body || 'תמונה')}</div><div class="row-btns"><a class="btn ghost sm" href="${m.conversation_id ? '#/c/' + m.conversation_id : '#/p/' + m.project_id + '/c'}">לשיחה</a><button class="btn primary sm" data-ok="${m.id}">קראתי ואישרתי</button></div></div>`).join('');
   box.prepend(wrap);
   $$('[data-ok]', wrap).forEach(b => b.onclick = async () => {
-    b.disabled = true; const { enqueue } = await import('../lib/core.js');
+    if (b.disabled) return; b.disabled = true; const { enqueue } = await import('../lib/core.js');
     await enqueue({ kind: 'insert', table: 'message_acks', row: { message_id: b.dataset.ok, user_id: state.user.id } });
     b.closest('.must').remove();
   });
@@ -203,7 +222,7 @@ async function yesterday() {
   const projs = new Set([...reps.map(r => r.project_label), ...days.map(d => d.projects?.name)].filter(Boolean));
   if (!projs.size && hrs < 0.5) return;  // מוצג רק כשהייתה עבודת שטח אתמול — לא כרטיס של אפסים
   const ex = exps.reduce((t, e) => t + Number(e.amount), 0);
-  box.innerHTML = `<a class="yday" href="#/schedule"><span class="eyebrow">אתמול בשטח</span><span class="ys">
+  box.innerHTML = `<a class="yday" href="${days.length === 1 ? '#/day/' + days[0].id : '#/dispatch/' + y}"><span class="eyebrow">אתמול בשטח</span><span class="ys">
     <span><b>${projs.size}</b><small>פרויקטים</small></span><span><b>${hrs ? Math.round(hrs) : '—'}</b><small>שעות צוות</small></span>
     <span><b>${iss.length}</b><small>תקלות</small></span>${can('finance') ? `<span><b>${ex ? '₪' + Math.round(ex) : '—'}</b><small>הוצאות</small></span>` : ''}</span>
     <small class="muted">${esc([...projs].join(' · '))}</small></a>`;

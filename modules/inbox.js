@@ -1,5 +1,6 @@
 // הודעות פנימיות: שיחה אישית עם כל עובד + קבוצות תפוצה. לא קשור לפרויקטים (לצ'אט פרויקט יש מקום בתוך הפרויקט).
 import { sb, state, isManager, cache, sheet, $, $$, esc, initials, icon, timeAgo, toast, ROLE_HE } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 const av = c => `<span class="avatar ${c.kind === 'group' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 20) : esc(initials(c.title))}</span>`;
 
@@ -23,7 +24,8 @@ async function newMessage() {
     <div class="list">${(people || []).map(p => `<button class="lrow" data-p="${p.id}"><span class="avatar">${esc(initials(p.full_name))}</span><span class="grow"><b>${esc(p.full_name)}</b><small>${esc(ROLE_HE[p.role] || '')}</small></span></button>`).join('')}</div>
     ${isManager() ? `<button class="btn ghost block" id="ng">${icon('users', 18)} קבוצת תפוצה חדשה</button>` : ''}`, (s, close) => {
     $$('[data-p]', s).forEach(b => b.onclick = async () => {
-      const { data, error } = await sb.rpc('open_dm', { other: b.dataset.p }); if (error) return toast(error.message);
+      if (b.disabled) return; b.disabled = true;
+      const { data, error } = await sb.rpc('open_dm', { other: b.dataset.p }); if (error) { b.disabled = false; return toast(errText(error, 'השיחה לא נפתחה — נסו שוב')); }
       close(); location.hash = '#/c/' + data;
     });
     const g = $('#ng', s); if (g) g.onclick = () => { close(); newGroup(people || [], newMessage); };
@@ -37,7 +39,8 @@ function newGroup(people, back) {
     $('#gc', s).onclick = async () => {
       const t = $('#gt', s).value.trim(), m = $$('[data-u][aria-pressed="true"]', s).map(c => c.dataset.u);
       if (!t || !m.length) return toast('חסר שם או חברים');
-      const { data, error } = await sb.rpc('create_group', { t, members: m }); if (error) return toast(error.message);
+      const gc = $('#gc', s); if (gc.disabled) return; gc.disabled = true;
+      const { data, error } = await sb.rpc('create_group', { t, members: m }); if (error) { gc.disabled = false; return toast(errText(error, 'הקבוצה לא נפתחה — נסו שוב')); }
       close(); location.hash = '#/c/' + data;
     };
   }, { back });

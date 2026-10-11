@@ -1,6 +1,7 @@
 // "מחכה לך": כל מה שדורש את תשומת הלב של המשתמש — ברשימה אחת קומפקטית בראש הבית, במקום ערימת כרטיסים.
 // הוקרה › הודעת הנהלה › קליטה (כוללת הדרכות חובה) › הדרכה › התראות. שורה אחת לכל דבר, לחיצה = לשם.
-import { sb, state, icon, esc, toast, pushState, enablePush, sheet } from '../lib/core.js';
+import { sb, state, icon, esc, toast, pushState, enablePush, sheet, isOpenProject } from '../lib/core.js';
+import { errText } from '../lib/audit.js';
 
 async function newsRows() {
   const [{ data: list }, { data: reads }] = await Promise.all([
@@ -36,9 +37,9 @@ async function kbRows() {
 async function schedRows() {
   if (!['admin', 'ops_manager'].includes(state.profile.role)) return [];
   const t = new Date(), iso = d => d.toISOString().slice(0, 10), today = iso(t), lim = iso(new Date(Date.now() + 10 * 864e5));
-  const { data } = await sb.from('projects').select('id,name,planned_from,planned_to,work_days(day,status)').neq('monday_group', 'group_mm5052gw')
+  const { data } = await sb.from('projects').select('id,name,status_label,monday_group,closed_summary,planned_from,planned_to,work_days(day,status)').neq('monday_group', 'group_mm5052gw')
     .not('planned_from', 'is', null).lte('planned_from', lim).gte('planned_to', today);
-  const need = (data || []).filter(p => !(p.work_days || []).some(d => d.day >= today && d.status !== 'done'))
+  const need = (data || []).filter(isOpenProject).filter(p => !(p.work_days || []).some(d => d.day >= today && d.status !== 'done'))
     .sort((a, b) => a.planned_from < b.planned_from ? -1 : 1);
   if (!need.length) return [];
   const dm = d => `${+d.slice(8)}.${+d.slice(5, 7)}`;
@@ -55,7 +56,7 @@ async function tourRows() {
 async function pushRows() {
   const st = await pushState();
   if (st === 'off') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'התראות כבויות', sub: '', btn: 'הפעלה' }];
-  if (st === 'install') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'להתקין למסך הבית', sub: '', href: '#/kb' }];
+  if (st === 'install') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'להתקין למסך הבית', sub: '', href: '#/menu' }];   // הוראות ההתקנה — בתפריט "עוד"
   return [];
 }
 
@@ -69,19 +70,26 @@ export async function attentionItems() {
 // "דורש טיפול" — רשימה אחת לכל המסך: הכי חמור קודם, 5 ראשונים ו"עוד" שנפתח במקום
 const RANK = { bad: 0, gold: 1, warn: 2, '': 3 };
 export const sortNeeds = items => items.slice().sort((a, b) => (RANK[a.tone] ?? 3) - (RANK[b.tone] ?? 3));
-const nrow = (x, i, hide) => `<a class="arow ${x.tone || ''}" ${x.href ? `href="${x.href}"` : 'role="button" tabindex="0"'} data-ni="${i}"${hide ? ' hidden' : ''}><span class="aic">${x.ic}</span><span class="grow"><b>${esc(x.title)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span>${x.btn ? `<span class="btn ghost sm">${x.btn}</span>` : x.href || x.list ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</a>`;
-export function needsList(items, { title = 'דורש טיפול', limit = 5, id = 'needs' } = {}) {
+// שורה לחיצה רק כשיש לה לאן להוביל (href) או מה לעשות (list / act / btn). אחרת — שורת מידע בלי חץ ובלי מראה לחיץ
+const nrow = (x, i, hide) => {
+  const go = x.href || x.list || x.act || x.btn, tag = x.href ? 'a' : go ? 'button' : 'div';
+  return `<${tag} class="arow ${x.tone || ''}"${x.href ? ` href="${x.href}"${/^https?:/.test(x.href) ? ' target="_blank" rel="noopener"' : ''}` : go ? ' type="button"' : ''} data-ni="${i}"${hide ? ' hidden' : ''}><span class="aic">${x.ic}</span><span class="grow"><b>${esc(x.title)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span>${x.btn ? `<span class="btn ghost sm">${x.btn}</span>` : go ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</${tag}>`;
+};
+export function needsList(items, { title = 'דורש טיפול', limit = 5, id = 'needs', head = true } = {}) {
   if (!items.length) return '';
   const more = items.length - limit;
-  return `<section id="${id}"><div class="sh-row"><h3 class="sh">${title}</h3><span class="count">${items.length}</span></div>
+  return `<section id="${id}">${head ? `<div class="sh-row"><h3 class="sh">${title}</h3><span class="count">${items.length}</span></div>` : ''}
     <div class="alist">${items.map((x, i) => nrow(x, i, i >= limit)).join('')}${more > 0 ? `<button class="arow more-row" data-nmore>עוד ${more}</button>` : ''}</div></section>`;
 }
 export function bindNeeds(root, items, redraw) {
   root.querySelectorAll('[data-nmore]').forEach(b => b.onclick = () => { root.querySelectorAll('[data-ni][hidden]').forEach(r => r.hidden = false); b.remove(); });
   root.querySelectorAll('[data-ni]').forEach(a => { const x = items[+a.dataset.ni]; if (!x) return;
-    if (x.k === 'push' && x.btn) a.onclick = async e => { e.preventDefault(); try { await enablePush(); toast('ההתראות הופעלו'); redraw?.(); } catch (err) { toast(err.message); } };
+    if (x.k === 'push' && x.btn) a.onclick = async e => { e.preventDefault(); if (a.disabled) return; a.disabled = true;
+      try { await enablePush(); toast('ההתראות הופעלו'); a.remove(); redraw?.(); } catch (err) { a.disabled = false; toast(errText(err, 'ההתראות לא הופעלו — בדקו את הרשאות הטלפון')); } };
     // כמה פרויקטים ממתינים — רשימה קצרה של בדיוק אותם פרויקטים
-    else if (x.list) a.onclick = e => { e.preventDefault(); sheet(`<h3>${esc(x.title)}</h3><div class="list">${x.list.map(l => `<a class="lrow" href="${l.href}" data-close><span class="grow"><b>${esc(l.t)}</b><small>${esc(l.s)}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div><button class="btn ghost block" data-close>סגירה</button>`); };
+    else if (x.list) a.onclick = e => { e.preventDefault(); sheet(`<h3>${esc(x.title)}</h3><div class="list">${x.list.map(l => `<a class="lrow" href="${l.href}" data-close><span class="grow"><b>${esc(l.t)}</b>${l.s ? `<small>${esc(l.s)}</small>` : ''}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div><button class="btn ghost block" data-close>סגירה</button>`); };
+    // פעולה במקום (למשל: תור השליחה) — נועלים עד שהיא נפתחת
+    else if (x.act) a.onclick = async e => { e.preventDefault(); if (a.disabled) return; a.disabled = true; try { await x.act(); } catch (err) { toast(errText(err)); } finally { a.disabled = false; } };
   });
 }
 export async function attention(box) {
