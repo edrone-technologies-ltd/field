@@ -1,5 +1,5 @@
 // הוצאות שטח: צילום קבלה → קטגוריה, סכום, פרויקט → אישור מנהל → נכנס לעלות הפרויקט (ולמאנדי) ולייצוא להנהלת החשבונות.
-import { sb, state, isManager, can, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, ask, dm, signedUrls, isoDay } from '../lib/core.js';
+import { sb, state, isManager, can, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, ask, dm, signedUrls, isoDay, backBtn, replaceHash } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 
 export const CATS = { fuel: 'דלק', parking: 'חניה', toll: 'כביש אגרה', food: 'אוכל', lodging: 'לינה', materials: 'חומרים / ציוד קטן', other: 'אחר' };
@@ -8,8 +8,8 @@ const nis = x => '₪' + Number(x || 0).toLocaleString('he-IL', { maximumFractio
 
 export async function renderExpenses(el) {
   const M = can('finance');   // הוצאות של אחרים ואישורן = כספים בלבד
-  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">הוצאות</h1>${M ? '<button class="btn ghost sm" id="xls">ייצוא</button>' : ''}</header>
-    <button class="btn primary block big" id="newx">${icon('plus', 20)} הוצאה חדשה</button><div id="xb" class="stack lg"><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">הוצאות</h1>${M ? '<button class="btn ghost sm" id="xls">ייצוא</button>' : ''}</header>
+    <div id="xb" class="stack lg"><div class="skel"></div></div>`;
   const since = isoDay(new Date(Date.now() - 60 * 864e5));
   const { data: rows } = await sb.from('expenses').select('*, profiles:user_id(full_name), projects(name)').gte('day', since).order('day', { ascending: false }).order('created_at', { ascending: false });
   const mine = (rows || []).filter(r => r.user_id === state.user.id), pend = M ? (rows || []).filter(r => r.status === 'pending' && r.user_id !== state.user.id) : [];
@@ -17,14 +17,14 @@ export async function renderExpenses(el) {
   const row = (r, decide) => { const [t, c] = ST[r.status];
     return `<div class="lrow xrow">${r.receipt_path && urls[r.receipt_path] ? `<img src="${esc(urls[r.receipt_path])}" alt="קבלה" data-z="${esc(urls[r.receipt_path])}">` : `<span class="rep-ph">${icon('report', 20)}</span>`}
       <span class="grow"><b>${nis(r.amount)} · ${CATS[r.category]}</b><small>${dm(r.day)}${r.vendor ? ' · ' + esc(r.vendor) : ''}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}${decide ? ' · ' + esc(r.profiles?.full_name || '') : ''}</small>
-      ${r.note ? `<small>${esc(r.note)}</small>` : ''}${r.manager_reply ? `<small class="mreply">תגובה: ${esc(r.manager_reply)}</small>` : ''}${M && r.morning_status === 'sent' ? '<small class="ok">במורנינג ✓</small>' : M && r.morning_error && r.morning_tries >= 5 ? '<small class="err">לא נשלח למורנינג</small>' : ''}</span>
-      ${decide ? `<span class="stack" style="gap:4px"><button class="chip" data-ok="${r.id}">אישור</button><button class="chip" data-no="${r.id}">דחייה</button></span>` : `<span class="pill ${c}">${t}</span>`}</div>`; };
+      ${r.note ? `<small>${esc(r.note)}</small>` : ''}${r.manager_reply ? `<small class="mreply">תגובה: ${esc(r.manager_reply)}</small>` : ''}${M && r.morning_status === 'sent' ? `<small class="ok">במורנינג ${icon('check', 12)}</small>` : M && r.morning_error && r.morning_tries >= 5 ? '<small class="err">לא נשלח למורנינג</small>' : ''}</span>
+      ${decide ? `<span class="stack tight"><button class="chip" data-ok="${r.id}">אישור</button><button class="chip" data-no="${r.id}">דחייה</button></span>` : `<span class="pill ${c}">${t}</span>`}</div>`; };
   const monthTot = mine.filter(r => r.day.slice(0, 7) === isoDay().slice(0, 7) && r.status !== 'rejected').reduce((t, r) => t + Number(r.amount), 0);
   $('#xb').innerHTML = `${pend.length ? `<section><div class="sh-row"><h3 class="sh">לאישור</h3><span class="count">${pend.length}</span></div><div class="list">${pend.map(r => row(r, true)).join('')}</div></section>` : ''}
-    <section><div class="sh-row"><h3 class="sh">שלי</h3><span class="more">החודש ${nis(monthTot)}</span></div><div class="list">${mine.map(r => row(r, false)).join('') || '<div class="muted small">עוד אין הוצאות</div>'}</div></section>
+    <section><div class="sh-row"><h3 class="sh">שלי</h3><span class="more">החודש ${nis(monthTot)}</span></div>${mine.length ? `<div class="list">${mine.map(r => row(r, false)).join('')}</div>` : '<div class="empty-line">אין הוצאות</div>'}</section>
     ${M ? `<details class="fold"><summary><span class="sh">כל ההוצאות (60 יום)</span><span class="count">${(rows || []).length}</span></summary><div class="list">${(rows || []).map(r => row(r, false).replace('</b><small>', `</b><small>${esc(r.profiles?.full_name || '')} · `)).join('')}</div></details>` : ''}`;
   const reload = () => renderExpenses(el);
-  $('#newx').onclick = () => newExpense(null, reload);
+  if (/^#\/expenses\/new/.test(location.hash)) { replaceHash('#/expenses', false); newExpense(null, reload); }   // מה"+" — בלי כפתור במסך
   $$('[data-z]', el).forEach(i => i.onclick = async () => (await import('../lib/core.js')).zoom(i.dataset.z, 'קבלה'));
   $$('[data-ok]', el).forEach(b => b.onclick = async () => { const { error } = await sb.from('expenses').update({ status: 'approved', manager_id: state.user.id, decided_at: new Date().toISOString() }).eq('id', b.dataset.ok); if (error) return toast(error.message); toast('אושר'); reload(); });
   $$('[data-no]', el).forEach(b => b.onclick = async () => { const r = await ask('למה נדחה?', { ok: 'דחייה' }); if (r == null) return;
@@ -36,7 +36,7 @@ export async function newExpense(projectId, done, back) {
   let cat = 'fuel', file = null;
   const [{ data: projects }, { data: vehicles }] = await Promise.all([sb.rpc('reportable_projects'), sb.from('equipment').select('id,name').eq('kind', 'vehicle')]);
   sheet(`<h3>הוצאה חדשה</h3>
-    <label class="btn ghost block" style="position:relative">${icon('plus', 18)} <span id="rcn">צילום קבלה</span><input type="file" accept="image/*" capture="environment" id="rc" style="position:absolute;inset:0;opacity:0"></label>
+    <label class="btn ghost block">${icon('photo', 18)} <span id="rcn">צילום קבלה</span><input type="file" accept="image/*" capture="environment" id="rc" hidden></label>
     <div class="chips">${Object.entries(CATS).map(([k, t]) => `<button class="chip" data-c="${k}" aria-pressed="${k === cat}">${t}</button>`).join('')}</div>
     <div class="row"><label class="field grow">סכום (₪)<input type="number" inputmode="decimal" step="0.01" id="xa"></label><label class="field grow">תאריך<input type="date" id="xd" value="${isoDay()}"></label></div>
     <label class="field">ספק / מקום<input type="text" id="xv" placeholder="למשל: פז, חניון עזריאלי"></label>
@@ -47,7 +47,7 @@ export async function newExpense(projectId, done, back) {
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="xgo">שליחה</button></div>`, (s, close) => {
     const sync = () => { $('#fuel', s).hidden = cat !== 'fuel'; const v = $('#veh', s); if (v) v.hidden = cat !== 'fuel'; };
     $$('[data-c]', s).forEach(b => b.onclick = () => { cat = b.dataset.c; $$('[data-c]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); sync(); }); sync();
-    $('#rc', s).onchange = e => { file = e.target.files[0]; $('#rcn', s).textContent = file ? 'הקבלה צולמה ✓' : 'צילום קבלה'; };
+    $('#rc', s).onchange = e => { file = e.target.files[0]; $('#rcn', s).textContent = file ? 'הקבלה צולמה' : 'צילום קבלה'; };
     $('#xgo', s).onclick = async () => {
       const amount = +$('#xa', s).value; if (!(amount > 0)) return toast('חסר סכום');
       if (!file && !(await (await import('../lib/core.js')).confirmBox('בלי קבלה?', { body: 'בלי צילום קבלה ההוצאה עלולה לא להיות מוכרת.', ok: 'לשלוח בכל זאת' }))) return;

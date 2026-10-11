@@ -13,14 +13,14 @@ const hm = iso => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', m
 const day = iso => new Date(iso).toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric' });
 
 export async function renderActivity(el, who = '') {
-  if (state.profile.role !== 'admin') { el.innerHTML = '<div class="empty">למנהל המערכת בלבד.</div>'; return; }
-  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1>פעילות</h1></header><div class="skel tall"></div>`;
+  if (state.profile.role !== 'admin') { el.innerHTML = '<div class="empty-line">למנהל המערכת בלבד</div>'; return; }
+  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">פעילות</h1></header><div class="skel tall"></div>`;
   const since = new Date(Date.now() - 2 * 864e5).toISOString();
   const [{ data: S, error }, { data: ev }, { data: au }] = await Promise.all([
     sb.rpc('activity_stats', { days: 14 }),
     sb.from('app_events').select('user_id,at,kind,route,device').gte('at', since).order('at', { ascending: false }).limit(300),
     sb.from('audit_log').select('user_id,at,tbl,action').gte('at', since).order('at', { ascending: false }).limit(200)]);
-  if (error) { el.innerHTML = `<div class="empty">${esc(error.message)}</div>`; return; }
+  if (error) { el.innerHTML = `<div class="empty-line">${esc(error.message)}</div>`; return; }
   const U = S.users || [], N = new Map(U.map(u => [u.id, u.name])), now = Date.now();
   const on = u => u.seen && now - new Date(u.seen) < 2.5 * 6e4, today = u => u.seen && new Date(u.seen).toDateString() === new Date().toDateString();
   const latestVer = U.map(u => u.ver).filter(Boolean).sort((a, b) => parseInt(b.slice(1)) - parseInt(a.slice(1)))[0];
@@ -45,12 +45,12 @@ export async function renderActivity(el, who = '') {
       <div class="kpis"><div class="kpi"><b>${U.filter(on).length}</b><span>מחוברים עכשיו</span></div><div class="kpi"><b>${U.filter(today).length}</b><span>היו היום</span></div><div class="kpi"><b>${tdy.views}</b><span>מסכים היום</span></div></div>
       <section class="stack"><div class="sh-row"><h3 class="sh">הצוות</h3><span class="small muted">14 ימים אחרונים</span></div><div class="list">${U.map(urow).join('')}</div></section>
       <section class="stack"><h3 class="sh">${who ? `מה ${esc((N.get(who) || '').split(' ')[0])} עשה` : 'מה קורה עכשיו'}${who ? ' · <a href="#/activity" class="small">כולם</a>' : ''}</h3>
-        <div class="list feed">${rows.slice(0, 60).map(x => `<div class="lrow fr ${x.k}"><span class="fh">${hm(x.at)}</span><span class="grow">${who ? '' : `<b>${esc((N.get(x.u) || '').split(' ')[0])}</b> `}${x.t}${x.n > 1 ? ` <span class="pill">×${x.n}</span>` : ''}${new Date(x.at).toDateString() !== new Date().toDateString() ? ` <small class="muted">${day(x.at)}</small>` : ''}</span></div>`).join('') || '<div class="small muted" style="padding:12px">אין פעילות ביומיים האחרונים</div>'}</div></section>
+        <div class="list feed">${rows.slice(0, 60).map(x => `<div class="lrow fr ${x.k}"><span class="fh">${hm(x.at)}</span><span class="grow">${who ? '' : `<b>${esc((N.get(x.u) || '').split(' ')[0])}</b> `}${x.t}${x.n > 1 ? ` <span class="pill">×${x.n}</span>` : ''}${new Date(x.at).toDateString() !== new Date().toDateString() ? ` <small class="muted">${day(x.at)}</small>` : ''}</span></div>`).join('') || '<div class="empty-line">אין פעילות ביומיים האחרונים</div>'}</div></section>
       <section class="stack"><h3 class="sh">משתמשים פעילים ביום</h3>
-        <div class="dbars">${D.map(d => `<div class="db"><span class="n">${d.users}</span><i style="height:${Math.round(d.users / max * 100)}%"></i><small>${new Date(d.d + 'T12:00').getDate()}.${new Date(d.d + 'T12:00').getMonth() + 1}</small></div>`).join('') || '<div class="small muted">הנתונים מתחילים להיאסף מהיום</div>'}</div></section>
+        <div class="dbars">${D.map(d => `<div class="db"><span class="n">${d.users}</span><i style="height:${Math.round(d.users / max * 100)}%"></i><small>${new Date(d.d + 'T12:00').getDate()}.${new Date(d.d + 'T12:00').getMonth() + 1}</small></div>`).join('') || '<div class="empty-line">אין נתונים</div>'}</div></section>
       <div class="grid2">
-        <section class="stack"><h3 class="sh">מסכים נפוצים</h3><div class="list">${(S.routes || []).map(r => `<div class="lrow"><span class="grow">${esc(rname(r.r))}</span><b>${r.n}</b></div>`).join('') || '<div class="small muted" style="padding:12px">—</div>'}</div></section>
-        <section class="stack"><h3 class="sh">פעולות</h3><div class="list">${Object.entries(S.actions || {}).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<div class="lrow"><span class="grow">${esc(TBL[t] || t)}</span><b>${n}</b></div>`).join('') || '<div class="small muted" style="padding:12px">—</div>'}</div></section>
+        <section class="stack"><h3 class="sh">מסכים נפוצים</h3><div class="list">${(S.routes || []).map(r => `<div class="lrow"><span class="grow">${esc(rname(r.r))}</span><b>${r.n}</b></div>`).join('') || '<div class="empty-line">אין</div>'}</div></section>
+        <section class="stack"><h3 class="sh">פעולות</h3><div class="list">${Object.entries(S.actions || {}).sort((a, b) => b[1] - a[1]).map(([t, n]) => `<div class="lrow"><span class="grow">${esc(TBL[t] || t)}</span><b>${n}</b></div>`).join('') || '<div class="empty-line">אין</div>'}</div></section>
       </div>
     </div>`;
   $$('[data-u]', el).forEach(b => b.onclick = () => { location.hash = who === b.dataset.u ? '#/activity' : `#/activity/${b.dataset.u}`; });

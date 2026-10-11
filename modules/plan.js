@@ -31,7 +31,7 @@ export async function renderPlan(el, pid, print = false) {
     sb.from('tasks').select('id,title,day_no,method,instructions,risk,building_id,work_day_id,status').eq('project_id', pid).neq('phase', 'מעקב').neq('status', 'dropped').order('day_no').order('seq'),
     sb.from('work_days').select('id,day,status,report_time,kind').eq('project_id', pid).neq('kind', 'report').order('day'),
     sb.from('plan_days').select('*').eq('project_id', pid).order('day_no')]);
-  if (!p) { el.innerHTML = '<div class="empty">הפרויקט לא נמצא.</div>'; return; }
+  if (!p) { el.innerHTML = '<div class="empty-line">הפרויקט לא נמצא</div>'; return; }
   const P = await pool(p);
   const R = new Map((rows || []).map(r => [r.day_no, r]));
   const nums = [...new Set([...(tasks || []).map(t => t.day_no).filter(Boolean), ...R.keys()])].sort((a, b) => a - b);
@@ -44,7 +44,7 @@ export async function renderPlan(el, pid, print = false) {
   const U = await urlsFor([...new Set(nums.flatMap(photosOf))]);
   const s = p.sites;
   const notes = [...new Set((tasks || []).map(t => t.instructions).filter(Boolean))], risks = [...new Set((tasks || []).map(t => t.risk).filter(Boolean))];
-  const brief = notes.length || risks.length ? `<section class="pbrief"><b>דגשים מהאפיון</b>${notes.map(x => `<div>${esc(x).replace(/\n/g, '<br>')}</div>`).join('')}${risks.map(x => `<div class="warn">⚠ ${esc(x)}</div>`).join('')}</section>` : '';
+  const brief = notes.length || risks.length ? `<section class="pbrief"><b>דגשים מהאפיון</b>${notes.map(x => `<div>${esc(x).replace(/\n/g, '<br>')}</div>`).join('')}${risks.map(x => `<div class="warn">${icon('alert', 14)} ${esc(x)}</div>`).join('')}</section>` : '';
 
   const dayCard = n => {
     const ts = (tasks || []).filter(t => t.day_no === n), wd = dateOf(n), body = R.get(n)?.body ?? draft(ts), ph = photosOf(n);
@@ -53,7 +53,7 @@ export async function renderPlan(el, pid, print = false) {
         ${M && !print ? `<button class="chip sm" data-pick="${n}">${icon('photo', 16)} תמונות</button>` : ''}</div>
       ${M && !print ? `<textarea class="pbody" data-body="${n}" rows="${Math.max(3, body.split('\n').length + 1)}" placeholder="מה עושים ביום הזה">${esc(body)}</textarea>`
         : `<div class="ptext">${esc(body).replace(/\n/g, '<br>') || '<span class="muted">—</span>'}</div>`}
-      ${ph.length ? `<div class="pphotos">${ph.map(r => U[r] ? `<img src="${esc(U[r])}" alt="" data-z>` : '').join('')}</div>` : M && !print ? `<button class="pempty" data-pick="${n}">${icon('photo', 22)}<span>שיבוץ תמונות מהאפיון ומהשטח</span></button>` : ''}
+      ${ph.length ? `<div class="pphotos">${ph.map(r => U[r] ? `<img src="${esc(U[r])}" alt="" data-z>` : '').join('')}</div>` : M && !print ? `<button class="pempty" data-pick="${n}">${icon('photo', 22)}<span>שיבוץ תמונות</span></button>` : ''}
     </section>`;
   };
   const head = `<div class="plhead"><div class="grow"><small class="eyebrow">תכנית עבודה</small><h1>${esc(p.name)}</h1>
@@ -61,10 +61,10 @@ export async function renderPlan(el, pid, print = false) {
     ${s?.contact_name || s?.contact_phone ? `<div class="small muted">איש קשר באתר: ${esc(s.contact_name || '')}${s.contact_phone ? ` · <a href="tel:${esc(s.contact_phone)}">${esc(s.contact_phone)}</a>` : ''}</div>` : ''}`;
 
   el.innerHTML = `<header class="phead"><a class="back" href="#/p/${pid}/t" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">תכנית עבודה</h1>
-      ${nums.length ? `<a class="chip" href="#/plan/${pid}/print">PDF</a>` : ''}</header>
+      ${nums.length ? `<a class="hbtn" href="#/plan/${pid}/print" aria-label="PDF">${icon('file', 20)}</a>` : ''}</header>
     <div class="stack lg plan">${head}
-      ${brief}${nums.length ? nums.map(dayCard).join('') : `<div class="empty">עוד אין תכנית.${M ? '' : ''}</div>`}
-      ${M ? `<div class="row-btns">${p.site_id ? `<button class="btn ghost" id="pgen">${nums.length ? 'בנייה מחדש מהאפיון' : 'בנייה מהאפיון'}</button>` : ''}<button class="btn ghost" id="padd">+ יום</button></div>` : ''}
+      ${brief}${nums.length ? nums.map(dayCard).join('') : '<div class="empty-line">אין תכנית עדיין</div>'}
+      ${M ? `<div class="row-btns">${p.site_id ? `<button class="btn ghost" id="pgen">${nums.length ? 'בנייה מחדש מהאפיון' : 'בנייה מהאפיון'}</button>` : ''}<button class="btn ghost" id="padd">${icon('plus', 18)} יום</button></div>` : ''}
     </div>`;
   if (print) return printView(el, p, nums, dayCard, brief);
 
@@ -91,7 +91,7 @@ export async function renderPlan(el, pid, print = false) {
     const sel = new Set(photosOf(n)), PU = await urlsFor(P.map(x => x.ref));
     const groups = [['מהאפיון', P.filter(x => ['facade', 'site', 'obstacle'].includes(x.kind))], ['מדוחות קודמים', P.filter(x => x.kind === 'report')], ['מהשטח', P.filter(x => ['before', 'after', 'general'].includes(x.kind))]].filter(g => g[1].length);
     sheet(`<h3>תמונות ליום ${n}</h3>
-      ${groups.map(([t, xs]) => `<div class="small muted">${t} · ${xs.length}</div><div class="pick">${xs.map(x => PU[x.ref] ? `<button type="button" class="pk" data-r="${esc(x.ref)}" aria-pressed="${sel.has(x.ref)}"><img src="${esc(PU[x.ref])}" alt="" loading="lazy"></button>` : '').join('')}</div>`).join('') || '<div class="small muted">אין עדיין תמונות בפרויקט.</div>'}
+      ${groups.map(([t, xs]) => `<div class="small muted">${t} · ${xs.length}</div><div class="pick">${xs.map(x => PU[x.ref] ? `<button type="button" class="pk" data-r="${esc(x.ref)}" aria-pressed="${sel.has(x.ref)}"><img src="${esc(PU[x.ref])}" alt="" loading="lazy"></button>` : '').join('')}</div>`).join('') || '<div class="empty-line">אין תמונות בפרויקט</div>'}
       <label class="btn ghost block">${icon('photo', 18)} צילום / העלאה<input type="file" accept="image/*" multiple id="pup" hidden></label>
       <button class="btn primary block" id="pok">שמירה</button>`, (sh, close) => {
       $$('[data-r]', sh).forEach(b => b.onclick = () => { const r = b.dataset.r; sel.has(r) ? sel.delete(r) : sel.add(r); b.setAttribute('aria-pressed', sel.has(r)); });
@@ -139,7 +139,7 @@ export async function planForDay(box, day) {
   if (!r || (!r.body && !(r.photos || []).length)) return;
   const U = await urlsFor(r.photos || []);
   box.innerHTML = `<section class="stack"><div class="sh-row"><h3 class="sh">תכנית היום</h3><a class="more" href="#/plan/${day.project_id}">כל התכנית</a></div>
-    <div class="card stack" style="gap:10px">${r.body ? `<div class="ptext">${esc(r.body).replace(/\n/g, '<br>')}</div>` : ''}
+    <div class="card stack">${r.body ? `<div class="ptext">${esc(r.body).replace(/\n/g, '<br>')}</div>` : ''}
     ${(r.photos || []).length ? `<div class="pphotos">${r.photos.map(x => U[x] ? `<img src="${esc(U[x])}" alt="" data-z>` : '').join('')}</div>` : ''}</div></section>`;
   $$('[data-z]', box).forEach(i => i.onclick = () => zoom(i.src, ''));
 }

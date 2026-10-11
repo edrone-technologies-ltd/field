@@ -9,7 +9,7 @@ function list(items, { mgr, u, redraw }) {
   return `<div class="list onb">${items.map(x => {
     const act = x.done ? '' : mgr ? (x.key === 'equipment' ? `<button class="chip" data-mark="equipment">סימון נמסר</button>` : x.key === 'personal' ? `<a class="chip" href="#/staff/${u}/info">להשלמה</a>` : ['id', 'form101', 'contract', 'drive', 'height'].includes(x.key) ? `<a class="chip" href="#/staff/${u}/docs">העלאה</a>` : '')
       : GO[x.key] === 'push' ? `<button class="chip" data-push>הפעלה</button>` : GO[x.key] === 'office' || x.who === 'office' ? '<span class="small muted">להעביר למשרד</span>' : GO[x.key] ? `<a class="chip" href="${GO[x.key]}">למעבר</a>` : '';
-    return `<div class="lrow"><span class="tick ${x.done ? 'on' : ''}">${x.done ? '✓' : ''}</span><span class="grow"><b>${esc(x.title)}</b>${x.missing?.length ? `<small>חסר: ${esc(x.missing.join(' · '))}</small>` : ''}${x.key === 'consent' && !x.done && !mgr ? '<small>מאשרים בכניסה הראשונה למשמרת</small>' : ''}</span>${act}</div>`;
+    return `<div class="lrow"><span class="tick ${x.done ? 'on' : ''}">${x.done ? icon('check', 16) : ''}</span><span class="grow"><b>${esc(x.title)}</b>${x.missing?.length ? `<small>חסר: ${esc(x.missing.join(' · '))}</small>` : ''}</span>${act}</div>`;
   }).join('')}</div>`;
 }
 function bind(box, u, redraw) {
@@ -31,13 +31,13 @@ const STEP = {
 };
 const short = t => t.replace(/ \(.*\)/, '');
 export async function renderOnboarding(el) {
-  el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>לפני שמתחילים</h1></header><div class="skel"></div>`;
+  el.innerHTML = `<header class="phead">${backBtn('#/')}<h1 class="grow">לפני שמתחילים</h1></header><div class="skel"></div>`;
   const items = await status(state.user.id);
   const mine = items.filter(x => ['training', 'sign', 'push'].includes(x.key) && !x.done);
-  el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>לפני שמתחילים</h1></header>
+  el.innerHTML = `<header class="phead">${backBtn('#/')}<h1 class="grow">לפני שמתחילים</h1></header>
     <div class="stack onbpage">${mine.length ? mine.map(x => { const t = STEP[x.key] || { ic: 'clipboard', help: () => '', btn: '' };
       return `<div class="step"><span class="sic">${icon(t.ic, 20)}</span><span class="grow"><b>${esc(x.title)}</b>${x.missing?.length ? `<small>${esc(x.missing.join(' · '))}</small>` : ''}</span>${t.push ? `<button class="btn primary sm" data-push>${t.btn}</button>` : t.href ? `<a class="btn primary sm" href="${t.href}">${t.btn}</a>` : ''}</div>`; }).join('')
-      : '<div class="donenote">✓ הכל מוכן</div>'}</div>`;
+      : `<div class="donenote">${icon('check', 18)} הכל מוכן</div>`}</div>`;
   bind(el, state.user.id, () => renderOnboarding(el));
 }
 
@@ -50,13 +50,13 @@ export async function onboardingHome(box) {
   if (!mine.length) { box.innerHTML = ''; document.body.classList.remove('onb-active'); return; }
   document.body.classList.add('onb-active');   // הכרטיס הזה מכסה גם התראות והדרכות — לא מציגים שלושה כרטיסים דומים
   const d = items.filter(x => x.done).length;
-  box.innerHTML = `<a class="promo" href="#/onboarding"><span class="mic">${icon('clipboard', 20)}</span><span class="grow"><b>השלמת קליטה · ${d}/${items.length}</b><small>הבא: ${esc(mine[0].title)}</small></span><button class="x" aria-label="אחר כך">×</button></a>`;
+  box.innerHTML = `<a class="promo" href="#/onboarding"><span class="mic">${icon('clipboard', 20)}</span><span class="grow"><b>השלמת קליטה · ${d}/${items.length}</b><small>הבא: ${esc(mine[0].title)}</small></span><button class="x" aria-label="אחר כך">${icon('x', 18)}</button></a>`;
   $('.x', box).onclick = e => { e.preventDefault(); try { localStorage.setItem('onb-hide', Date.now() + 7 * 864e5); } catch { /* */ } box.innerHTML = ''; document.body.classList.remove('onb-active'); };
 }
 
 // לשונית בכרטיס העובד (מנהלים)
 export async function onboardingTab(box, u) {
   const items = await status(u), d = items.filter(x => x.done).length;
-  box.innerHTML = `<div class="card row">${ring(d, items.length)}<div class="grow"><b>${d === items.length ? 'הקליטה הושלמה' : `חסרים ${items.length - d} סעיפים`}</b><div class="small muted">מתעדכן לבד מהמסמכים, ההדרכות והצוותים</div></div></div>${list(items, { mgr: isManager(), u })}`;
+  box.innerHTML = `<div class="card row">${ring(d, items.length)}<div class="grow"><b>${d === items.length ? 'הקליטה הושלמה' : `חסרים ${items.length - d} סעיפים`}</b></div></div>${list(items, { mgr: isManager(), u })}`;
   bind(box, u, () => onboardingTab(box, u));
 }

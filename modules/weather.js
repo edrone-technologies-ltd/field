@@ -24,11 +24,12 @@ async function L() {
 }
 
 export async function renderWeather(el, siteId = '') {
-  const head = `<header class="phead">${backBtn('#/')}<h1 class="grow">מזג אוויר וטיסה</h1></header>`;
+  const head = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">מזג אוויר וטיסה</h1></header>`;
   el.innerHTML = head + '<div class="skel tall"></div>';
   const S = await sitesList().catch(() => []);
   let FF = [], K = [];
   try { [FF, K] = await Promise.all([S.length ? forecast(S) : [], kpSeries()]); } catch { FF = []; }
+  if (!/^#\/weather/.test(location.hash) || !el.isConnected) return;   // המשתמש כבר עבר מסך — לא מציירים עליו
   // מיקום חופשי (כללי, לא קשור לאתר): המיקום שלי / חיפוש / לחיצה במפה. ברירת מחדל כשאין אתרים — המשרד בב"ש
   let A = null, FA = null;
   let sel = S.length && FF.length ? Math.max(0, S.findIndex(s => s.id === siteId)) : -1;   // -1 = המיקום החופשי
@@ -47,7 +48,7 @@ export async function renderWeather(el, siteId = '') {
   let map, Lf, marks = [], am = null;
   const COL = ['#3DB24B', '#E3A23B', '#D64532'];
   try {
-    Lf = await L(); map = Lf.map($('#wxmap', el), { zoomControl: false, attributionControl: false });
+    Lf = await L(); if (!$('#wxmap', el)) return; map = Lf.map($('#wxmap', el), { zoomControl: false, attributionControl: false });
     Lf.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
     marks = S.map((s, i) => Lf.circleMarker([s.lat, s.lng], { radius: 9, weight: 3, color: '#fff', fillOpacity: 1 }).addTo(map).on('click', e => { Lf.DomEvent.stop(e); pick(i); }));
     if (S.length) map.fitBounds(S.map(s => [s.lat, s.lng]), { padding: [26, 26], maxZoom: 11 }); else map.setView([31.5, 34.9], 7);
@@ -63,7 +64,7 @@ export async function renderWeather(el, siteId = '') {
     sel = -1; if (map) { if (am) am.setLatLng([la, ln]); else am = Lf.circleMarker([la, ln], { radius: 10, weight: 3, color: '#fff', fillColor: '#2F6FEB', fillOpacity: 1 }).addTo(map); map.panTo([la, ln]); }
     draw();
   }
-  const toastMsg = m => { $('#wxbody', el).innerHTML = `<div class="empty">${m}</div>`; };
+  const toastMsg = m => { $('#wxbody', el).innerHTML = `<div class="empty-line">${m}</div>`; };
   function pick(i) { sel = i; replaceHash('#/weather/' + S[i].id); if (map) map.panTo([S[i].lat, S[i].lng]); draw(); }
 
   function draw() {
@@ -78,7 +79,7 @@ export async function renderWeather(el, siteId = '') {
     if (am) am.setStyle({ radius: sel < 0 ? 12 : 8 });
     const tile = (k, label, val, unit) => `<div class="wxt l${d.lv[k]}"><small>${label}</small><b>${val == null ? '—' : val}</b><small>${unit}</small></div>`;
     $('#wxbody', el).innerHTML = `
-      <div class="wxv l${d.L}"><b>${VERDICT[d.L]}</b><small>${esc(s.name)} · ${HE_D1[new Date(day + 'T12:00').getDay()]} ${dm(day)} · ${d.t.slice(11, 16)}</small></div>
+      <div class="wxv l${d.L}"><b>${VERDICT[d.L]}</b><small>${sel < 0 ? esc(s.name) + ' · ' : ''}${HE_D1[new Date(day + 'T12:00').getDay()]} ${dm(day)} · ${d.t.slice(11, 16)}</small></div>
       ${(s.projects || []).length ? `<div class="wxproj">${s.projects.map(p => `<a class="chip sm" href="#/p/${p.id}">${esc(p.name.replace(/^[^—]*—\s*/, '').slice(0, 34) || p.name)}${p.from ? ' · ' + dm(p.from) : ''}</a>`).join('')}</div>` : ''}
       ${airBtn()}
       <div class="wxtiles">${tile('w', 'רוח', Math.round(d.w), 'קמ״ש')}${tile('g', 'משבים', Math.round(d.g), 'קמ״ש')}${tile('r', 'גשם', d.r == null ? null : d.r.toFixed(1), 'מ״מ')}${tile('p', 'סבירות לגשם', d.p, '%')}${tile('kp', 'Kp', d.kp, d.kp >= 5 ? 'סערה' : d.kp >= 4 ? 'מוגבר' : 'שקט')}</div>
@@ -94,9 +95,9 @@ export async function renderWeather(el, siteId = '') {
     const q = $('#wq', el).value.trim(); if (!q) return;
     try {
       const r = (await (await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=il&accept-language=he&q=${encodeURIComponent(q)}`)).json()).filter((x, i, A) => A.findIndex(y => y.display_name === x.display_name) === i);
-      $('#wres', el).innerHTML = r.length ? r.map((x, i) => `<button class="lrow" data-r="${i}"><span class="grow small">${esc(x.display_name)}</span></button>`).join('') : '<div class="small muted">לא נמצא — אפשר ללחוץ על המפה</div>';
+      $('#wres', el).innerHTML = r.length ? r.map((x, i) => `<button class="lrow" data-r="${i}"><span class="grow small">${esc(x.display_name)}</span></button>`).join('') : '<div class="empty-line">לא נמצא</div>';
       $$('[data-r]', el).forEach(b => b.onclick = () => { const x = r[+b.dataset.r]; $('#wres', el).innerHTML = ''; map?.setView([+x.lat, +x.lon], 11); setPoint(+x.lat, +x.lon, x.display_name.split(',')[0]); });
-    } catch { $('#wres', el).innerHTML = '<div class="small muted">החיפוש לא זמין כרגע</div>'; }
+    } catch { $('#wres', el).innerHTML = '<div class="empty-line">החיפוש לא זמין כרגע</div>'; }
   };
   $('#wqs', el).onclick = find; $('#wq', el).onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); find(); } };
   $('#wme', el).onclick = () => navigator.geolocation?.getCurrentPosition(p => { map?.setView([p.coords.latitude, p.coords.longitude], 11); setPoint(p.coords.latitude, p.coords.longitude, 'המיקום שלי'); }, () => {}, { enableHighAccuracy: false, timeout: 10000 });

@@ -993,3 +993,111 @@ a.lrow:has(.chev)::after{display:none}
 /* איש קשר: כרטיס רגיל, הפעולות כשבבים */
 .contact{background:var(--card);border:1px solid var(--line);box-shadow:var(--shadow);padding:12px 14px}
 .contact a,.contact button{border-color:var(--line);background:var(--card2)}
+/* חלונית תחתונה: ידית, החלקה רכה, רקע מעומעם בהדרגה */
+#sheet .modal{background:rgba(10,14,12,.42);animation:fadeIn .18s ease-out}
+.modal-in{position:relative;padding-top:26px;gap:14px;border-radius:22px 22px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.14);animation:sheetUp .26s cubic-bezier(.2,.9,.25,1)}
+.modal-in::before{content:"";position:absolute;top:9px;left:50%;width:38px;height:5px;margin-left:-19px;border-radius:99px;background:var(--line)}
+@keyframes sheetUp{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+/* מספרים ברוחב קבוע — לא "קופצים" */
+.kpi b,.count,.datebox b,.wd b,.wxn b,.wxt b,.opc small,.lrow small,.arow small{font-variant-numeric:tabular-nums}
+.kpi:active,.lrow:active,.arow:active,.qa:active,.mtile:active{transform:scale(.985);transition:transform .08s}
+
+/* ===== רכיבי בסיס v6 (חוזה אחיד לכל המסכים) ===== */
+/* פעולת כותרת: עיגול 40 אחד בלבד בכותרת המסך */
+.hbtn{flex:none;width:40px;height:40px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;text-decoration:none;box-shadow:var(--shadow)}
+.hbtn.primary{background:var(--lime);border-color:transparent;color:var(--lime-ink)}
+/* מצב ריק: שורה שקטה אחת, בלי מסגרת */
+.empty-line{text-align:center;color:var(--muted);font-size:.95rem;padding:22px 8px}
+/* קישור טקסט (גם כ-button) — סגנון אחד */
+button.more,a.more{border:0;background:none;padding:10px 4px;margin:-10px -4px;font:inherit;font-size:var(--t-meta);font-weight:700;color:var(--lime);cursor:pointer;text-decoration:none;min-height:40px;display:inline-flex;align-items:center}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .more{color:#4d7a00}}
+:root[data-theme="light"] .more{color:#4d7a00}
+/* שורת הוספה בסוף רשימה */
+.addrow{display:flex;align-items:center;gap:10px;min-height:52px;padding:0 14px;border:0;border-top:1px solid var(--line);background:transparent;width:100%;font:inherit;font-weight:600;color:var(--ink);cursor:pointer;text-align:right}
+.addrow svg{color:var(--lime)}
+.leadmark{display:inline-grid;place-items:center;color:var(--warn);vertical-align:-1px;margin-inline-start:3px}
+.leadmark svg{fill:currentColor}
+/* "+": רשת פעולות 3 עמודות */
+.cgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.ctile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:92px;padding:12px 6px;border-radius:var(--r);border:1px solid var(--line);background:var(--card);color:var(--ink);font:inherit;text-decoration:none;cursor:pointer;box-shadow:var(--shadow)}
+.ctile svg{color:var(--lime)} .ctile b{font-size:.88rem;font-weight:700;text-align:center;line-height:1.2}
+.ctile:active{transform:scale(.97)}
+/* "עוד": שורה אחת לכל פריט */
+.mtile{min-height:56px;grid-template-rows:auto} .mtile b{grid-row:1;align-self:center}
+.lrow.danger,.lrow.danger b{color:var(--bad)} .lrow.danger .mic{background:color-mix(in srgb,var(--bad) 10%,var(--card));color:var(--bad)}
+/* ניווט תחתון: בלי "חריץ" — אייקון ותווית בצבע הפעולה */
+.tabbar a.on::before{display:none}
+.tabbar a.on{color:var(--ink);font-weight:800} .tabbar a.on svg{color:var(--lime);stroke-width:2.3}
+.avatar{background:var(--card2);color:var(--ink);border:1px solid var(--line)}
+/* מדדים: תווית בשורה אחת, 0 = שקט */
+.kpi span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kpi.zero{box-shadow:none;background:transparent;cursor:default} .kpi.zero b,.kpi.zero span{color:var(--faint)}
+.kpi.bad b{color:var(--bad)} .kpi.warn b{color:var(--warn)}
+/* שעת יציאה כאריח בראש השורה */
+.timebox{flex:none;min-width:52px;height:40px;padding:0 6px;border-radius:var(--r-sm);background:var(--card2);display:grid;place-items:center}
+.timebox b{font-size:.92rem;font-variant-numeric:tabular-nums;direction:ltr}
+.lrow.slim{min-height:52px;padding:8px 12px}
+.lrow .pill{flex:none}
+/* שורת תיקייה (פרויקט/אתר/דוחות): תמונה ממוזערת, שם בשתי שורות לכל היותר, מצב בקצה */
+.frow{min-height:76px}
+.frow .thumb{flex:none;width:56px;height:56px;border-radius:var(--r-sm);background:var(--card2) center/cover no-repeat}
+.frow b{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.frow small{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* צבעים קשיחים שנשברו במצב כהה → משתני מצב */
+.dline.need{background:color-mix(in srgb,var(--warn) 10%,var(--card))}
+.wxrow.bad{background:color-mix(in srgb,var(--bad) 8%,var(--card));border-color:color-mix(in srgb,var(--bad) 30%,var(--line))}
+.fpill.warn{background:var(--warnbg);color:var(--warn)} .fpill.bad{background:var(--badbg);color:var(--bad)}
+.arow.gold .aic{background:var(--warnbg);color:var(--warn)}
+.pbrief{background:var(--card2);border-color:var(--line)} .pbrief .warn{color:var(--warn)} .plhead .eyebrow{color:var(--lime)!important}
+.opc.on i{background:var(--ok)} .opc.done i{background:var(--blue)} .opc.off i{background:var(--bad)}
+#net.stuck{background:var(--bad)} .qstuck{color:var(--bad)}
+.plancard{background:var(--card);color:var(--ink);border:1px solid var(--line);box-shadow:var(--shadow)} .plancard small{color:var(--muted)} .plancard .mic{background:var(--limebg);color:var(--lime)} .plancard .chev{color:var(--faint)}
+.kbic.vid{background:var(--ink);color:var(--bg)}
+.msg .tag{color:var(--lime)} .siglink{color:var(--lime)}
+.wxair .mic{background:var(--card2);color:var(--muted)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px} .tags:empty{display:none}
+.mtile b{grid-row:1/3}
+/* מסוכן 1 (יום שטח) */
+.contact a,.contact button{min-height:44px;display:inline-flex;align-items:center}
+.hrs{width:96px;text-align:center}
+.card.center{text-align:center;align-items:center}
+a.chip{text-decoration:none}
+.lrow .issue{color:var(--warn)}
+.empty-card{border:0;background:transparent;box-shadow:none;justify-content:center;text-align:right;padding:18px 8px}
+.empty-card .ei{background:transparent;color:var(--faint)} .empty-card b{color:var(--muted);font-weight:600}
+/* מסוכן 2 (פרויקט/דוחות) */
+.stack.tight{gap:4px}
+.lrow b.url{font-size:.78rem;word-break:break-all}
+.sigimg{max-width:240px;width:100%;background:#fff;border-radius:var(--r-sm);margin-top:8px;display:block}
+.mic{overflow:hidden} .mic img{width:100%;height:100%;object-fit:cover;display:block}
+.mic.warnbg{background:var(--warnbg);color:var(--warn)} .mic.okbg{background:var(--okbg);color:var(--ok)}
+.rating{display:inline-flex;gap:1px;color:var(--warn);vertical-align:-2px} .rating svg{fill:currentColor}
+.clamp3{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.note.pre{white-space:pre-line}
+button.arow{width:100%;border:0;font:inherit;text-align:right;cursor:pointer;color:inherit}
+.pfoot{gap:12px;align-items:center} .pfoot .sigline{min-width:0}
+.vstar-off{color:#D5D8DD}
+.ckbox svg,.tick svg{width:16px;height:16px}
+.list:has(>.lrow):has(>.addrow):not(:has(>:not(.lrow,.addrow,[hidden]))){gap:0;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+.list:has(>.addrow)>.lrow{border:0;border-radius:0;box-shadow:none;background:transparent;border-bottom:1px solid var(--line)}
+.list:has(>.addrow)>.addrow{border-top:0}
+/* מסוכן 3 (אפיון/נוכחות/שיבוץ/ניהול) */
+.dday.free{padding:8px 14px;box-shadow:none;background:transparent;border-color:transparent;margin-bottom:2px}
+.dday.today{box-shadow:var(--shadow)}
+.ddh{cursor:pointer;min-height:40px} .ddh .hbtn{width:34px;height:34px;box-shadow:none}
+.dwarn{color:var(--warn);display:inline-grid;vertical-align:-2px}
+fieldset.fset{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:14px;min-width:0}
+.addb{margin-top:12px} .pmargin{margin-top:8px} .stepper .sval{min-width:3.5em;text-align:center}
+.item .progress{margin-top:7px}
+.phead .pill{flex:none}
+.consent{line-height:1.6} .consent p{margin:0 0 8px}
+.reqcard{gap:6px}
+small.fl{white-space:normal;color:var(--ink)}
+.nogeo{display:inline-grid;vertical-align:-2px;margin-inline-start:3px;color:var(--faint)}
+button.more svg{margin-inline-end:4px}
+.sel-auto{width:auto} div.lrow{cursor:default}
+.usage{gap:10px} .kbadv{gap:10px;margin-top:8px}
+.tick svg,.donenote svg,.acked svg{vertical-align:-3px} .promo .x svg{display:block}
+.list>.empty-line{background:var(--card);border:1px solid var(--line);border-radius:var(--r)}
+.lrow small.issue{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}

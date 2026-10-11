@@ -1,35 +1,36 @@
 // רכש ומלאי: חומרי ניקוי וביגוד/ציוד מגן בלבד. בקשה מהקטלוג → נשלחת ללוח הרכש לאישור; הסטטוס חוזר לכאן.
-import { sb, state, isManager, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, dm } from '../lib/core.js';
+import { sb, state, isManager, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, dm, backBtn, replaceHash } from '../lib/core.js';
 
 const ST = { draft: ['טיוטה', ''], submitted: ['ממתין לאישור', 'warn'], pending: ['ממתין לאישור', 'warn'], approved: ['אושר', 'lime'], sent: ['נשלח לספק', 'lime'], partial: ['התקבל חלקית', 'lime'], received: ['התקבל', 'ok'], rejected: ['נדחה', 'bad'], cancelled: ['בוטל', ''] };
 const nis = x => '₪' + Math.round(x || 0).toLocaleString('he-IL');
 const low = c => c.min_qty != null && c.stock != null && Number(c.stock) <= Number(c.min_qty);
 
 export async function renderPurchase(el) {
-  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">רכש ומלאי</h1></header>
-    <button class="btn primary block big" id="newreq">${icon('plus', 20)} בקשת רכש חדשה</button><div id="pb" class="stack lg"><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">רכש ומלאי</h1></header>
+    <div id="pb" class="stack lg"><div class="skel"></div></div>`;
   const [{ data: reqs }, { data: cat }] = await Promise.all([
     sb.from('purchase_requests').select('*, purchase_lines(name,qty,unit), profiles:requested_by(full_name), projects(name)').order('created_at', { ascending: false }).limit(40),
     sb.from('catalog_items').select('*').eq('in_app', true).order('is_material', { ascending: false }).order('name'),
   ]);
   const lows = (cat || []).filter(low);
   $('#pb').innerHTML = `
-    ${lows.length ? `<section><h3 class="sh">מתחת למינימום</h3><div class="alist">${lows.map(c => `<button class="arow warn" data-quick="${c.monday_item_id}" style="width:100%;border:0;font:inherit;text-align:right;cursor:pointer"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(c.name)}</b><small>במלאי ${c.stock} ${esc(c.unit || '')} · מינימום ${c.min_qty}</small></span><span class="pill warn">להזמין</span></button>`).join('')}</div></section>` : ''}
-    <section><h3 class="sh">הבקשות${isManager() ? '' : ' שלי'}</h3><div class="list">${(reqs || []).map(r => { const [t, c] = ST[r.status] || ['', ''];
+    ${lows.length ? `<section><h3 class="sh">מתחת למינימום</h3><div class="alist">${lows.map(c => `<button class="arow warn" type="button" data-quick="${c.monday_item_id}"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(c.name)}</b><small>במלאי ${c.stock} ${esc(c.unit || '')} · מינימום ${c.min_qty}</small></span><span class="pill warn">להזמין</span></button>`).join('')}</div></section>` : ''}
+    <section><h3 class="sh">הבקשות${isManager() ? '' : ' שלי'}</h3>${(reqs || []).length ? `<div class="list">${reqs.map(r => { const [t, c] = ST[r.status] || ['', ''];
       return `<div class="lrow"><span class="grow"><b>${esc(r.title)}</b><small>${dm(r.created_at.slice(0, 10))} · ${esc(r.profiles?.full_name || '')}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}</small>
-        <small>${esc((r.purchase_lines || []).map(l => `${l.name} ×${l.qty}`).join(' · '))}</small></span><span class="pill ${c}">${t}</span></div>`; }).join('') || '<div class="muted small">עוד אין בקשות</div>'}</div></section>
+        <small>${esc((r.purchase_lines || []).map(l => `${l.name} ×${l.qty}`).join(' · '))}</small></span><span class="pill ${c}">${t}</span></div>`; }).join('')}</div>` : '<div class="empty-line">אין בקשות</div>'}</section>
     <details class="fold"><summary><span class="sh">מצב מלאי</span><span class="count">${(cat || []).length}</span></summary><div class="list">${(cat || []).map(c => `<div class="lrow kv"><span class="grow"><b>${esc(c.name)}</b></span><span class="pill ${low(c) ? 'warn' : 'ok'}">${c.stock ?? '—'} ${esc(c.unit || '')}</span></div>`).join('')}</div></details>`;
-  $('#newreq').onclick = () => newRequest(cat || []);
+  if (/^#\/purchase\/new/.test(location.hash)) { replaceHash('#/purchase', false); newRequest(cat || []); }   // מה"+" — בלי כפתור במסך
   $$('[data-quick]').forEach(b => b.onclick = () => newRequest(cat || [], b.dataset.quick));
 }
 
-async function newRequest(cat, preselect) {
+export async function newRequest(cat, preselect) {
+  if (!cat) { const { data } = await sb.from('catalog_items').select('*').eq('in_app', true).order('is_material', { ascending: false }).order('name'); cat = data || []; }
   const { data: projects } = await sb.from('projects').select('id,name,status_label,monday_group').neq('monday_group', 'group_mm5052gw').order('name');
   const Q = {}; if (preselect) { const c = cat.find(x => x.monday_item_id === preselect); Q[preselect] = Math.max(1, Math.ceil(((c.min_qty || 0) * 2 - (c.stock || 0)) / (c.units_per_order || 1))); }
   const free = [];
   const total = () => cat.reduce((t, c) => t + (Q[c.monday_item_id] || 0) * Number(c.price_per_order || 0), 0) + free.reduce((t, f) => t + f.qty * (f.price || 0), 0);
-  sheet(`<h3>בקשת רכש</h3><div class="small muted">בוחרים כמה מכל פריט ושולחים.</div>
-    <div class="list" id="ci">${cat.map(c => `<div class="lrow"><span class="grow"><b>${esc(c.name)}</b><small>${[esc(c.order_unit || ''), `במלאי ${c.stock ?? '—'}`].filter(Boolean).join(' · ')}${low(c) ? ' · <span style="color:var(--warn)">נמוך</span>' : ''}</small></span>
+  sheet(`<h3>בקשת רכש</h3>
+    <div class="list" id="ci">${cat.map(c => `<div class="lrow"><span class="grow"><b>${esc(c.name)}</b><small>${[esc(c.order_unit || ''), `במלאי ${c.stock ?? '—'}`].filter(Boolean).join(' · ')}${low(c) ? ' · <span class="issue">נמוך</span>' : ''}</small></span>
       <span class="qty"><button type="button" data-m="${c.monday_item_id}">−</button><b id="q-${c.monday_item_id}">${Q[c.monday_item_id] || 0}</b><button type="button" data-p="${c.monday_item_id}">+</button></span></div>`).join('')}</div>
     <label class="field">לאיזה פרויקט (לא חובה)<select id="rp"><option value="">כללי / מלאי</option>${(projects || []).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></label>
     <label class="field">נדרש עד<input type="date" id="rd"></label>

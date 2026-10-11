@@ -1,5 +1,5 @@
 // יום שטח: בוקר ← העמסה ← באתר ← בעבודה ← סיום. השלב נגזר ממה שכבר נשמר, כל פעולה נכנסת לתור ונשלחת כשיש קליטה.
-import { coverArt, icon, navButtons, thumbUrls } from '../lib/core.js';
+import { coverArt, icon, leadMark, navButtons, thumbUrls } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
 import { sb, state, cache, enqueue, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox } from '../lib/core.js';
 
@@ -10,26 +10,6 @@ const NEXT = { todo: 'done', in_progress: 'done', done: 'todo', blocked: 'done',
 const hhmm = t => (t || '').slice(0, 5);
 const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,lat,lng,map_path)), work_day_crew(user_id,role,hours,clock_in,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
 
-// ---------- רשימת הימים שלי ----------
-export async function renderToday(el) {
-  el.innerHTML = `<div class="top"><button class="back" onclick="location.hash='#/'">→ בית</button></div>
-    <div><div class="eyebrow">יום שטח</div><h1>הימים שלי</h1></div><div id="tl" class="stack"><div class="skel"></div></div>`;
-  const t = isoDay(), until = isoDay(new Date(Date.now() + 10 * 864e5)), from = isoDay(new Date(Date.now() - 3 * 864e5));
-  let days;
-  try {
-    let q = sb.from('work_days').select('id,day,status,report_time,site_arrival,day_goal,is_last_day,project_id,crew_lead_id,projects(name,client_name),work_day_crew(user_id)').gte('day', from).lte('day', until).order('day').order('report_time');
-    const { data, error } = await q; if (error) throw error;
-    days = (data || []).filter(d => isManager() || d.crew_lead_id === state.user.id || d.work_day_crew.some(c => c.user_id === state.user.id));
-    await cache.set('mydays', days);
-  } catch { days = (await cache.get('mydays')) || []; }
-  const open = days.filter(d => d.day >= t || d.status !== 'done');
-  const box = $('#tl'); if (!box) return;
-  if (!open.length) { box.innerHTML = `<div class="empty">אין ימי שטח משובצים לך בימים הקרובים.<br>השיבוץ נעשה מתוך הפרויקט.</div>`; return; }
-  const by = {}; open.forEach(d => (by[d.day] ||= []).push(d));
-  box.innerHTML = Object.entries(by).map(([day, ds]) => `<div class="group-h">${dayLabel(day)}</div>${ds.map(d => `<a class="item" href="#/day/${d.id}">
-      <span class="t"><b>${esc(d.projects?.name || '')}</b><small>${d.report_time ? 'יציאה ' + hhmm(d.report_time) + ' · ' : ''}${d.site_arrival ? 'באתר ' + hhmm(d.site_arrival) + ' · ' : ''}${esc(d.day_goal || d.projects?.client_name || '')}</small></span>
-      ${statusPill(d)}</a>`).join('')}`).join('');
-}
 function statusPill(d) {
   const m = { planned: ['מתוכנן', ''], en_route: ['בדרך', 'warn'], on_site: ['באתר', 'lime'], working: ['בעבודה', 'lime'], issue: ['תקלה', 'bad'], done: ['נסגר', 'ok'] }[d.status] || ['', ''];
   return `<span class="pill ${m[1]}">${m[0]}${d.is_last_day && d.status !== 'done' ? ' · יום אחרון' : ''}</span>`;
@@ -65,7 +45,7 @@ export async function renderDay(el, id) {
     D = { clockH, specPh, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
     await cache.set(ck, D);
   } catch { D = await cache.get(ck); }
-  if (!D) { el.innerHTML = `<div class="empty">היום לא נמצא, או שאין קליטה ועוד לא נפתח בטלפון הזה.</div>`; return; }
+  if (!D) { el.innerHTML = `<div class="empty-line">היום לא נמצא או שאין קליטה</div>`; return; }
   // תמונות שעוד בתור (צולמו בלי קליטה) נספרות ומוצגות
   try { const pend = await pendingPhotos(m => m.work_day_id === id); D.photos = D.photos.filter(p => !p.url && !pend.some(x => x.photoId === p.id)).concat(pend.map(x => ({ id: x.photoId, kind: x.meta.kind, storage_path: x.path, url: URL.createObjectURL(x.blob) }))); } catch {}
   D.local = (await cache.get(ck + ':local')) || { stage: null, checks: {}, loaded: null };
@@ -100,21 +80,21 @@ export async function renderDay(el, id) {
     const s = stage();
     return `<div class="phero sm"><span class="img" style="background-image:url('${coverUrl || coverArt(P.name || '')}')"></span>
         <a class="back glass" href="#/" aria-label="חזרה">${icon('back', 20)}</a>
-        <span class="ph-bottom"><span class="row" style="gap:6px"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${dayLabel(D.day.day)}</span>${statusPill(D.day)}</span>
+        <span class="ph-bottom"><span class="row"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${dayLabel(D.day.day)}</span>${statusPill(D.day)}</span>
         <b>${esc(P.name || '')}</b>${D.day.day_goal ? `<small>${esc(D.day.day_goal)}</small>` : ''}</span></div>
-      ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? '✓' : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`}`;
+      ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? icon('check', 16) : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`}`;
   }
   function photoStrip(kind, label, min = 0) {
     const mine = D.photos.filter(p => p.kind === kind);
-    return `<div class="stack" style="gap:8px"><div class="row"><b class="grow">${label}</b>${min ? `<span class="pill ${mine.length >= min ? 'ok' : 'warn'}">${mine.length}/${min}+</span>` : ''}</div>
+    return `<div class="stack"><div class="row"><b class="grow">${label}</b>${min ? `<span class="pill ${mine.length >= min ? 'ok' : 'warn'}">${mine.length}/${min}+</span>` : ''}</div>
       <div class="photos">${mine.map(p => `<button class="ph" data-z="${esc(p.url || photoUrls[p.storage_path]?.f || '')}"><img src="${esc(p.url || photoUrls[p.storage_path]?.t || '')}" data-full="${esc(p.url || photoUrls[p.storage_path]?.f || '')}" alt="">${p.url ? '<span class="q">בתור</span>' : ''}</button>`).join('')}
         <label class="addph">צילום<input type="file" accept="image/*" capture="environment" multiple data-kind="${kind}"></label></div></div>`;
   }
   // תיעוד לפני / אחרי — אותו בלוק בכל מקום: שורת לפני, שורת אחרי, ורפרנס מהאפיון
   function baBlock({ after = true, need = 1 } = {}) {
     const ref = (D.specPh || []).map(p => photoUrls['spec:' + p.storage_path]).filter(Boolean);
-    return `<div class="sec ba2"><h3>תיעוד לפני / אחרי</h3><div class="small muted">מצלמים מאותה זווית — זו ההוכחה ללקוח לביצוע ולאיכות</div>
-      ${ref.length ? `<div class="stack" style="gap:6px"><b class="small">מהאפיון — הזוויות לצילום</b><div class="photos ref">${ref.map(u => `<button class="ph" data-z="${esc(u.f)}"><img src="${esc(u.t)}" data-full="${esc(u.f)}" alt=""></button>`).join('')}</div></div>` : ''}
+    return `<div class="sec ba2"><h3>תיעוד לפני / אחרי</h3>
+      ${ref.length ? `<div class="stack"><b class="small">מהאפיון</b><div class="photos ref">${ref.map(u => `<button class="ph" data-z="${esc(u.f)}"><img src="${esc(u.t)}" data-full="${esc(u.f)}" alt=""></button>`).join('')}</div></div>` : ''}
       ${photoStrip('before', 'לפני', need)}${after ? photoStrip('after', 'אחרי', need) : ''}</div>`;
   }
   function bindPhotos(root) {
@@ -127,22 +107,22 @@ export async function renderDay(el, id) {
 
   // ---------- שלבים ----------
   function sMorning() {
-    const crew = D.day.work_day_crew.map(c => (c.profiles?.full_name || '') + (c.role === 'lead' ? ' ★' : '')).filter(x => x.trim());
+    const crew = D.day.work_day_crew.map(c => ({ n: (c.profiles?.full_name || '').trim(), lead: c.role === 'lead' })).filter(x => x.n);
     const nTasks = D.tasks.filter(t => t.phase !== 'הכנה').length;
     // סדר המסך = סדר הבוקר: מתי ולאן → מה המשרד ביקש → מה לקחת → מה עושים היום → איך (שמש) → מי ואיפה (איש קשר, מפה)
-    return `<div class="card stack" style="gap:10px">
+    return `<div class="card stack">
         <div class="kpis"><div class="kpi"><b>${hhmm(D.day.report_time) || '—'}</b><span>יציאה מהמשרד</span></div>
           ${D.day.site_arrival ? `<div class="kpi"><b><bdi dir="ltr">${hhmm(D.day.site_arrival)}${D.day.site_end ? '–' + hhmm(D.day.site_end) : ''}</bdi></b><span>באתר</span></div>` : `<div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div>`}
           <div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלון ${esc(D.day.material_planned || '')}</span></div></div>
         ${countdown()}
-        ${D.day.gust_max != null && !P.site_id ? `<div class="wx ${D.day.weather_alerted ? 'bad' : ''}">${D.day.weather_alerted ? '⚠ ' : ''}תחזית לשעות העבודה: רוח עד ${D.day.wind_max} קמ"ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ"מ` : ''}</div>` : ''}
-        <div class="opcrew">${crew.map(n => `<span class="opc"><i></i>${esc(n)}</span>`).join('')}${D.day.drone ? `<span class="opc">${icon('drone', 14)} ${esc(D.day.drone.name)}</span>` : ''}</div>
+        ${D.day.gust_max != null && !P.site_id ? `<div class="alert ${D.day.weather_alerted ? 'bad' : ''}"><span class="dot ${D.day.weather_alerted ? '' : 'ok'}"></span><span class="grow"><b>רוח עד ${D.day.wind_max} קמ"ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ"מ` : ''}</b><small>תחזית לשעות העבודה</small></span></div>` : ''}
+        <div class="opcrew">${crew.map(c => `<span class="opc"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</span>`).join('')}${D.day.drone ? `<span class="opc">${icon('drone', 14)} ${esc(D.day.drone.name)}</span>` : ''}</div>
         ${navButtons(site.lat || P.lat, site.lng || P.lng, D.day.address || site.address || site.name || P.name)}
       </div>
       ${P.work_notes ? `<div class="note"><b>דגשים מהמשרד:</b> ${esc(P.work_notes)}</div>` : ''}
       ${site.access_notes ? `<div class="note">${esc(site.access_notes)}</div>` : ''}
-      ${D.day.logistics?.length ? `<div class="card stack" style="gap:6px"><b>לפני היציאה</b>${D.day.logistics.map(l => `<div class="small">• ${esc(l)}</div>`).join('')}</div>` : ''}
-      ${D.tasks.length ? `<div class="stack" style="gap:6px"><h3>בתכנית היום</h3>${D.tasks.map(t => `<div class="feed"><span class="pill">${esc(t.phase || '')}</span><span class="grow"><b>${esc(t.title)}</b>${t.risk ? `<small class="issue">${esc(t.risk)}</small>` : ''}${t.instructions ? `<small>${esc(t.instructions)}</small>` : ''}</span></div>`).join('')}</div>` : ''}
+      ${D.day.logistics?.length ? `<section><h3 class="sh">לפני היציאה</h3><div class="list">${D.day.logistics.map(l => `<div class="lrow"><span class="grow">${esc(l)}</span></div>`).join('')}</div></section>` : ''}
+      ${D.tasks.length ? `<section><h3 class="sh">משימות היום</h3><div class="list">${D.tasks.map(t => `<div class="lrow"><span class="grow"><b>${esc(t.title)}</b>${t.risk ? `<small class="issue">${esc(t.risk)}</small>` : ''}${t.instructions ? `<small>${esc(t.instructions)}</small>` : ''}</span>${t.phase ? `<span class="pill">${esc(t.phase)}</span>` : ''}</div>`).join('')}</div></section>` : ''}
       ${sunCard()}
       ${contactCard(site.contact_name, site.contact_phone)}
       ${site.map_path ? '<div class="card sitemap compact" id="daymap"></div>' : ''}`;
@@ -182,17 +162,18 @@ export async function renderDay(el, id) {
     const n = D.local.loaded.filter(x => req.includes(x)).length;
     return `${droneGate()}
       <div class="row"><h3 class="grow">ציוד להעמסה</h3><span class="pill ${n === req.length ? 'ok' : 'warn'}">${n}/${req.length}</span></div>
-      <div class="progress"><i style="width:${req.length ? Math.round(n / req.length * 100) : 0}%"></i></div>
       <div class="eqgrid">${req.map(x => `<button class="eqb" aria-pressed="${D.local.loaded.includes(x)}" data-eq="${esc(x)}">${esc(x)}</button>`).join('')}</div>`;
   }
   function sSite() {
     const items = (D.S.safety_checks || []).concat(D.day.drone_id || D.day.method === 'רחפן' ? (D.S.preflight_checks || []) : []);
     const before = D.photos.filter(p => p.kind === 'before').length;
+    const allOk = items.every((t, i) => D.local.checks[i] || D.checks.some(c => c.item === t && c.ok));
+    const miss = [!D.day.arrived_at && 'הגעה לאתר', !allOk && 'בדיקות בטיחות', !before && 'תמונת לפני'].filter(Boolean);
     return `${!D.day.arrived_at ? `<button class="btn primary block" id="arrive">הגענו לאתר</button>` : `<div class="small muted">הגעתם ב-${new Date(D.day.arrived_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div>`}
       <div class="sec"><h3>בדיקות בטיחות</h3>${items.map((t, i) => `<label class="tog"><span>${esc(t)}</span><span class="sw"><input type="checkbox" data-chk="${i}" ${D.local.checks[i] || D.checks.some(c => c.item === t && c.ok) ? 'checked' : ''}><i></i></span></label>`).join('')}</div>
       ${baBlock({ after: false })}
       ${contactCard(site.contact_name, site.contact_phone)}
-      <div class="small muted" id="why">${!before ? 'חסרה לפחות תמונת "לפני" אחת' : ''}</div>`;
+      <div class="chips" id="why">${miss.map(x => `<span class="pill warn">${x}</span>`).join('')}</div>`;
   }
   function sWork() {
     const done = D.tasks.filter(t => t.status === 'done').length, tot = D.tasks.filter(t => t.status !== 'dropped').length;
@@ -200,15 +181,13 @@ export async function renderDay(el, id) {
     const fac = [...new Set(D.tasks.filter(t => t.phase === 'ביצוע' && t.status !== 'done').flatMap(t => t.facades || []))];
     const a0 = D.day.site_arrival ? +D.day.site_arrival.slice(0, 2) : 7, night = a0 >= 18 || a0 < 5;
     const ord = fac.length > 1 && !night ? facadeOrder(D.day.day, site.lat || P.lat, site.lng || P.lng, fac) : [];
-    return `${ord.length ? `<div class="sunline">${icon('sun', 16)}<span>${ord.map(o => `<b>${esc(o.name)}</b> <small>${esc(o.when)}</small>`).join(' ← ')}</span></div>` : ''}
+    return `${ord.length ? `<div class="lrow">${icon('sun', 20)}<span class="grow"><b>סדר לפי השמש</b><small>${ord.map(o => `${esc(o.name)} ${esc(o.when)}`).join(' · ')}</small></span></div>` : ''}
       <div class="row"><h3 class="grow">משימות היום</h3><span class="pill ${done === tot && tot ? 'ok' : 'lime'}">${done}/${tot}</span></div>
-      <div class="progress"><i style="width:${tot ? Math.round(done / tot * 100) : 0}%"></i></div>
-      <div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-t="${t.id}"><span class="tick">${t.status === 'done' ? '✓' : t.status === 'blocked' ? '!' : ''}</span>
-        <span class="t"><b>${esc(t.title)}</b><small>${esc(T_STATUS[t.status]?.[0] || '')}${t.status === 'done' && t.done_by ? ' · ' + esc((D.team.find(u => u.id === t.done_by)?.full_name || '').split(' ')[0]) + (t.done_at ? ' ' + new Date(t.done_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '') : ''}${t.status_note ? ' · ' + esc(t.status_note) : ''}${t.risk && t.status !== 'done' ? ' · ' + esc(t.risk) : ''}</small></span></button>`).join('') || '<div class="empty">אין משימות משובצות להיום.</div>'}</div>
-      <div class="small muted">הקשה = בוצע · לחיצה ארוכה = נתקע</div>
-      <button class="btn ghost block" id="addtask">+ משימה שהלקוח ביקש בשטח</button>
-      ${D.issues.length ? `<div class="stack" style="gap:6px"><h3>תקלות היום</h3>${D.issues.map(i => `<div class="feed"><span class="pill ${i.severity === 'critical' ? 'bad' : 'warn'}">${esc(kindHe(i.kind))}</span><span class="grow"><b>${esc(i.body)}</b></span></div>`).join('')}</div>` : ''}
-      ${D.missing.length ? `<div class="stack" style="gap:6px"><h3>חסר בשטח</h3>${D.missing.map(m => `<div class="feed"><span class="pill warn">חסר</span><span class="grow"><b>${esc(m.item)}${m.qty > 1 ? ' ×' + m.qty : ''}</b></span></div>`).join('')}</div>` : ''}
+      <div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-t="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : t.status === 'blocked' ? icon('alert', 14) : ''}</span>
+        <span class="t"><b>${esc(t.title)}</b><small>${esc(T_STATUS[t.status]?.[0] || '')}${t.status === 'done' && t.done_by ? ' · ' + esc((D.team.find(u => u.id === t.done_by)?.full_name || '').split(' ')[0]) + (t.done_at ? ' ' + new Date(t.done_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '') : ''}${t.status_note ? ' · ' + esc(t.status_note) : ''}${t.risk && t.status !== 'done' ? ' · ' + esc(t.risk) : ''}</small></span></button>`).join('') || '<div class="empty-line">אין משימות להיום</div>'}</div>
+      <button class="btn ghost block" id="addtask">${icon('plus', 18)} משימה שהלקוח ביקש</button>
+      ${D.issues.length ? `<section><h3 class="sh">תקלות היום</h3><div class="list">${D.issues.map(i => `<div class="lrow"><span class="grow"><b>${esc(i.body)}</b></span><span class="pill ${i.severity === 'critical' ? 'bad' : 'warn'}">${esc(kindHe(i.kind))}</span></div>`).join('')}</div></section>` : ''}
+      ${D.missing.length ? `<section><h3 class="sh">חסר בשטח</h3><div class="list">${D.missing.map(m => `<div class="lrow"><span class="grow"><b>${esc(m.item)}</b></span>${m.qty > 1 ? `<span class="pill warn">×${m.qty}</span>` : ''}</div>`).join('')}</div></section>` : ''}
       <div class="sec">${photoStrip('general', 'תמונות מהעבודה')}</div>`;
   }
   function sClose() {
@@ -226,7 +205,7 @@ export async function renderDay(el, id) {
     const reportTop = !REPORT ? '' : `<div class="sec"><h3>מתי ומי</h3>
         <div class="row"><label class="field grow">התחלה<input type="time" id="rs" value="${C.start}"></label><label class="field grow">סיום<input type="time" id="re" value="${C.end}"></label></div>
         <b>מי עבד</b><div class="chips">${D.team.filter(u => ['crew_lead', 'crew', 'ops_manager', 'admin'].includes(u.role)).map(u => `<button class="chip" data-crew="${u.id}" aria-pressed="${C.crew.includes(u.id)}" ${u.id === D.day.crew_lead_id ? 'disabled' : ''}>${esc(u.full_name)}</button>`).join('')}</div></div>
-      ${D.tasks.length ? `<div class="sec"><h3>מה בוצע מהתכנית</h3><div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-rt="${t.id}"><span class="tick">${t.status === 'done' ? '✓' : ''}</span><span class="t"><b>${esc(t.title)}</b><small>${esc(t.phase || '')}</small></span></button>`).join('')}</div></div>` : ''}
+      ${D.tasks.length ? `<div class="sec"><h3>מה בוצע מהתכנית</h3><div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-rt="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : ''}</span><span class="t"><b>${esc(t.title)}</b><small>${esc(t.phase || '')}</small></span></button>`).join('')}</div></div>` : ''}
       ${baBlock()}`;
     return reportTop + (REPORT ? '' : `<div class="card row"><div class="ring" style="--p:${tot ? Math.round(done / tot * 100) : 0}"><b>${done}/${tot}</b></div><div class="grow"><b>משימות שבוצעו היום</b><div class="small muted">${tot - done ? `${tot - done} עוברות למחר` : 'הכל בוצע'}</div></div></div>`) + `
       <div class="sec"><b>חומר</b>${chips('material', D.S.materials || ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'])}
@@ -234,7 +213,7 @@ export async function renderDay(el, id) {
         ${D.day.gallons_planned ? `<div class="small muted">מתוכנן: ${nf(D.day.gallons_planned)}</div>` : ''}
         <b>סוג העבודה</b>${chips('work', D.S.work_types || [], true)}</div>
       ${REPORT ? '' : baBlock()}
-      <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => `<div class="row"><span class="grow">${esc(c.profiles?.full_name || '')}${D.clockH?.[c.user_id] != null ? ` <small class="muted">· מהשעון ${nf(D.clockH[c.user_id])}</small>` : ''}</span><input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${C.hours[c.user_id] ?? ''}" style="width:96px;text-align:center"></div>`).join('')}</div>
+      <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => `<div class="row"><span class="grow">${esc(c.profiles?.full_name || '')}${D.clockH?.[c.user_id] != null ? ` <small class="muted">· מהשעון ${nf(D.clockH[c.user_id])}</small>` : ''}</span><input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${C.hours[c.user_id] ?? ''}"></div>`).join('')}</div>
       <div class="sec">
         ${D.day.drone_id || D.day.method === 'רחפן' ? `<div class="row"><label class="field grow">מספר טיסות<input type="number" inputmode="numeric" min="0" id="fl" value="${C.flights ?? ''}"></label><label class="field grow">דקות אוויר<input type="number" inputmode="numeric" min="0" id="am" value="${C.air ?? ''}"></label></div>` : ''}
         <label class="tog"><span>הציוד חזר תקין</span><span class="sw"><input type="checkbox" id="eqok" ${C.equipment_ok ? 'checked' : ''}><i></i></span></label>
@@ -257,7 +236,7 @@ export async function renderDay(el, id) {
   }
   function sDone() {
     const d = D.day, hrs = d.work_day_crew.reduce((s, c) => s + Number(c.hours || 0), 0);
-    return `<div class="card stack" style="text-align:center;gap:6px"><div class="big-ok">✓</div><h2>${REPORT ? 'הדוח נשלח' : 'היום נסגר'}</h2>
+    return `<div class="card stack center"><div class="big-ok">${icon('check', 32)}</div><h2>${REPORT ? 'הדוח נשלח' : 'היום נסגר'}</h2>
         <div class="muted">${d.monday_item_id ? 'הדוח התקבל במשרד' : 'הדוח נשלח למשרד'}</div></div>
       <div class="kpis"><div class="kpi"><b>${D.tasks.filter(t => t.status === 'done').length}/${D.tasks.length}</b><span>משימות</span></div><div class="kpi"><b>${d.gallons != null ? nf(d.gallons) : '—'}</b><span>גלונים</span></div><div class="kpi"><b>${hrs ? nf(hrs) : '—'}</b><span>שעות צוות</span></div></div>
       ${d.tomorrow ? `<div class="note"><b>למחר:</b> ${esc(d.tomorrow)}</div>` : ''}
@@ -273,7 +252,7 @@ export async function renderDay(el, id) {
     const s = stage();
     el.innerHTML = header() + `<div class="stack" id="body">${[sMorning, sLoad, sSite, sWork, sClose, sDone][s]()}</div>`;
     bindCopy(el); bindPhotos(el);
-    if ([0, 2, 3].includes(s) && D.day.kind !== 'report' && D.day.projects?.site_id) { const wb = document.createElement('div'); wb.innerHTML = `<span data-wxcard="${D.day.projects.site_id}|${D.day.day}|תחזית לאתר בשעות העבודה · לחיצה לפירוט שעות"></span>`; $('#body', el).prepend(wb); import('../lib/wx.js').then(m => m.fillWx(wb)).catch(() => {}); }
+    if ([0, 2, 3].includes(s) && D.day.kind !== 'report' && D.day.projects?.site_id) { const wb = document.createElement('div'); wb.innerHTML = `<span data-wxcard="${D.day.projects.site_id}|${D.day.day}|תחזית לשעות העבודה"></span>`; $('#body', el).prepend(wb); import('../lib/wx.js').then(m => m.fillWx(wb)).catch(() => {}); }
     if ([0, 2, 3].includes(s) && D.day.kind !== 'report') { const pb = document.createElement('div'); pb.id = 'dayplan'; $('#body', el).prepend(pb); import('./plan.js').then(m => m.planForDay(pb, D.day)).catch(() => {}); }   // תכנית היום: טקסט + תמונות מהאפיון
     if (isManager()) { let sg = $('#daysig', el); if (!sg) { sg = document.createElement('div'); sg.className = 'sigline'; sg.id = 'daysig'; el.appendChild(sg); }
       import('../lib/audit.js').then(m => m.signature(sg, { work_day_id: D.day.id })); }
@@ -314,7 +293,6 @@ export async function renderDay(el, id) {
     const allOk = items.every((t, i) => D.local.checks[i] || D.checks.some(c => c.item === t && c.ok));
     const before = D.photos.some(p => p.kind === 'before');
     bar.innerHTML = `<button class="btn primary" id="start" ${D.day.arrived_at && allOk && before ? '' : 'disabled'}>מתחילים לעבוד</button>`;
-    if (!allOk && $('#why')) $('#why').textContent = [!D.day.arrived_at && 'לסמן הגעה', !allOk && 'להשלים בדיקות בטיחות', !before && 'לצלם "לפני"'].filter(Boolean).join(' · ');
     bar.querySelector('#start').onclick = async () => {
       for (const [i, t] of items.entries()) if (!D.checks.some(c => c.item === t)) { const row = { id: uid(), work_day_id: D.day.id, item: t, ok: true, checked_by: state.user.id }; D.checks.push(row); await insert('safety_checks', row); }
       await save('work_days', { status: 'working', opened_at: D.day.opened_at || new Date().toISOString() });
@@ -335,7 +313,7 @@ export async function renderDay(el, id) {
       };
     });
     $('#addtask').onclick = async () => {
-      const title = await ask('מה הלקוח ביקש?', { placeholder: 'למשל: ניקוי שלט הכניסה', hint: 'נרשם כתוספת בפרויקט ועובר למשרד', ok: 'הוספה' }); if (!title) return;
+      const title = await ask('מה הלקוח ביקש?', { placeholder: 'למשל: ניקוי שלט הכניסה', ok: 'הוספה' }); if (!title) return;
       const row = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, title, phase: 'תוספת', is_extra: true, status: 'todo', seq: 999, planned_date: D.day.day };
       D.tasks.push(row); await insert('tasks', row); draw();
     };
@@ -409,7 +387,7 @@ export async function renderDay(el, id) {
       sheet(`<h3>דיווח תקלה</h3><div class="chips">${(D.S.issue_types || Object.keys(ISSUE_KIND)).map(k => `<button class="chip" data-k="${esc(k)}" aria-pressed="${k === kind}">${esc(k)}</button>`).join('')}</div>
         <textarea id="ib" placeholder="מה קרה?"></textarea>
         <label class="tog"><span>קריטי — העבודה נעצרה</span><span class="sw"><input type="checkbox" id="ic"><i></i></span></label>
-        <label class="btn ghost block" style="position:relative">צילום התקלה<input type="file" accept="image/*" capture="environment" id="ip" style="position:absolute;inset:0;opacity:0"></label><div id="ipn" class="small muted"></div>
+        <label class="btn ghost block">${icon('photo', 18)} צילום התקלה<input type="file" accept="image/*" capture="environment" id="ip" hidden></label><div id="ipn" class="small muted"></div>
         <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="isend">שליחה</button></div>`, (s, close) => {
         $$('[data-k]', s).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); });
         $('#ic', s).onchange = e => crit = e.target.checked;
@@ -462,6 +440,6 @@ export function pad(cv, initial, onSave) {
 }
 function celebrate() {
   const c = document.createElement('div'); c.className = 'confetti';
-  c.innerHTML = Array.from({ length: 40 }, (_, i) => `<i style="--x:${Math.random() * 100}vw;--d:${0.8 + Math.random()}s;--c:${['#b5e04a', '#6fd49a', '#f0b35a', '#7fb2ff'][i % 4]}"></i>`).join('');
+  c.innerHTML = Array.from({ length: 40 }, (_, i) => `<i style="--x:${Math.random() * 100}vw;--d:${0.8 + Math.random()}s;--c:${['var(--lime)', 'var(--ok)', 'var(--warn)', 'var(--blue)'][i % 4]}"></i>`).join('');
   document.body.appendChild(c); setTimeout(() => c.remove(), 2200);
 }

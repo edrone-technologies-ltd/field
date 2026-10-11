@@ -6,7 +6,7 @@ const today = () => isoDay();
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
 const ARCHIVE = 'group_mm5052gw';
-export const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'קביעת מועד': 'warn', 'תואם - ממתין לביצוע': 'warn', 'אושר מול לקוח': 'warn', 'הסתיים — ממתין לתשלום': 'ok', 'הסתיים — להוצאת חשבונית': 'ok' };
+export const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'הסתיים — ממתין לתשלום': 'ok', 'הסתיים — להוצאת חשבונית': 'ok' };   // שאר השלבים — אפור ניטרלי
 const DAY_ST = { planned: 'מתוכנן', en_route: 'בדרך', on_site: 'באתר', working: 'בעבודה', issue: 'תקלה', done: 'נסגר' };
 const RANK = { 'בביצוע': 0, 'תואם - ממתין לביצוע': 1, 'אושר מול לקוח': 2, 'קביעת מועד': 3, 'תקוע': 4 };
 const isOpen = p => p.monday_group !== ARCHIVE && !String(p.status_label || '').startsWith('הסתיים');
@@ -102,7 +102,7 @@ export async function renderHome(el) {
       <span class="btn primary">${w.status === 'planned' ? 'פתיחת היום' : w.status === 'done' ? 'סיכום היום' : 'המשך היום'}</span></span></a>`; }).join('');
 
   const next = (d.wdays || []).filter(w => w.day > t && mineDay(w)).slice(0, 4);
-  box.innerHTML = `<div id="attn"></div><div id="mytasks"></div>${myDay || empty('calendar', 'אין לך יום שטח היום', next[0] ? `הבא: ${esc(byId.get(next[0].project_id)?.name || '')}, ${dayWord(next[0].day)}` : 'כשתשובץ, היום יופיע כאן')}
+  box.innerHTML = `<div id="attn"></div><div id="mytasks"></div>${myDay || `<div class="empty-line">${next.length ? 'אין לך יום שטח היום' : 'אין לך שיבוץ בימים הקרובים'}</div>`}
     ${next.length ? `<section><h3 class="sh">הימים הקרובים</h3><div class="list">${next.map(w => dayRow(w, byId)).join('')}</div></section>` : ''}`;
   bindConfirm(box); extras();
 }
@@ -135,7 +135,7 @@ export async function renderSchedule(el) {
   const mine = (d.wdays || []).filter(w => w.day >= t && mineDay(w));
   const hasDay = new Set((d.wdays || []).filter(w => w.day >= t).map(w => w.project_id));
   const noDate = (d.projects || []).filter(isOpen).filter(p => ['קביעת מועד', 'תואם - ממתין לביצוע', 'אושר מול לקוח', 'בביצוע'].includes(p.status_label) && !hasDay.has(p.id) && !((p.planned_to || p.planned_from || '') >= t));
-  box.innerHTML = `${!M ? `<section><h3 class="sh">הימים שלי</h3>${mine.length ? `<div class="list">${mine.map(w => dayRow(w, by)).join('')}</div>` : empty('calendar', 'אין לך ימי שטח משובצים', 'כשתשובץ, הימים יופיעו כאן')}</section>` : ''}
+  box.innerHTML = `${!M ? `<section><h3 class="sh">הימים שלי</h3>${mine.length ? `<div class="list">${mine.map(w => dayRow(w, by)).join('')}</div>` : '<div class="empty-line">אין לך ימי שטח משובצים</div>'}</section>` : ''}
     ${M && noDate.length ? `<section><div class="sh-row"><h3 class="sh">ממתינים לתאריך במאנדי</h3><span class="count">${noDate.length}</span></div>
       <div class="alist">${noDate.map(p => `<a class="arow" href="#/p/${p.id}"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.status_label, p.client_name].filter(Boolean).join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}`;
   bindConfirm(box);

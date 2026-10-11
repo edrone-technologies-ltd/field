@@ -1,12 +1,12 @@
 // לוח שיבוץ שבועי (מנהלים): מי עובד איפה בכל יום. התנגשויות (שני פרויקטים באותו יום) והיעדרויות מסומנות. הקשה על תא ריק = שיבוץ.
-import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, HE_D1, isoDay, dm, replaceHash } from '../lib/core.js';
+import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, HE_D1, isoDay, dm, replaceHash, leadMark } from '../lib/core.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const sunday = s => addDays(s, -new Date(s + 'T12:00:00').getDay());
 const ABS = { vacation: 'חופשה', sick: 'מחלה', reserve: 'מילואים', unpaid: 'חופש', other: 'היעדרות' };
 
 export async function renderDispatch(el, start, o = {}) {
-  if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">למנהלים בלבד</div>'; return; }
   start = sunday(start || isoDay());
   const days = [0, 1, 2, 3, 4, 5].map(i => addDays(start, i)), end = days.at(-1);
   el.innerHTML = `<header class="phead"><a class="back" href="#/schedule" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">${o.title || 'לוח שיבוץ'}</h1></header>
@@ -26,14 +26,13 @@ export async function renderDispatch(el, start, o = {}) {
     const a = (abs || []).find(x => x.user_id === p.id && x.date_from <= d && x.date_to >= d);
     const conflict = mine.length > 1 || (mine.length && a);
     return `<td class="${conflict ? 'conf' : ''} ${d === isoDay() ? 'today' : ''}" data-u="${p.id}" data-d="${d}">${a ? `<span class="dchip abs ${a.status === 'pending' ? 'pend' : ''}">${ABS[a.kind]}${a.status === 'pending' ? '?' : ''}</span>` : ''}
-      ${mine.map(w => `<span class="dchip ${w.status === 'done' ? 'done' : ''} ${w.weather_alerted ? 'wx' : ''}" data-w="${w.id}" title="${esc(w.projects?.name || '')}">${esc((w.projects?.name || '').split(/[—–-]/)[0].trim().slice(0, 14))}${w.crew_lead_id === p.id ? ' ★' : ''}</span>`).join('')}</td>`;
+      ${mine.map(w => `<span class="dchip ${w.status === 'done' ? 'done' : ''} ${w.weather_alerted ? 'wx' : ''}" data-w="${w.id}" title="${esc(w.projects?.name || '')}">${esc((w.projects?.name || '').split(/[—–-]/)[0].trim().slice(0, 14))}${w.crew_lead_id === p.id ? leadMark() : ''}</span>`).join('')}</td>`;
   };
   if (innerWidth < 700) return dayList();
   const conflicts = staff.flatMap(p => days.filter(d => (wds || []).filter(w => w.day === d && (w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id))).length > 1).map(d => `${p.full_name.split(' ')[0]} ב-${dm(d)}`));
   $('#db').innerHTML = `${conflicts.length ? `<div class="arow bad card-like"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>התנגשות שיבוץ</b><small>${esc(conflicts.join(' · '))}</small></span></div>` : ''}
     <div class="dwrap"><table class="dgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
-      <tbody>${staff.map(p => `<tr><th class="who">${esc(p.full_name.split(' ')[0])}${p.is_pilot ? ' <small>מטיס</small>' : ''}</th>${days.map(d => cell(p, d)).join('')}</tr>`).join('')}</tbody></table></div>
-    <div class="small muted">★ = ראש צוות · ⚠ ברקע = תחזית רוח חריגה · הקשה על תא ריק משבצת, על פרויקט — פותחת את היום.</div>`;
+      <tbody>${staff.map(p => `<tr><th class="who">${esc(p.full_name.split(' ')[0])}${p.is_pilot ? ' <small>מטיס</small>' : ''}</th>${days.map(d => cell(p, d)).join('')}</tr>`).join('')}</tbody></table></div>`;
   const reload = () => renderDispatch(el, start);
   $('td.conf', el)?.scrollIntoView({ inline: 'center', block: 'nearest' });   // רק התנגשות מצדיקה קפיצה; בלי זה מתחילים מיום א׳
   $$('.dchip[data-w]', el).forEach(c => c.onclick = e => { e.stopPropagation(); location.hash = '#/day/' + c.dataset.w; });
@@ -58,14 +57,16 @@ export async function renderDispatch(el, start, o = {}) {
       const need = dow < 5 ? (projects || []).filter(x => x.planned_from && x.planned_from <= d && (x.planned_to || x.planned_from) >= d && !wd.some(w => w.project_id === x.id)) : [];
       const ab = (abs || []).filter(a => a.date_from <= d && a.date_to >= d);
       const busy = new Map(); wd.forEach(w => new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean)).forEach(u => busy.set(u, (busy.get(u) || 0) + 1)));   // ראש צוות שגם בצוות = פעם אחת
-      return `<section class="dday ${d === isoDay() ? 'today' : ''}"><div class="ddh"><b>${HE_D1[dow]} ${dm(d)}</b>${d === isoDay() ? '<span class="pill lime">היום</span>' : ''}<span class="grow"></span>${dow < 6 ? `<button class="chip sm" data-add="${d}">+ שיבוץ</button>` : ''}</div>
-        ${need.map(x => `<a class="dline need" href="#/p/${x.id}"><span class="grow"><b>${esc(x.name)}</b><small>מתוכנן במאנדי · עוד לא שובץ צוות</small></span>${x.site_id ? `<span data-wx="${x.site_id}|${d}"></span>` : ''}<span class="pill warn">לשבץ</span></a>`).join('')}
+      const free = !need.length && !wd.length && !ab.length;
+      return `<section class="dday ${d === isoDay() ? 'today' : ''} ${free ? 'free' : ''}"><div class="ddh"><b>${HE_D1[dow]} ${dm(d)}</b>${d === isoDay() ? '<span class="pill lime">היום</span>' : ''}${free ? '<span class="muted">פנוי</span>' : ''}<span class="grow"></span>${dow < 6 ? `<button class="hbtn" type="button" data-add="${d}" aria-label="שיבוץ">${icon('plus', 18)}</button>` : ''}</div>
+        ${need.map(x => `<a class="dline need" href="#/p/${x.id}"><span class="grow"><b>${esc(x.name)}</b><small>מתוכנן במאנדי</small></span>${x.site_id ? `<span data-wx="${x.site_id}|${d}"></span>` : ''}<span class="pill warn">לשבץ</span></a>`).join('')}
         ${wd.map(w => { const crew = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
-          return `<a class="dline ${w.status === 'done' ? 'done' : ''}" href="#/day/${w.id}"><span class="grow"><b>${esc(w.projects?.name || '')}</b><small>${crew.map(u => esc(NM.get(u) || '') + (u === w.crew_lead_id ? ' ★' : '') + ((busy.get(u) || 0) > 1 ? ' ⚠' : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${w.status === 'done' ? '<span class="pill ok">בוצע</span>' : w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${d}"></span>` : ''}</a>`; }).join('')}
+          return `<a class="dline ${w.status === 'done' ? 'done' : ''}" href="#/day/${w.id}"><span class="grow"><b>${esc(w.projects?.name || '')}</b><small>${crew.map(u => esc(NM.get(u) || '') + (u === w.crew_lead_id ? leadMark() : '') + ((busy.get(u) || 0) > 1 ? `<span class="dwarn" title="משובץ פעמיים" aria-label="משובץ פעמיים">${icon('alert', 14)}</span>` : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${w.status === 'done' ? '<span class="pill ok">בוצע</span>' : w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${d}"></span>` : ''}</a>`; }).join('')}
         ${ab.map(a => `<div class="dline abs"><span class="grow"><small>${esc(NM.get(a.user_id) || '')}: ${ABS[a.kind]}${a.status === 'pending' ? ' (ממתין לאישור)' : ''}</small></span></div>`).join('')}
-        ${!need.length && !wd.length && !ab.length ? '<div class="small muted dempty">אין עבודה</div>' : ''}</section>`;
-    }).join('') + '<div class="small muted">★ ראש צוות · ⚠ משובץ פעמיים באותו יום</div>';
+</section>`;
+    }).join('');
     import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
+    $$('.ddh', box).forEach(h => { const b = $('[data-add]', h); if (b) h.onclick = e => { if (!e.target.closest('[data-add]')) b.click(); }; });
     $$('[data-add]', box).forEach(b => b.onclick = () => {
       const d = b.dataset.add;
       sheet(`<h3>שיבוץ · ${HE_D1[new Date(d + 'T12:00').getDay()]} ${dm(d)}</h3>

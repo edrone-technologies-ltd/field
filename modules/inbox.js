@@ -4,7 +4,7 @@ import { sb, state, isManager, cache, sheet, $, $$, esc, initials, icon, timeAgo
 const av = c => `<span class="avatar ${c.kind === 'group' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 20) : esc(initials(c.title))}</span>`;
 
 export async function renderInbox(el) {
-  el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">הודעות</h1><button class="btn primary sm" id="new">${icon('plus', 18)} הודעה חדשה</button></header>
+  el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">הודעות</h1><button class="hbtn" id="new" aria-label="הודעה חדשה">${icon('plus', 20)}</button></header>
     <div id="ib" class="list"><div class="skel"></div></div>`;
   let rows;
   try { const { data, error } = await sb.rpc('my_inbox'); if (error) throw error; rows = data || []; await cache.set('inbox', rows); }
@@ -13,7 +13,7 @@ export async function renderInbox(el) {
   const row = c => `<a class="lrow msgrow ${c.unread ? 'unread' : ''}" href="#/c/${c.id}">${av(c)}<span class="grow"><span class="r1"><b>${esc(c.title || '')}</b><small>${c.last_message_at ? timeAgo(c.last_message_at) : ''}</small></span>
     <small class="r2">${esc(c.last_message || (c.kind === 'group' ? `${(c.members || []).length} חברים` : 'אין הודעות עדיין'))}</small></span>${c.unread ? `<span class="badge">${c.unread}</span>` : ''}</a>`;
   $('#ib').innerHTML = `${dms.length ? `<h3 class="sh">אישי</h3>${dms.map(row).join('')}` : ''}
-    <h3 class="sh">קבוצות</h3>${groups.map(row).join('') || '<div class="muted small">אין קבוצות.</div>'}`;
+    <h3 class="sh">קבוצות</h3>${groups.map(row).join('') || '<div class="empty-line">אין קבוצות</div>'}`;
   $('#new').onclick = newMessage;
 }
 

@@ -11,7 +11,7 @@ const SEV = { ok: ['תקין', 'ok'], note: ['הערה', 'warn'], fix: ['לתי�
 
 // טופס חדש / עריכה
 export async function renderVisitForm(el, pid, vid) {
-  if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין גישה</div>'; return; }
   const [{ data: p }, { data: v }] = await Promise.all([
     sb.from('projects').select('id,name,client_name').eq('id', pid).single(),
     vid ? sb.from('project_visits').select('*').eq('id', vid).single() : Promise.resolve({ data: null })]);
@@ -26,11 +26,11 @@ export async function renderVisitForm(el, pid, vid) {
         <div class="row"><label class="field grow">תאריך<input type="date" id="vd" value="${f.visit_date}"></label></div>
         <label class="field">${f.kind === 'client_tour' ? 'מי מהלקוח השתתף' : 'משתתפים'}<input id="vp" value="${esc(f.participants || '')}" placeholder="${f.kind === 'client_tour' ? 'למשל: רון — מנהל אחזקה' : 'למשל: צוות 1'}"></label>
         <section class="stack"><h3 class="sh">ממצאים</h3>
-          <div class="row-btns"><label class="btn primary">${icon('photo', 18)} צילום ממצא<input type="file" accept="image/*" multiple id="vcam" hidden></label><button type="button" class="btn ghost" id="vadd">+ ממצא בכתב</button></div>
+          <div class="row-btns"><label class="btn primary">${icon('photo', 18)} צילום ממצא<input type="file" accept="image/*" multiple id="vcam" hidden></label><button type="button" class="btn ghost" id="vadd">${icon('plus', 18)} ממצא בכתב</button></div>
           ${f.findings.length ? f.findings.map((x, i) => `<div class="finding">
             <textarea data-ft="${i}" rows="2" placeholder="מה ראית">${esc(x.text || '')}</textarea>
             <div class="row"><div class="chips">${Object.entries(SEV).map(([k, [t]]) => `<button type="button" class="chip" data-fs="${i}" data-v="${k}" aria-pressed="${x.sev === k}">${t}</button>`).join('')}</div><span class="grow"></span>
-              <button type="button" class="chip" data-fr="${i}" aria-label="הסרה">×</button></div>
+              <button type="button" class="chip" data-fr="${i}" aria-label="הסרה">${icon('x', 16)}</button></div>
             <div class="fphs">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}<label class="fph add" aria-label="הוספת תמונה">${icon('photo', 18)}<input type="file" accept="image/*" multiple data-fp="${i}" hidden></label></div></div>`).join('') : ''}
         </section>
         ${todoHtml(f, urls)}
@@ -88,7 +88,7 @@ export async function renderVisitForm(el, pid, vid) {
 export async function renderVisit(el, id) {
   const M = isManager();
   const { data: v } = await sb.from('project_visits').select('*, projects(id,name,site_id), profiles:visitor_id(full_name)').eq('id', id).maybeSingle();
-  if (!v) { el.innerHTML = `<header class="phead">${backBtn('#/reports')}<h1>דוח ביקור</h1></header><div class="empty">הדוח לא נמצא.</div>`; return; }
+  if (!v) { el.innerHTML = `<header class="phead">${backBtn('#/reports')}<h1>דוח ביקור</h1></header><div class="empty-line">הדוח לא נמצא</div>`; return; }
   const F = v.findings || [], urls = await signedUrls('field', [...F, ...(v.todo || [])].flatMap(PH));
   const T = v.todo || [], open = pending({ findings: F, todo: T });
   // מצב הטיפול בשטח — מהמשימות עצמן (העובד מסמן "טופל" עם תמונת אחרי)
@@ -108,8 +108,8 @@ export async function renderVisit(el, id) {
   const ring = (d, n) => `<div class="ring" style="--p:${Math.round(d / n * 100)}"><b>${d}/${n}</b></div>`;
   el.innerHTML = `<header class="phead">${backBtn(`#/p/${v.project_id}/d`)}<h1 class="grow">${KIND[v.kind]}</h1>${M ? `<a class="chip" href="#/visit/edit/${v.project_id}/${v.id}">עריכה</a><a class="chip" href="#/visit/${v.id}/report">דוח</a>` : ''}</header>
     <div class="stack lg">
-      <div class="card stack" style="gap:4px"><b>${esc(v.projects?.name || '')}</b><small class="muted">${dm(v.visit_date)} · ${esc(v.profiles?.full_name || '')}${v.participants ? ' · ' + esc(v.participants) : ''}</small>
-        ${M && v.rating ? `<div class="stars ro">${[1, 2, 3, 4, 5].map(n => `<span class="${v.rating >= n ? 'on' : ''}">★</span>`).join('')}</div>` : ''}</div>
+      <div class="card stack tight"><b>${esc(v.projects?.name || '')}</b><small class="muted">${dm(v.visit_date)} · ${esc(v.profiles?.full_name || '')}${v.participants ? ' · ' + esc(v.participants) : ''}</small>
+        ${M && v.rating ? `<span class="rating" aria-label="${v.rating} מתוך 5">${icon('star', 14).repeat(v.rating)}</span>` : ''}</div>
       ${tot ? `<div class="card row">${ring(dn, tot)}<div class="grow"><b>${dn === tot ? 'הכל טופל' : `טיפול בשטח · ${dn}/${tot}`}</b><div class="small muted">${unas.length ? `${unas.length} ממתינים לשיוך` : dn === tot ? '' : 'מתעדכן מהשטח'}</div></div>${M && unas.length ? `<button class="btn primary sm" id="vassign">שיוך לצוות</button>` : ''}</div>` : ''}
       ${F.length ? `<section class="stack"><div class="sh-row"><h3 class="sh">ממצאים</h3><span class="count">${F.length}</span></div>
         ${F.map(x => `<div class="finding ro"><div class="row"><span class="pill ${SEV[x.sev]?.[1] || ''}">${SEV[x.sev]?.[0] || ''}</span><span class="grow"></span>${st(x)}</div>
@@ -158,20 +158,20 @@ async function toChecklist(vid, pid, f, assignee = null, due = null) {
 function todoHtml(f, urls = {}) {
   const fx = f.findings.filter(x => x.sev === 'fix' && (x.text || '').trim());
   return `<section class="stack"><div class="sh-row"><h3 class="sh">צ'קליסט לצוות</h3>${fx.length + f.todo.length ? `<span class="count">${fx.length + f.todo.length}</span>` : ''}</div>
-    <div class="cklist">${fx.map(x => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b></span>${x.task_id ? '<span class="small muted">✓</span>' : '<span class="pill bad">לתיקון</span>'}</div>`).join('')}
+    <div class="cklist">${fx.map(x => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b></span>${x.task_id ? `<span class="muted">${icon('check', 16)}</span>` : '<span class="pill bad">לתיקון</span>'}</div>`).join('')}
       ${f.todo.map((x, i) => `<div class="ck"><span class="grow"><b>${esc(x.text)}</b>${PH(x).length ? `<span class="fphs sm">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</span>` : ''}</span>
-        <label class="chip sm" aria-label="תמונה">${icon('photo', 16)}<input type="file" accept="image/*" multiple data-tp="${i}" hidden></label>${x.task_id ? '<span class="small muted">✓</span>' : `<button type="button" class="chip sm" data-tr="${i}" aria-label="הסרה">×</button>`}</div>`).join('')}
-      <div class="ckadd"><input id="vtin" placeholder="+ פריט לצוות" autocomplete="off"><button type="button" class="btn primary sm" id="vtadd">הוספה</button></div></div></section>`;
+        <label class="chip sm" aria-label="תמונה">${icon('photo', 16)}<input type="file" accept="image/*" multiple data-tp="${i}" hidden></label>${x.task_id ? `<span class="muted">${icon('check', 16)}</span>` : `<button type="button" class="chip sm" data-tr="${i}" aria-label="הסרה">${icon('x', 16)}</button>`}</div>`).join('')}
+      <div class="ckadd"><input id="vtin" placeholder="פריט לצוות" autocomplete="off"><button type="button" class="btn primary sm" id="vtadd">הוספה</button></div></div></section>`;
 }
 
 // ----- הפקת דוח: כל שורה = ממצא + תמונות, בתבנית הדוחות של E-Drone. מטעם החברה, בלי שמות אישיים -----
 export async function renderVisitReport(el, id) {
-  if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין גישה</div>'; return; }
   el.innerHTML = '<div class="skel tall"></div>';
   const [{ data: v }, { data: co }] = await Promise.all([
     sb.from('project_visits').select('*, projects(name,client_name,sites(name,address))').eq('id', id).maybeSingle(),
     sb.from('app_settings').select('value').eq('key', 'company').maybeSingle()]);
-  if (!v) { el.innerHTML = '<div class="empty">הדוח לא נמצא.</div>'; return; }
+  if (!v) { el.innerHTML = '<div class="empty-line">הדוח לא נמצא</div>'; return; }
   const F = v.findings || [], T = v.todo || [], ids = [...F, ...T].map(x => x.task_id).filter(Boolean);
   const { data: tk } = ids.length ? await sb.from('tasks').select('id,status,done_at,done_note,photos').in('id', ids) : { data: [] };
   const TK = new Map((tk || []).map(t => [t.id, t]));
@@ -189,7 +189,7 @@ export async function renderVisitReport(el, id) {
       <div class="rsec">SITE VISIT REPORT</div><h2>${esc(KIND[v.kind] || 'דוח ביקור')}</h2><div class="rule"></div>
       <div class="meta"><div><div class="k">פרויקט</div><div class="v">${esc(v.projects?.name || '')}</div></div><div><div class="k">תאריך</div><div class="v">${date}</div></div>
         ${v.participants ? `<div><div class="k">${v.kind === 'client_tour' ? 'מטעם הלקוח' : 'משתתפים'}</div><div class="v">${esc(v.participants)}</div></div>` : ''}
-        ${v.rating ? `<div><div class="k">ציון כללי</div><div class="v">${'★'.repeat(v.rating)}<span style="color:#D5D8DD">${'★'.repeat(5 - v.rating)}</span></div></div>` : ''}</div>
+        ${v.rating ? `<div><div class="k">ציון כללי</div><div class="v">${'★'.repeat(v.rating)}<span class="vstar-off">${'★'.repeat(5 - v.rating)}</span></div></div>` : ''}</div>
       ${F.length ? `<div class="rsec" style="margin-top:9mm">FINDINGS</div><h3 class="vh">ממצאים</h3>
         ${F.map((x, i) => `<div class="vrow"><div class="vn">${i + 1}</div><div class="grow"><div class="vt"><span>${esc(x.text || '')}</span><span class="vs ${TK.get(x.task_id)?.status === 'done' ? 'ok' : SC[x.sev] || ''}">${TK.get(x.task_id)?.status === 'done' ? 'טופל' : SEV[x.sev]?.[0] || ''}</span></div>${done(x)}${pics(x)}</div></div>`).join('')}` : ''}
       ${T.length ? `<div class="rsec" style="margin-top:9mm">ACTION ITEMS</div><h3 class="vh">פעולות להמשך</h3>

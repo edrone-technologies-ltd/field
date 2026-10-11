@@ -19,8 +19,8 @@ async function monthData(userIds, month) {
 
 // ---------- רשימת עובדים ----------
 export async function renderStaff(el) {
-  if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
-  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">עובדים</h1>${isAdmin() ? `<button class="btn primary sm" id="bulk">${icon('plus', 18)} תלושים לחודש</button>` : ''}</header><div id="sl" class="stack lg"><div class="skel"></div></div>`;
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">למנהלים בלבד</div>'; return; }
+  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">עובדים</h1>${isAdmin() ? `<button class="hbtn" id="bulk" aria-label="תלושים לחודש">${icon('plus', 20)}</button>` : ''}</header><div id="sl" class="stack lg"><div class="skel"></div></div>`;
   const [{ data: people }, { data: prof }, { data: rates }, { data: docs }] = await Promise.all([
     (q => isAdmin() ? q : q.neq('role', 'admin'))(sb.from('profiles').select('id,full_name,role,phone,is_active').order('full_name')),   // תפעול לא מנהל את ההנהלה
     sb.from('employee_profile').select('user_id,job_title,employment_type'),
@@ -34,17 +34,16 @@ export async function renderStaff(el) {
   $('#sl').innerHTML = `${soon.length ? `<div class="alist">${soon.map(d => `<a class="arow warn" href="#/staff/${d.user_id}/docs"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(active.find(p => p.id === d.user_id)?.full_name || '')} · ${esc(d.title)}</b><small>בתוקף עד ${new Date(d.expires_on).toLocaleDateString('he-IL')}</small></span></a>`).join('')}</div>` : ''}
     <div class="list">${active.map(p => { const pr = (prof || []).find(x => x.user_id === p.id), R = M[p.id], r = (rates || []).find(x => x.user_id === p.id);
       return `<a class="lrow" href="#/staff/${p.id}"><span class="avatar sm">${esc(initials(p.full_name))}</span><span class="grow"><b>${esc(p.full_name)}${open.has(p.id) ? ' <span class="cl-dot inline"></span>' : ''}</b>
-        <small>${esc(pr?.job_title || ROLE_HE[p.role] || '')}${pr?.employment_type && pr.employment_type !== 'עובד' ? ' · ' + esc(pr.employment_type) : ''} · החודש ${hhmm(R?.totals.net || 0)} שעות</small></span>
-        ${r ? `<span class="pill">${PAY_TYPES[r.pay_type] || ''}</span>` : ''}<span class="chev">${icon('chev', 18)}</span></a>`; }).join('')}</div>
-    <div class="small muted">נקודה ירוקה = במשמרת עכשיו. עובד חדש מוסיפים בניהול המערכת.</div>`;
+        <small>${esc(pr?.job_title || ROLE_HE[p.role] || '')}${pr?.employment_type && pr.employment_type !== 'עובד' ? ' · ' + esc(pr.employment_type) : ''} · ${hhmm(R?.totals.net || 0)}ש׳ החודש</small></span>
+        ${r ? `<span class="pill">${PAY_TYPES[r.pay_type] || ''}</span>` : ''}<span class="chev">${icon('chev', 18)}</span></a>`; }).join('')}</div>`;
   import('./onboarding.js').then(async m => { for (const p of active) { const it = await m.status(p.id).catch(() => []); const d = it.filter(x => x.done).length;
-    const row = $(`#sl a[href="#/staff/${p.id}"] small`); if (row && it.length && d < it.length) row.insertAdjacentHTML('beforeend', ` · <span class="onbp">קליטה ${d}/${it.length}</span>`); } });
+    const row = $(`#sl a[href="#/staff/${p.id}"] .chev`); if (row && it.length && d < it.length) row.insertAdjacentHTML('beforebegin', `<span class="pill">קליטה ${d}/${it.length}</span>`); } });
   const b = $('#bulk'); if (b) b.onclick = async () => (await import('./files.js')).bulkUpload(active, () => renderStaff(el));
 }
 
 // ---------- כרטיס עובד ----------
 export async function renderEmployee(el, userId, tab = 'info') {
-  if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">למנהלים בלבד</div>'; return; }
   const { data: p } = await sb.from('profiles').select('*').eq('id', userId).single();
   const TABS = [['info', 'פרטים'], ...(isAdmin() ? [['pay', 'שכר']] : []), ['hours', 'שעות'], ['docs', 'מסמכים'], ['onb', 'קליטה']];
   el.innerHTML = `<header class="phead"><a class="back" href="#/staff" aria-label="חזרה">${icon('back', 20)}</a><span class="avatar">${esc(initials(p?.full_name))}</span><div class="grow"><b class="ttl">${esc(p?.full_name || '')}</b><small class="muted">${esc(ROLE_HE[p?.role] || '')}${p?.phone ? ' · ' + esc(p.phone) : ''}</small></div>${p?.phone ? `<a class="btn ghost sm" href="tel:${esc(p.phone)}">חיוג</a>` : ''}</header>
@@ -88,16 +87,14 @@ async function payTab(box, p) {
     box.innerHTML = `<div class="sec"><b>סוג העסקה</b><div class="chips">${Object.entries(PAY_TYPES).map(([k, t]) => `<button class="chip" data-pt="${k}" aria-pressed="${P.pay_type === k}">${t}</button>`).join('')}</div>
         ${P.pay_type === 'hourly' ? `<label class="field">שכר לשעה (₪)<input type="number" step="0.5" id="ph" value="${P.hourly_rate ?? ''}"></label>`
           : `<label class="field">משכורת חודשית ברוטו (₪)<input type="number" id="pm" value="${P.monthly_salary ?? ''}"></label>`}
-        ${P.pay_type === 'global' ? `<div class="row"><label class="field grow">רכיב גלובלי (₪ לחודש)<input type="number" id="pg" value="${P.global_ot_amount ?? ''}"></label><label class="field grow">שעות נוספות מכוסות<input type="number" id="pgh" value="${P.global_ot_hours ?? ''}"></label></div>
-          <div class="small muted">לפי החוק הגלובלי חייב לכסות את השעות הנוספות בפועל. אם עובדים יותר — מגיע הפרש, והמערכת תתריע.</div>` : ''}
+        ${P.pay_type === 'global' ? `<div class="row"><label class="field grow">רכיב גלובלי (₪ לחודש)<input type="number" id="pg" value="${P.global_ot_amount ?? ''}"></label><label class="field grow">שעות נוספות מכוסות<input type="number" id="pgh" value="${P.global_ot_hours ?? ''}"></label></div>` : ''}
         <label class="field">החזר נסיעות ליום (₪, לא חובה)<input type="number" step="0.1" id="pt" value="${P.travel_per_day ?? ''}"></label>
         <label class="field">הערות שכר<input type="text" id="pn" value="${esc(P.pay_notes || '')}" placeholder="למשל: תוספת ותק, הסכם אישי"></label>
         <button class="btn primary block" id="psv">שמירת תנאי שכר</button></div>
       <section><h3 class="sh">הערכה לחודש הנוכחי</h3>
         <div class="kpis"><div class="kpi"><b>${hhmm(T.net)}</b><span>שעות</span></div><div class="kpi"><b>${hhmm(T.ot125 + T.ot150)}</b><span>נוספות</span></div><div class="kpi"><b>${est ? nis(est.total) : '—'}</b><span>הערכת ברוטו</span></div></div>
-        ${est ? `<div class="menu">${[['בסיס', nis(est.base)], [est.type === 'global' ? 'גלובלי / נוספות' : 'שעות נוספות ושבת', nis(est.ot)], ...(est.travel ? [['נסיעות', nis(est.travel)]] : [])].map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${v}</b></span></div>`).join('')}</div>` : '<div class="muted small">מזינים תנאי שכר כדי לראות הערכה</div>'}
-        ${(est?.notes || []).map(n => `<div class="arow warn card-like"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small style="white-space:normal;color:var(--ink)">${esc(n)}</small></span></div>`).join('')}
-        <div class="small muted">הערכה בלבד, לפני ניכויים. התלוש מגיע מהנהלת החשבונות.</div></section>`;
+        ${est ? `<div class="menu">${[['בסיס', nis(est.base)], [est.type === 'global' ? 'גלובלי / נוספות' : 'שעות נוספות ושבת', nis(est.ot)], ...(est.travel ? [['נסיעות', nis(est.travel)]] : [])].map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${v}</b></span></div>`).join('')}</div>` : '<div class="empty-line">אין תנאי שכר</div>'}
+        ${(est?.notes || []).map(n => `<div class="arow warn card-like"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small class="fl">${esc(n)}</small></span></div>`).join('')}</section>`;
     $$('[data-pt]', box).forEach(b => b.onclick = () => { collect(); P.pay_type = b.dataset.pt; draw(); });
     $('#psv', box).onclick = async () => { collect();
       const row = { user_id: p.id, pay_type: P.pay_type, hourly_rate: P.pay_type === 'hourly' ? num(P.hourly_rate) : null, monthly_salary: P.pay_type !== 'hourly' ? num(P.monthly_salary) : null,
@@ -117,7 +114,7 @@ async function hoursTab(box, p) {
   ]);
   box.innerHTML = `<div class="kpis"><div class="kpi"><b>${T.days}</b><span>ימי עבודה החודש</span></div><div class="kpi"><b>${hhmm(T.net)}</b><span>שעות</span></div><div class="kpi"><b>${hhmm(T.ot125 + T.ot150)}</b><span>נוספות</span></div></div>
     ${(reqs || []).length ? `<a class="arow warn card-like" href="#/attendance/${p.id}"><span class="aic">${icon('clock', 18)}</span><span class="grow"><b>${reqs.length} בקשות תיקון ממתינות</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
-    ${R.flags.length ? `<div class="small muted">${R.flags.length} הערות החודש (שעות חריגות, כניסה בלי מיקום וכו׳)</div>` : ''}
+    ${R.flags.length ? `<div class="small muted">${R.flags.length} הערות החודש</div>` : ''}
     ${(abs || []).length ? `<div class="menu">${abs.map(a => `<div class="lrow kv"><span class="grow"><small>${a.status === 'approved' ? 'אושר' : a.status === 'pending' ? 'ממתין' : 'נדחה'}</small><b>${({ vacation: 'חופשה', sick: 'מחלה', reserve: 'מילואים', unpaid: 'חופש ללא תשלום', other: 'אחר' })[a.kind]} · ${dm(a.date_from)}${a.date_to !== a.date_from ? '–' + dm(a.date_to) : ''}</b></span></div>`).join('')}</div>` : ''}
-    <a class="btn ghost block" href="#/attendance/${p.id}">דוח השעות המלא, תיקונים ואישור החודש</a>`;
+    <a class="btn ghost block" href="#/attendance/${p.id}">דוח השעות המלא</a>`;
 }

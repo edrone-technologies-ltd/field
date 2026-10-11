@@ -21,7 +21,7 @@ const cats = async () => { try { const { data } = await sb.from('app_settings').
 
 export async function renderKb(el, cat = '') {
   try { const { pushState } = await import('../lib/core.js'); PUSH_ON = (await pushState()) === 'on'; } catch { /* */ }
-  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1>מרכז ידע</h1></header><div class="skel"></div>`;
+  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">מרכז ידע</h1></header><div class="skel"></div>`;
   const [{ data: items }, { data: views }, C] = await Promise.all([
     sb.from('kb_items').select('id,title,category,body,video_url,files,required,sort,updated_at,roles,quiz,sign_required,cert_months,cert_required,auto_done').order('sort').order('title'),
     sb.from('kb_views').select('item_id,confirmed_at,passed_at,signed_at').eq('user_id', state.user.id), cats()]);
@@ -29,7 +29,7 @@ export async function renderKb(el, cat = '') {
   const all = items || [], M = isManager();
   const todo = all.filter(x => (x.required || (x.cert_required && ['crew', 'crew_lead'].includes(state.profile.role))) && !kbDone(x, seen.get(x.id)));
   const used = [...new Set([...C, ...all.map(x => x.category)])].filter(c => all.some(x => x.category === c));
-  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1>מרכז ידע</h1>${M ? `<button class="btn primary sm" id="kbnew">${icon('plus', 16)} הדרכה</button>` : ''}</header>
+  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">מרכז ידע</h1>${M ? `<button class="hbtn" id="kbnew" aria-label="הדרכה חדשה">${icon('plus', 20)}</button>` : ''}</header>
     <div class="stack lg">
       <input class="search" id="kbq" type="search" placeholder="חיפוש: משאבה, סוללות, דוח יומי…">
       ${used.length > 1 ? `<div class="chips scroll">${['', ...used].map(c => `<button class="chip" data-c="${esc(c)}" aria-pressed="${c === cat}">${c || 'הכל'}</button>`).join('')}</div>` : ''}
@@ -39,15 +39,15 @@ export async function renderKb(el, cat = '') {
   function row(x) {
     const v = seen.get(x.id), kind = x.video_url ? 'play' : (x.files || []).length ? 'file' : 'report';
     return `<a class="item kb" href="#/kb/${x.id}" data-q="${esc((x.title + ' ' + (x.body || '') + ' ' + x.category).toLowerCase())}"><span class="kbic ${x.video_url ? 'vid' : ''}">${kind === 'play' ? '<svg width="20" height="20" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>' : icon(kind, 20)}</span>
-      <span class="t"><b>${esc(x.title)}</b><small>${esc([x.video_url ? 'סרטון' : 'מדריך', (x.files || []).some(isImg) ? 'עם צילומי מסך' : null, M && x.roles?.length ? audTxt(x.roles) : null].filter(Boolean).join(' · '))}</small></span>
-      ${kbDone(x, v) ? '<span class="pill ok">✓</span>' : x.quiz ? '<span class="pill warn">מבחן</span>' : x.sign_required ? '<span class="pill warn">חתימה</span>' : !v ? '<span class="newdot" title="חדש" aria-label="חדש"></span>' : ''}</a>`;
+      <span class="t"><b>${esc(x.title)}</b><small>${esc([x.video_url ? 'סרטון' : 'מדריך', M && x.roles?.length ? audTxt(x.roles) : null].filter(Boolean).join(' · '))}</small></span>
+      ${kbDone(x, v) ? `<span class="pill ok" aria-label="הושלם">${icon('check', 16)}</span>` : x.quiz ? '<span class="pill warn">מבחן</span>' : x.sign_required ? '<span class="pill warn">חתימה</span>' : !v && (x.required || x.cert_required) ? '<span class="newdot" title="חדש" aria-label="חדש"></span>' : ''}</a>`;
   }
   const draw = () => {
     const q = $('#kbq').value.trim().toLowerCase();
     const list = all.filter(x => (q || !todo.includes(x)) && (!cat || x.category === cat) && (!q || (x.title + ' ' + (x.body || '') + ' ' + x.category).toLowerCase().includes(q)));
     const groups = [...new Set(list.map(x => x.category))];
     $('#kbl').innerHTML = groups.map(g => `<section><h3 class="sh">${esc(g)}</h3><div class="list">${list.filter(x => x.category === g).map(row).join('')}</div></section>`).join('')
-      || `<div class="empty-card"><span><b>${all.length ? 'לא נמצא' : 'עוד אין הדרכות'}</b><small>${all.length ? 'נסו מילה אחרת' : M ? 'מוסיפים הדרכה ראשונה בכפתור למעלה' : 'הדרכות יופיעו כאן'}</small></span></div>`;
+      || `<div class="empty-line">${all.length ? 'לא נמצא' : 'אין הדרכות'}</div>`;
   };
   $('#kbq').oninput = draw;
   $$('[data-c]', el).forEach(b => b.onclick = () => replaceHash('#/kb' + (b.dataset.c ? '/c/' + encodeURIComponent(b.dataset.c) : '')));
@@ -56,26 +56,26 @@ export async function renderKb(el, cat = '') {
 }
 
 export async function renderKbItem(el, id) {
-  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1>מרכז ידע</h1></header><div class="skel"></div>`;
+  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">מרכז ידע</h1></header><div class="skel"></div>`;
   const { data: x } = await sb.from('kb_items').select('*').eq('id', id).maybeSingle();
-  if (!x) { el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1>מרכז ידע</h1></header><div class="empty">ההדרכה לא נמצאה.</div>`; return; }
+  if (!x) { el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">מרכז ידע</h1></header><div class="empty-line">ההדרכה לא נמצאה</div>`; return; }
   // צפייה נרשמת בפתיחה; "צפיתי והבנתי" בלחיצה
   const { data: v } = await sb.from('kb_views').select('confirmed_at,passed_at,score,signed_at').eq('item_id', id).eq('user_id', state.user.id).maybeSingle();
   if (!v) sb.from('kb_views').insert({ item_id: id, user_id: state.user.id }).then(() => {});
   const files = x.files || [], urls = files.length ? await signedUrls('kb', files.map(f => f.path)) : {};
   const emb = embedUrl(x.video_url), M = isManager();
-  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1>${esc(x.title)}</h1></header>
+  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">${esc(x.title)}</h1></header>
     <div class="stack lg">
       <div class="row"><span class="pill">${esc(x.category)}</span>${x.required ? '<span class="pill warn">חובה</span>' : ''}${M && x.roles?.length ? `<span class="pill">${esc(audTxt(x.roles))}</span>` : ''}<span class="grow"></span>${M ? `<button class="chip" id="kbed">עריכה</button>` : ''}</div>
       ${emb ? `<div class="kbvid"><iframe src="${esc(emb)}" allow="autoplay; encrypted-media; fullscreen" allowfullscreen loading="lazy" title="${esc(x.title)}"></iframe></div>`
-        : x.video_url?.startsWith('#/') ? `<a class="btn primary block big" href="${esc(x.video_url)}">▶ הפעלת ההדרכה</a>`   // הדרכה פנימית באפליקציה
+        : x.video_url?.startsWith('#/') ? `<a class="btn primary block big" href="${esc(x.video_url)}">${icon('play', 18)} הפעלת ההדרכה</a>`   // הדרכה פנימית באפליקציה
         : x.video_url ? `<a class="btn ghost block" href="${esc(x.video_url)}" target="_blank" rel="noopener">${icon('send', 18)} פתיחת הסרטון</a>` : ''}
       ${x.body ? `<div class="card kbbody">${esc(x.body).replace(/\n/g, '<br>')}</div>` : ''}
       ${files.some(isImg) ? `<div class="kbshots">${files.filter(isImg).map((f, i) => `<figure><img src="${esc(urls[f.path] || '')}" alt="${esc(f.name.replace(/\.\w+$/, ''))}" loading="lazy"><figcaption>${i + 1}. ${esc(f.name.replace(/^\d+[-_ ]*/, '').replace(/\.\w+$/, ''))}</figcaption></figure>`).join('')}</div>` : ''}
       ${files.some(f => !isImg(f)) ? `<section><h3 class="sh">מסמכים</h3><div class="list">${files.filter(f => !isImg(f)).map(f => `<a class="lrow" href="${esc(urls[f.path] || '#')}" target="_blank" rel="noopener"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
       ${x.quiz?.length ? `<section class="card stack" id="kbquiz"></section>` : ''}
       ${x.sign_required ? `<section class="card stack" id="kbsign"></section>` : ''}
-      ${!x.quiz?.length && !x.sign_required ? (v?.confirmed_at && kbDone(x, v) ? `<div class="acked center">צפית ואישרת ✓</div>` : `<button class="btn primary block big" id="kbok">צפיתי והבנתי</button>`) : ''}
+      ${!x.quiz?.length && !x.sign_required ? (v?.confirmed_at && kbDone(x, v) ? `<div class="acked center">${icon('check', 16)} צפית ואישרת</div>` : `<button class="btn primary block big" id="kbok">צפיתי והבנתי</button>`) : ''}
       ${M ? '<div id="kbwho"></div>' : ''}
     </div>`;
   $$('.kbshots img', el).forEach(i => i.onclick = () => zoom(i.src, i.alt));
@@ -95,7 +95,7 @@ export async function renderKbItem(el, id) {
       sb.from('kb_views').select('user_id,confirmed_at,viewed_at,passed_at,score,signed_at').eq('item_id', id)]);
     const by = new Map((vs || []).map(r => [r.user_id, r]));
     $('#kbwho').innerHTML = `<section><h3 class="sh">מי צפה</h3><div class="list">${(team || []).map(u => { const r = by.get(u.id);
-      return `<div class="lrow"><span class="avatar sm">${esc(initials(u.full_name))}</span><b class="grow">${esc(u.full_name)}</b>${kbDone(x, r) ? `<span class="pill ok">${x.quiz ? `עבר ${r.score}%` : x.sign_required ? 'חתם' : 'אישר'} ✓${x.cert_months ? ' · עד ' + fmtD(until(r.passed_at || r.signed_at || r.confirmed_at, x.cert_months)) : ''}</span>`
+      return `<div class="lrow"><span class="avatar sm">${esc(initials(u.full_name))}</span><b class="grow">${esc(u.full_name)}</b>${kbDone(x, r) ? `<span class="pill ok">${x.quiz ? `עבר ${r.score}%` : x.sign_required ? 'חתם' : 'אישר'}${x.cert_months ? ' · עד ' + fmtD(until(r.passed_at || r.signed_at || r.confirmed_at, x.cert_months)) : ''}</span>`
           : r?.score != null && !r.passed_at ? `<span class="pill bad">נכשל ${r.score}%</span>` : r?.passed_at || r?.signed_at || r?.confirmed_at ? '<span class="pill warn">פג תוקף</span>' : r ? '<span class="pill">צפה</span>' : '<span class="pill muted">עוד לא</span>'}</div>`; }).join('')}</div></section>`;
   }
 }
@@ -108,7 +108,7 @@ async function markView(id, patch) {
 }
 function drawQuiz(x, v, el, id) {
   const box = $('#kbquiz', el), ok = v?.passed_at && until(v.passed_at, x.cert_months) > new Date();
-  if (ok) { box.innerHTML = `<div class="row"><span class="mic ok">✓</span><span class="grow"><b>עברת את המבחן · ${v.score}%</b><small>${x.cert_months ? 'ההסמכה בתוקף עד ' + fmtD(until(v.passed_at, x.cert_months)) : 'הסמכה ללא הגבלת זמן'}</small></span><button class="chip" id="qagain">שוב</button></div>`;
+  if (ok) { box.innerHTML = `<div class="row"><span class="mic ok">${icon('check', 18)}</span><span class="grow"><b>עברת את המבחן · ${v.score}%</b><small>${x.cert_months ? 'ההסמכה בתוקף עד ' + fmtD(until(v.passed_at, x.cert_months)) : 'הסמכה ללא הגבלת זמן'}</small></span><button class="chip" id="qagain">שוב</button></div>`;
     $('#qagain', box).onclick = () => { v.passed_at = null; drawQuiz(x, v, el, id); }; return; }
   const ans = [];
   box.innerHTML = `<h3>מבחן הסמכה</h3><div class="small muted">${x.quiz.length} שאלות · עוברים מ-${x.pass_pct}%${x.cert_months ? ` · תוקף ${x.cert_months} חודשים` : ''}</div>
@@ -120,14 +120,14 @@ function drawQuiz(x, v, el, id) {
     const { data, error } = await sb.rpc('kb_grade', { item: id, answers: x.quiz.map((_, i) => ans[i]) }); if (error) return toast(error.message);
     $$('.qz', box).forEach(z => z.classList.toggle('wrong', data.wrong.includes(+z.dataset.q + 1)));
     if (data.passed) { toast(`עברת · ${data.score}%`); renderKbItem(el, id); }
-    else $('#qres', box).innerHTML = `<div class="note">ציון ${data.score}% — צריך ${data.need}%. השאלות המסומנות לא נכונות; עברו שוב על ההדרכה ונסו שוב.</div>`;
+    else $('#qres', box).innerHTML = `<div class="note">ציון ${data.score}% — צריך ${data.need}%</div>`;
   };
 }
 function drawSign(x, v, el, id) {
   const box = $('#kbsign', el), ok = v?.signed_at && until(v.signed_at, x.cert_months) > new Date();
-  if (x.quiz?.length && !(v?.passed_at)) { box.innerHTML = '<div class="small muted">החתימה נפתחת אחרי מעבר המבחן.</div>'; return; }
-  if (ok) { box.innerHTML = `<div class="row"><span class="mic ok">✓</span><span class="grow"><b>חתמת ב-${new Date(v.signed_at).toLocaleDateString('he-IL')}</b><small>${esc(x.sign_text || '')}</small></span></div>`; return; }
-  box.innerHTML = `<h3>חתימה</h3><div class="small" style="line-height:1.6">${esc(x.sign_text || 'קראתי, הבנתי ואפעל לפי הנוהל.')}</div>
+  if (x.quiz?.length && !(v?.passed_at)) { box.innerHTML = '<div class="empty-line">החתימה אחרי מעבר המבחן</div>'; return; }
+  if (ok) { box.innerHTML = `<div class="row"><span class="mic ok">${icon('check', 18)}</span><span class="grow"><b>חתמת ב-${new Date(v.signed_at).toLocaleDateString('he-IL')}</b><small>${esc(x.sign_text || '')}</small></span></div>`; return; }
+  box.innerHTML = `<h3>חתימה</h3><div class="small consent">${esc(x.sign_text || 'קראתי, הבנתי ואפעל לפי הנוהל.')}</div>
     <canvas class="sigpad" width="700" height="220"></canvas><div class="row"><button class="chip" id="sclr">ניקוי</button><span class="grow"></span><span class="small muted">${esc(state.profile.full_name)} · ${new Date().toLocaleDateString('he-IL')}</span></div>
     <button class="btn primary block big" id="ssend">חתימה ואישור</button>`;
   const c = $('canvas', box), g = c.getContext('2d'); let drew = false, on = false;
@@ -154,33 +154,32 @@ async function editKb(x, C) {
   sheet(`<h3>${x ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
     <label class="field">כותרת<input id="kt" value="${esc(f.title)}" placeholder="למשל: הפעלת משאבת הלחץ בבוקר"></label>
     <div class="field">קטגוריה<div class="chips">${[...new Set([...C, f.category])].map(c => `<button type="button" class="chip" data-kc="${esc(c)}" aria-pressed="${c === f.category}">${esc(c)}</button>`).join('')}</div></div>
-    <div class="field">למי ההדרכה<small>בלי סימון = לכל הצוות. מנהלים רואים הכל</small><div class="chips">${AUD.map(([k, l]) => `<button type="button" class="chip" data-ka="${k}" aria-pressed="${f.roles.includes(k)}">${l}</button>`).join('')}</div></div>
-    <label class="field">קישור לסרטון<small>גוגל דרייב או יוטיוב (לא רשום). בדרייב: שיתוף ← "כל מי שיש לו את הקישור" — כדי שיתנגן לכל הצוות</small><input id="kv" type="url" dir="ltr" value="${esc(f.video_url)}" placeholder="https://drive.google.com/file/d/…"></label>
+    <div class="field">למי ההדרכה<div class="chips">${AUD.map(([k, l]) => `<button type="button" class="chip" data-ka="${k}" aria-pressed="${f.roles.includes(k)}">${l}</button>`).join('')}</div></div>
+    <label class="field">קישור לסרטון<input id="kv" type="url" dir="ltr" value="${esc(f.video_url)}" placeholder="https://drive.google.com/file/d/…"></label>
     <div id="kvp" class="small muted"></div>
-    <label class="field">הסבר<small>שלבים, דגשים, מה לא לעשות</small><textarea id="kb" rows="6">${esc(f.body)}</textarea></label>
-    <div class="field">מסמכים (PDF / תמונות, עד 10MB)<div id="kf" class="list"></div><label class="btn ghost block" style="position:relative">${icon('plus', 18)} הוספת מסמך<input type="file" accept="application/pdf,image/*" multiple id="kfi" style="position:absolute;inset:0;opacity:0"></label></div>
+    <label class="field">הסבר<textarea id="kb" rows="6" placeholder="שלבים, דגשים, מה לא לעשות">${esc(f.body)}</textarea></label>
+    <div class="field">מסמכים (PDF / תמונות, עד 10MB)<div id="kf" class="list"></div><label class="btn ghost block">${icon('plus', 18)} הוספת מסמך<input type="file" accept="application/pdf,image/*" multiple id="kfi" hidden></label></div>
     <details class="fold" ${Q.length || x?.sign_required ? 'open' : ''}><summary><span class="sh">מבחן, הסמכה וחתימה</span></summary>
-      <div class="stack" style="gap:10px;margin-top:8px">
+      <div class="stack kbadv">
         <div id="qb"></div><button type="button" class="btn ghost block" id="qadd">${icon('plus', 18)} שאלה למבחן</button>
-        <div class="row"><label class="field grow">ציון מעבר %<input type="number" id="kpp" value="${x?.pass_pct || 80}" min="50" max="100"></label><label class="field grow">תוקף (חודשים)<small>ריק = ללא הגבלה</small><input type="number" id="kcm" value="${x?.cert_months || ''}" min="1"></label></div>
-        <label class="tog"><span>הסמכת חובה לצוות שטח <small class="muted">— בלי מעבר בתוקף אי אפשר לשבץ</small></span><span class="sw"><input type="checkbox" id="kcr" ${x?.cert_required ? 'checked' : ''}><i></i></span></label>
-        <label class="tog"><span>חתימה דיגיטלית <small class="muted">— העובד חותם באצבע</small></span><span class="sw"><input type="checkbox" id="ksr" ${x?.sign_required ? 'checked' : ''}><i></i></span></label>
+        <div class="row"><label class="field grow">ציון מעבר %<input type="number" id="kpp" value="${x?.pass_pct || 80}" min="50" max="100"></label><label class="field grow">תוקף (חודשים)<input type="number" id="kcm" value="${x?.cert_months || ''}" min="1" placeholder="ללא הגבלה"></label></div>
+        <label class="tog"><span>הסמכת חובה לצוות שטח</span><span class="sw"><input type="checkbox" id="kcr" ${x?.cert_required ? 'checked' : ''}><i></i></span></label>
+        <label class="tog"><span>חתימה דיגיטלית</span><span class="sw"><input type="checkbox" id="ksr" ${x?.sign_required ? 'checked' : ''}><i></i></span></label>
         <label class="field">נוסח החתימה<textarea id="kst" rows="2" placeholder="קראתי והבנתי את הנוהל ואפעל לפיו.">${esc(x?.sign_text || '')}</textarea></label>
       </div></details>
-    <label class="tog"><span>הדרכת חובה <small class="muted">— מופיעה בבית לכל הצוות עד שאישרו, ונשלחת התראה</small></span><span class="sw"><input type="checkbox" id="kr" ${f.required ? 'checked' : ''}><i></i></span></label>
+    <label class="tog"><span>הדרכת חובה</span><span class="sw"><input type="checkbox" id="kr" ${f.required ? 'checked' : ''}><i></i></span></label>
     <div class="row">${x ? '<button class="btn ghost" id="kdel">מחיקה</button>' : ''}<button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="ks">שמירה</button></div>`, (s, close) => {
     const drawFiles = () => { $('#kf', s).innerHTML = f.files.map((x, i) => `<div class="lrow"><span class="mic">${icon('file', 18)}</span><b class="grow">${esc(x.name)}</b><button type="button" class="chip" data-rm="${i}">הסרה</button></div>`).join('');
       $$('[data-rm]', s).forEach(b => b.onclick = () => { f.files.splice(+b.dataset.rm, 1); drawFiles(); }); };
     drawFiles();
     const drawQ = () => { $('#qb', s).innerHTML = Q.map((q, i) => `<div class="qedit" data-i="${i}"><div class="row"><b class="grow">שאלה ${i + 1}</b><button type="button" class="chip" data-qrm="${i}">הסרה</button></div>
-        <input data-qq="${i}" value="${esc(q.q)}" placeholder="השאלה">${q.options.map((o, j) => `<label class="qopt-e"><input type="radio" name="qa${i}" data-qa="${i}" value="${j}" ${q.a === j ? 'checked' : ''}><input data-qo="${i}|${j}" value="${esc(o)}" placeholder="תשובה ${j + 1}${j > 1 ? ' (לא חובה)' : ''}"></label>`).join('')}
-        <small class="muted">מסמנים את התשובה הנכונה</small></div>`).join('');
+        <input data-qq="${i}" value="${esc(q.q)}" placeholder="השאלה">${q.options.map((o, j) => `<label class="qopt-e"><input type="radio" name="qa${i}" data-qa="${i}" value="${j}" ${q.a === j ? 'checked' : ''}><input data-qo="${i}|${j}" value="${esc(o)}" placeholder="תשובה ${j + 1}${j > 1 ? ' (לא חובה)' : ''}"></label>`).join('')}</div>`).join('');
       $$('[data-qq]', s).forEach(e => e.oninput = () => Q[+e.dataset.qq].q = e.value);
       $$('[data-qo]', s).forEach(e => e.oninput = () => { const [i, j] = e.dataset.qo.split('|').map(Number); Q[i].options[j] = e.value; });
       $$('[data-qa]', s).forEach(e => e.onchange = () => Q[+e.dataset.qa].a = +e.value);
       $$('[data-qrm]', s).forEach(e => e.onclick = () => { Q.splice(+e.dataset.qrm, 1); drawQ(); }); };
     drawQ(); $('#qadd', s).onclick = () => { Q.push({ q: '', options: ['', '', '', ''], a: 0 }); drawQ(); };
-    const prev = () => { const u = $('#kv', s).value.trim(); $('#kvp', s).textContent = !u ? '' : embedUrl(u) ? '✓ הסרטון יתנגן בתוך האפליקציה' : 'קישור אחר — ייפתח בלשונית חדשה'; };
+    const prev = () => { const u = $('#kv', s).value.trim(); $('#kvp', s).textContent = !u ? '' : embedUrl(u) ? 'יתנגן בתוך האפליקציה' : 'ייפתח בלשונית חדשה'; };
     $('#kv', s).oninput = prev; prev();
     $$('[data-ka]', s).forEach(c => c.onclick = () => { const k = c.dataset.ka; f.roles = f.roles.includes(k) ? f.roles.filter(r => r !== k) : [...f.roles, k]; c.setAttribute('aria-pressed', f.roles.includes(k)); });
     $$('[data-kc]', s).forEach(c => c.onclick = () => { f.category = c.dataset.kc; $$('[data-kc]', s).forEach(y => y.setAttribute('aria-pressed', y === c)); });

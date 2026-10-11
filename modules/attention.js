@@ -54,8 +54,8 @@ async function tourRows() {
 }
 async function pushRows() {
   const st = await pushState();
-  if (st === 'off') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'התראות כבויות', sub: 'בלי זה לא תדעו על משימה או שיבוץ', btn: 'הפעלה' }];
-  if (st === 'install') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'להתקין למסך הבית', sub: 'רק כך אפשר לקבל התראות באייפון', href: '#/kb' }];
+  if (st === 'off') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'התראות כבויות', sub: '', btn: 'הפעלה' }];
+  if (st === 'install') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'להתקין למסך הבית', sub: '', href: '#/kb' }];
   return [];
 }
 
@@ -69,7 +69,7 @@ export async function attentionItems() {
 // "דורש טיפול" — רשימה אחת לכל המסך: הכי חמור קודם, 5 ראשונים ו"עוד" שנפתח במקום
 const RANK = { bad: 0, gold: 1, warn: 2, '': 3 };
 export const sortNeeds = items => items.slice().sort((a, b) => (RANK[a.tone] ?? 3) - (RANK[b.tone] ?? 3));
-const nrow = (x, i, hide) => `<a class="arow ${x.tone || ''}" ${x.href ? `href="${x.href}"` : 'role="button" tabindex="0"'} data-ni="${i}"${hide ? ' hidden' : ''}><span class="aic">${x.ic}</span><span class="grow"><b>${esc(x.title)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span>${x.btn ? `<span class="btn primary sm">${x.btn}</span>` : x.href || x.list ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</a>`;
+const nrow = (x, i, hide) => `<a class="arow ${x.tone || ''}" ${x.href ? `href="${x.href}"` : 'role="button" tabindex="0"'} data-ni="${i}"${hide ? ' hidden' : ''}><span class="aic">${x.ic}</span><span class="grow"><b>${esc(x.title)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span>${x.btn ? `<span class="btn ghost sm">${x.btn}</span>` : x.href || x.list ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</a>`;
 export function needsList(items, { title = 'דורש טיפול', limit = 5, id = 'needs' } = {}) {
   if (!items.length) return '';
   const more = items.length - limit;

@@ -46,7 +46,7 @@ const km = m => m >= 1000 ? (m / 1000).toFixed(m < 10000 ? 1 : 0) + ' ק"מ' : M
 async function consent() {
   if (state.profile.attendance_consent_at) return true;
   return new Promise(res => sheet(`<h3>רישום שעות ומיקום</h3>
-    <div class="small" style="line-height:1.6">
+    <div class="small consent">
       <p>החוק מחייב רישום של שעות העבודה בפועל. העבודה שלנו באתרים בכל הארץ, ולכן האפליקציה רושמת את המיקום <b>רק ברגע שאתה לוחץ כניסה או יציאה</b>, כדי לאמת שההחתמה נעשתה באתר.</p>
       <p><b>אין מעקב רציף</b>, ואין איסוף מיקום מחוץ לשעות העבודה, בערב, בלינה או בסוף השבוע.</p>
       <p>את המיקום רואים רק המנהלים. לחשבת השכר עובר סיכום שעות בלי מיקום. המיקום נמחק אחרי 90 יום. שעות העבודה נשמרות 7 שנים כנדרש בחוק.</p>
@@ -67,7 +67,7 @@ export async function clockIn(after) {
   if (loc && navigator.onLine) try {
     const { data } = await sb.rpc('my_nearest_place', { la: loc.lat, ln: loc.lng }); const n = data?.[0];
     if (n && n.dist > n.radius) {
-      note = await ask(`אתה ${km(n.dist)} מ${n.place}`, { hint: 'הכניסה תסומן למנהל. בדרך? באתר אחר? אפשר לכתוב כאן (לא חובה)', placeholder: 'למשל: יצאתי מהבית ישר לאתר', ok: 'כניסה למשמרת', optional: true });
+      note = await ask(`אתה ${km(n.dist)} מ${n.place}`, { hint: 'הכניסה תסומן למנהל', placeholder: 'למשל: יצאתי מהבית ישר לאתר', ok: 'כניסה למשמרת', optional: true });
       if (note == null) return toast('הכניסה בוטלה');
       note = note.trim() || null;
     }
@@ -134,7 +134,6 @@ async function suggestIn(el) {
 function requestSheet(sh, month, done) {
   const d0 = sh ? new Date(sh.start_at) : null, day = sh ? ymd(d0) : (ymd(new Date()).slice(0, 7) === month ? ymd(new Date()) : `${month}-01`);
   sheet(`<h3>${sh ? 'עריכת משמרת' : 'הוספת משמרת ששכחתי להחתים'}</h3>
-    <div class="small muted">השינוי יישלח למנהל, ויתעדכן בשעות רק אחרי שיאשר.</div>
     <label class="field">תאריך<input type="date" id="rd" value="${day}" ${sh ? 'disabled' : ''}></label>
     <div class="row"><label class="field grow">כניסה<input type="time" id="rs" value="${sh ? tm(sh.start_at) : '07:00'}"></label><label class="field grow">יציאה<input type="time" id="re" value="${sh?.end_at ? tm(sh.end_at) : ''}"></label></div>
     <label class="field">סיבה (חובה)<textarea id="rr" rows="2" placeholder="למשל: שכחתי להחתים יציאה, יצאתי ב-16:30"></textarea></label>
@@ -174,7 +173,7 @@ export const ABS = { vacation: 'חופשה', sick: 'מחלה', reserve: 'מיל�
 function absenceSheet(month, done) {
   let kind = 'vacation';
   const d = ymd(new Date()).slice(0, 7) === month ? ymd(new Date()) : `${month}-01`;
-  sheet(`<h3>דיווח היעדרות</h3><div class="small muted">נשלח למנהל לאישור.</div>
+  sheet(`<h3>דיווח היעדרות</h3>
     <div class="chips">${Object.entries(ABS).map(([k, t]) => `<button class="chip" data-k="${k}" aria-pressed="${k === kind}">${t}</button>`).join('')}</div>
     <div class="row"><label class="field grow">מתאריך<input type="date" id="af" value="${d}"></label><label class="field grow">עד תאריך<input type="date" id="at" value="${d}"></label></div>
     <label class="field">הערה<input type="text" id="an" placeholder="למשל: אישור מחלה יישלח מחר"></label>
@@ -229,23 +228,24 @@ export async function renderHours(el, userId, month) {
   const T = R.totals, M = isManager() && !me || (isManager() && me);
   const locked = am?.locked;
   const box = $('#hb'); if (!box) return;
+  const any = R.days.length > 0;
   box.innerHTML = `
-    <div class="kpis"><div class="kpi"><b>${T.days}</b><span>ימי עבודה</span></div><div class="kpi"><b>${hhmm(T.net)}</b><span>סה״כ שעות</span></div><div class="kpi"><b>${hhmm(T.ot125 + T.ot150)}</b><span>שעות נוספות</span></div></div>
+    ${any ? `<div class="kpis"><div class="kpi"><b>${T.days}</b><span>ימי עבודה</span></div><div class="kpi"><b>${hhmm(T.net)}</b><span>סה״כ שעות</span></div><div class="kpi"><b>${hhmm(T.ot125 + T.ot150)}</b><span>שעות נוספות</span></div></div>
     <div class="menu">${CATS.filter(([k]) => T[k] > 0 || ['reg', 'ot125', 'ot150'].includes(k)).map(([k, l]) => `<div class="lrow kv"><span class="grow"><small>${l}</small><b>${hhmm(T[k])} שעות</b></span></div>`).join('')}
-      ${T.nights ? `<div class="lrow kv"><span class="grow"><small>משמרות לילה</small><b>${T.nights}</b></span></div>` : ''}</div>
-    ${R.flags.length ? `<section><h3 class="sh">לתשומת לב</h3><div class="alist">${R.flags.map(f => `<div class="arow warn"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small style="white-space:normal;color:var(--ink)">${esc(f)}</small></span></div>`).join('')}</div></section>` : ''}
+      ${T.nights ? `<div class="lrow kv"><span class="grow"><small>משמרות לילה</small><b>${T.nights}</b></span></div>` : ''}</div>` : ''}
+    ${R.flags.length ? `<section><h3 class="sh">לתשומת לב</h3><div class="alist">${R.flags.map(f => `<div class="arow warn"><span class="aic">${icon('alert', 18)}</span><span class="grow"><small class="fl">${esc(f)}</small></span></div>`).join('')}</div></section>` : ''}
     <section><h3 class="sh">לפי ימים</h3><div class="list">${R.days.map(d => `<div class="lrow dayline"><span class="datebox"><b>${+d.date.slice(8)}</b><small>יום ${HE_D1[new Date(d.date + 'T12:00').getDay()]}</small></span>
-      <span class="grow"><b>${d.shifts.map(s => `${tm(s.start_at)}–${s.end_at ? tm(s.end_at) : 'פתוחה'}${s.start_lat == null && s.source === 'app' ? ' ⌀' : ''}`).join(' · ')}</b>
+      <span class="grow"><b>${d.shifts.map(s => `${tm(s.start_at)}–${s.end_at ? tm(s.end_at) : 'פתוחה'}${s.start_lat == null && s.source === 'app' ? `<span class="muted nogeo" title="בלי מיקום" aria-label="בלי מיקום">${icon('pin', 14)}</span>` : ''}`).join(' · ')}</b>
       <small>${hhmm(d.netH)} שעות${d.ot125 + d.ot150 ? ` · נוספות ${hhmm(d.ot125 + d.ot150)}` : ''}${d.isNight ? ' · לילה' : ''}${d.holiday ? ' · ' + d.holiday : ''}${!me && d.shifts.some(x => x.late_sync_min) ? ` · <span class="pill warn">כניסה נשלחה באיחור ${Math.max(...d.shifts.map(x => x.late_sync_min || 0))} דק׳</span>` : ''}${!me ? d.shifts.filter(x => x.start_dist_m > (S.geofence_m || 500) || x.end_dist_m > (S.geofence_m || 500)).map(x => ` · <span class="pill warn" title="${esc(x.note || '')}">${x.start_dist_m > (S.geofence_m || 500) ? 'כניסה' : 'יציאה'} ${km(x.start_dist_m > (S.geofence_m || 500) ? x.start_dist_m : x.end_dist_m)} מ${esc(x.start_dist_m > (S.geofence_m || 500) ? x.start_place : x.end_place)}</span>${x.note ? ` <small>"${esc(x.note)}"</small>` : ''}`).join('') : ''}</small></span>
       ${me && !locked && !d.shifts.some(x => byShift(x.id).some(r => r.status === 'pending')) ? `<button class="chip" data-req="${d.shifts[0].id}">עריכה</button>` : !me && isManager() && !locked ? `<button class="chip" data-edit="${d.shifts[0].id}">תיקון</button>` : ''}</div>
-      ${d.shifts.flatMap(x => byShift(x.id).filter(r => r.status === 'pending' || Date.now() - new Date(r.decided_at) < 30 * 864e5).map(r => reqLine(r, x) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : ''))).join('')}`).join('') || '<div class="muted small">אין משמרות בחודש הזה</div>'}
+      ${d.shifts.flatMap(x => byShift(x.id).filter(r => r.status === 'pending' || Date.now() - new Date(r.decided_at) < 30 * 864e5).map(r => reqLine(r, x) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : ''))).join('')}`).join('') || '<div class="empty-line">אין משמרות בחודש הזה</div>'}
       ${pendingNew.map(r => reqLine(r) + (!me && isManager() && r.status === 'pending' ? decideBtns(r) : '')).join('')}</div>
       ${me && !locked ? `<button class="btn ghost block" id="reqadd">${icon('plus', 18)} הוספת משמרת ששכחתי להחתים</button>` : ''}
       ${!me && isManager() && !locked ? `<button class="btn ghost block" id="addsh">${icon('plus', 18)} הוספת משמרת (מנהל)</button>` : ''}</section>
-    <section><div class="sh-row"><h3 class="sh">היעדרויות</h3>${me && !locked ? '<button class="more" id="absadd" style="border:0;background:none;cursor:pointer">+ דיווח היעדרות</button>' : ''}</div>
-      ${(abs || []).map(a => absLine(a) + (!me && isManager() && a.status === 'pending' ? absBtns(a) : '')).join('') || '<div class="muted small">אין היעדרויות בחודש הזה</div>'}</section>
+    <section><div class="sh-row"><h3 class="sh">היעדרויות</h3>${me && !locked ? `<button class="more" type="button" id="absadd">${icon('plus', 16)} דיווח היעדרות</button>` : ''}</div>
+      ${(abs || []).map(a => absLine(a) + (!me && isManager() && a.status === 'pending' ? absBtns(a) : '')).join('') || '<div class="empty-line">אין היעדרויות בחודש הזה</div>'}</section>
     <section><h3 class="sh">אישור החודש</h3><div class="menu">
-      <div class="lrow kv"><span class="grow"><small>העובד</small><b>${am?.worker_ok_at ? 'אישר ' + new Date(am.worker_ok_at).toLocaleDateString('he-IL') : 'עוד לא אישר'}</b></span>${me && !am?.worker_ok_at && !locked ? '<button class="btn primary sm" id="wok">אישור השעות</button>' : ''}</div>
+      <div class="lrow kv"><span class="grow"><small>העובד</small><b>${am?.worker_ok_at ? 'אישר ' + new Date(am.worker_ok_at).toLocaleDateString('he-IL') : 'עוד לא אישר'}</b></span>${me && !am?.worker_ok_at && !locked ? `<button class="btn primary sm" id="wok"${any ? '' : ' disabled'}>אישור השעות</button>` : ''}</div>
       <div class="lrow kv"><span class="grow"><small>המנהל</small><b>${locked ? 'אושר ונעל ' + new Date(am.manager_ok_at).toLocaleDateString('he-IL') : 'עוד לא אושר'}</b></span>${isManager() && !me && !locked ? '<button class="btn primary sm" id="mok">אישור ונעילה</button>' : ''}</div></div>
 </section>
     ${isManager() && (edits || []).length ? `<details class="fold"><summary><span class="sh">יומן תיקונים</span><span class="count">${edits.length}</span></summary><div class="list">${edits.map(e => `<div class="lrow kv"><span class="grow"><small>${new Date(e.at).toLocaleString('he-IL')}</small><b>${esc(e.reason || '')}</b></span></div>`).join('')}</div></details>` : ''}`;
@@ -281,9 +281,9 @@ export async function renderHours(el, userId, month) {
 
 // ---------- נוכחות צוות (מנהלים) ----------
 export async function renderAttendance(el, month) {
-  if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">למנהלים בלבד</div>'; return; }
   month ||= ymd(new Date()).slice(0, 7);
-  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1>נוכחות צוות</h1></header>
+  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">נוכחות צוות</h1></header>
     <div class="monthbar"><button id="mp" aria-label="חודש קודם">${icon('back', 18)}</button><b>${monthName(month)}</b><button id="mn" aria-label="חודש הבא">${icon('chev', 18)}</button></div>
     <div id="ab" class="stack lg"><div class="skel"></div></div>`;
   $('#mp').onclick = () => replaceHash(`#/attendance/m/${prevMonth(month)}`);
@@ -307,13 +307,13 @@ export async function renderAttendance(el, month) {
   const { data: pShifts } = (pend || []).some(r => r.shift_id) ? await sb.from('shifts').select('*').in('id', pend.filter(r => r.shift_id).map(r => r.shift_id)) : { data: [] };
   box.innerHTML = `
     ${(pend || []).length + (pabs || []).length ? `<section><div class="sh-row"><h3 class="sh">בקשות לאישור</h3><span class="count">${(pend || []).length + (pabs || []).length}</span></div>
-      <div class="list">${(pabs || []).map(a => `<div class="card stack" style="gap:6px"><b>${esc(people.find(x => x.id === a.user_id)?.full_name || '')}</b>${absLine(a)}${absBtns(a)}</div>`).join('')}${(pend || []).map(r => `<div class="card stack" style="gap:6px"><b>${esc(people.find(x => x.id === r.user_id)?.full_name || '')} · ${new Date(r.req_start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}</b>${reqLine(r, (pShifts || []).find(x => x.id === r.shift_id))}${decideBtns(r)}</div>`).join('')}</div></section>` : ''}
+      <div class="list">${(pabs || []).map(a => `<div class="card stack reqcard"><b>${esc(people.find(x => x.id === a.user_id)?.full_name || '')}</b>${absLine(a)}${absBtns(a)}</div>`).join('')}${(pend || []).map(r => `<div class="card stack reqcard"><b>${esc(people.find(x => x.id === r.user_id)?.full_name || '')} · ${new Date(r.req_start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}</b>${reqLine(r, (pShifts || []).find(x => x.id === r.shift_id))}${decideBtns(r)}</div>`).join('')}</div></section>` : ''}
     <section><div class="sh-row"><h3 class="sh">במשמרת עכשיו</h3><span class="count">${nowOn.length}</span></div>
-      ${nowOn.length ? `<div class="list">${nowOn.map(s => { const p = people.find(x => x.id === s.user_id); return `<a class="lrow" href="#/attendance/${s.user_id}"><span class="cl-dot"></span><span class="grow"><b>${esc(p?.full_name || '')}</b><small>מ-${tm(s.start_at)} · ${hhmm((Date.now() - new Date(s.start_at)) / 36e5)} שעות${s.start_lat != null ? ` · <span class="maplink" data-ll="${s.start_lat},${s.start_lng}">מיקום כניסה</span>` : ' · בלי מיקום'}</small></span></a>`; }).join('')}</div>` : '<div class="muted small">אף אחד לא במשמרת כרגע</div>'}</section>
-    <section><div class="sh-row"><h3 class="sh">סיכום חודשי</h3>${can('finance') ? '<button class="more" id="exp" style="border:0;background:none;cursor:pointer">ייצוא לחשבת השכר</button>' : ''}</div>
+      ${nowOn.length ? `<div class="list">${nowOn.map(s => { const p = people.find(x => x.id === s.user_id); return `<a class="lrow" href="#/attendance/${s.user_id}"><span class="cl-dot"></span><span class="grow"><b>${esc(p?.full_name || '')}</b><small>מ-${tm(s.start_at)} · ${hhmm((Date.now() - new Date(s.start_at)) / 36e5)} שעות${s.start_lat != null ? ` · <span class="maplink" data-ll="${s.start_lat},${s.start_lng}">מיקום כניסה</span>` : ' · בלי מיקום'}</small></span></a>`; }).join('')}</div>` : '<div class="empty-line">אף אחד לא במשמרת כרגע</div>'}</section>
+    <section><div class="sh-row"><h3 class="sh">סיכום חודשי</h3>${can('finance') ? '<button class="more" type="button" id="exp">ייצוא לחשבת השכר</button>' : ''}</div>
       <div class="list">${rows.map(({ p, R, am }) => `<a class="lrow" href="#/attendance/${p.id}/${month}"><span class="avatar sm">${esc(p.full_name.split(' ').map(w => w[0]).slice(0, 2).join(''))}</span><span class="grow"><b>${esc(p.full_name)}</b>
         <small>${R.totals.days} ימים · ${hhmm(R.totals.net)} שעות${R.totals.ot125 + R.totals.ot150 ? ` · נוספות ${hhmm(R.totals.ot125 + R.totals.ot150)}` : ''}${R.flags.length ? ` · ${R.flags.length} הערות` : ''}</small></span>
-        <span class="pill ${am?.locked ? 'ok' : am?.worker_ok_at ? 'lime' : ''}">${am?.locked ? 'נעול' : am?.worker_ok_at ? 'העובד אישר' : R.totals.days ? 'פתוח' : '—'}</span></a>`).join('')}</div></section>`;
+        ${am?.locked ? '<span class="pill ok">נעול</span>' : am?.worker_ok_at ? '<span class="pill lime">העובד אישר</span>' : R.totals.days ? '<span class="pill">פתוח</span>' : ''}</a>`).join('')}</div></section>`;
   bindDecide(box, () => renderAttendance(el, month)); bindAbsDecide(box, () => renderAttendance(el, month));
   $$('.maplink', box).forEach(m => m.onclick = e => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.google.com/maps?q=${m.dataset.ll}`, '_blank'); });
   const xb = $('#exp'); if (xb) xb.onclick = () => exportXlsx(month, rows, mabs || [], rates || [], S);

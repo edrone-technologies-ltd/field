@@ -11,7 +11,7 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['', 'ops', 'schedule', 'projects', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch']);
+const WITH_NAV = new Set(['', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -46,11 +46,17 @@ function nav(show, active = '') {
   $('#tplus').onclick = quickAdd;
   unread();
 }
-// כפתור + : המקום היחיד ליצירת משהו חדש — דוחות (לפי הרשאות), בקשה/בעיה למשרד, ורכש למנהל תפעול ומעלה
+// כפתור + : המקום היחיד ליצירת משהו חדש. רשת אחת, מילה אחת לכל פעולה; בתוך פרויקט — הדוח משויך אליו מראש
+const ADD = { daily: ['report', 'דוח יומי'], issue: ['alert', 'תקלה'], expense: ['receipt', 'הוצאה'], spec: ['clipboard', 'אפיון'], signoff: ['pen', 'החתמה'], visit: ['users', 'ביקור'], summary: ['activity', 'סיכום'] };
 async function quickAdd() {
-  const { newReport } = await import('./modules/reports.js');
-  newReport(null, [['#/requests/new', 'send', 'בקשה או בעיה למשרד', 'שכר, ציוד, מסמכים, כל דבר אחר'],
-    can('purchase') && ['#/purchase/new', 'cart', 'בקשת רכש', 'חומרים וציוד מספקים']].filter(Boolean));
+  const { newReport, TYPES } = await import('./modules/reports.js');
+  const pid = (location.hash.match(/^#\/p\/([0-9a-f-]{36})/) || [])[1] || null;
+  const tiles = [...TYPES.filter(t => t.ok() && !(pid && t.noProject)).map(t => `<button class="ctile" data-k="${t.k}">${icon(ADD[t.k]?.[0] || t.ic, 24)}<b>${ADD[t.k]?.[1] || t.t}</b></button>`),
+    `<a class="ctile" href="#/requests/new" data-close>${icon('send', 24)}<b>בקשה למשרד</b></a>`,
+    can('purchase') && `<a class="ctile" href="#/purchase/new" data-close>${icon('cart', 24)}<b>רכש</b></a>`].filter(Boolean);
+  sheet(`<h3 class="sh">${pid ? 'חדש בפרויקט' : 'חדש'}</h3><div class="cgrid">${tiles.join('')}</div>`, (s, close) => {
+    $$('[data-k]', s).forEach(b => b.onclick = () => { close(); newReport(pid, [], b.dataset.k); });
+  });
 }
 async function unread() {
   try {
@@ -97,13 +103,14 @@ function renderMenu() {
     <div class="stack lg">
       <div class="card prof"><span class="avatar lg">${esc(initials(p.full_name))}</span><div class="grow"><b>${esc(p.full_name)}</b><small>${esc([ROLE_HE[p.role], p.phone].filter(Boolean).join(' · '))}</small>
         ${p.is_pilot && p.pilot_license_expiry ? `<small class="${new Date(p.pilot_license_expiry) - Date.now() < 45 * 864e5 ? 'err' : ''}">רישיון מטיס ${esc(p.pilot_license_no || '')} · בתוקף עד ${new Date(p.pilot_license_expiry).toLocaleDateString('he-IL')}</small>` : ''}</div></div>
-      ${groups.map(([g, rows]) => `<section><h3 class="sh">${g}</h3><div class="mgrid">${rows.map(([h, ic, t, s]) => `<a class="mtile" href="${h}"><span class="mic">${icon(ic, 20)}</span><b>${t}</b><small>${s}</small></a>`).join('')}</div></section>`).join('')}
-      <div class="menu"><div class="lrow"><span class="mic">${icon('sun', 20)}</span><span class="grow"><b>תצוגה</b></span>
+      ${groups.map(([g, rows]) => `<section><h3 class="sh">${g}</h3><div class="mgrid">${rows.map(([h, ic, t]) => `<a class="mtile" href="${h}"><span class="mic">${icon(ic, 20)}</span><b>${t}</b></a>`).join('')}</div></section>`).join('')}
+      <section><h3 class="sh">הגדרות</h3><div class="menu"><div class="lrow"><span class="mic">${icon('settings', 20)}</span><span class="grow"><b>תצוגה</b></span>
         <span class="seg">${[['', 'אוטומטי'], ['light', 'בהיר'], ['dark', 'כהה']].map(([v, l]) => `<button data-th="${v}" aria-pressed="${th === v}">${l}</button>`).join('')}</span></div>
-        <button class="lrow" id="qrow"><span class="mic">${icon('send', 20)}</span><span class="grow"><b>סנכרון</b><small>מה ממתין לשליחה מהטלפון</small></span><span class="chev">${icon('chev', 18)}</span></button>
+        <button class="lrow" id="qrow"><span class="mic">${icon('sync', 20)}</span><span class="grow"><b>סנכרון</b></span><span class="chev">${icon('chev', 18)}</span></button>
         <div class="lrow" id="pushrow"><span class="mic">${icon('chat', 20)}</span><span class="grow"><b>התראות לטלפון</b><small id="pushtxt">בודק…</small></span><span id="pushbtn"></span></div>
         <div id="install"></div>
-        <button class="lrow" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
+      </div></section>
+      <div class="menu"><button class="lrow danger" id="so"><span class="mic">${icon('logout', 20)}</span><span class="grow"><b>יציאה מהחשבון</b></span></button></div>
       <div class="foot" id="ver">E-Drone שטח</div>
     </div>`;
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
@@ -112,11 +119,11 @@ function renderMenu() {
   installHint(); pushRow();
   caches.keys().then(k => { const v = k.find(x => x.startsWith('edrone-field-v')); const e = $('#ver'); if (v && e) e.textContent = 'E-Drone שטח · גרסה ' + v.split('-v')[1]; }).catch(() => {});
 }
-const PUSH_TXT = { on: 'פועלות — הודעות, שיבוצים ותקלות קריטיות', off: 'כבויות', denied: 'נחסמו בהגדרות הטלפון. מפעילים שם: הגדרות ← התראות ← E-Drone', install: 'קודם מתקינים במסך הבית, ואז אפשר להפעיל', unsupported: 'הטלפון לא תומך. צריך iOS 16.4 ומעלה' };
+const PUSH_TXT = { on: 'פועלות', off: 'כבויות', denied: 'חסומות בהגדרות הטלפון', install: 'זמינות אחרי התקנה במסך הבית', unsupported: 'לא נתמך בטלפון הזה' };
 async function pushRow() {
   const st = await pushState().catch(() => 'unsupported'); const t = $('#pushtxt'), b = $('#pushbtn'); if (!t) return;
   t.textContent = PUSH_TXT[st];
-  b.innerHTML = st === 'off' ? '<button class="btn primary sm">הפעלה</button>' : st === 'on' ? '<span class="pill ok">פועל</span>' : '';
+  b.innerHTML = st === 'off' ? '<button class="btn ghost sm">הפעלה</button>' : st === 'on' ? '<span class="pill ok">פועל</span>' : '';
   const btn = b.querySelector('button'); if (btn) btn.onclick = async () => { btn.disabled = true; try { await enablePush(); toast('ההתראות הופעלו'); } catch (e) { toast(e.message); } pushRow(); };
 }
 export async function pushCard(box) {
@@ -137,13 +144,17 @@ addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInsta
 function installHint() {
   const box = $('#install'); if (!box || matchMedia('(display-mode: standalone)').matches || navigator.standalone) return;
   const ios = /iphone|ipad/i.test(navigator.userAgent);
-  box.innerHTML = `<div class="lrow"><img src="icon-192.png" alt="" class="mic img"><span class="grow"><b>התקנה במסך הבית</b><small>${ios ? 'בספארי: כפתור השיתוף ← "הוסף למסך הבית"' : 'נפתחת כמו אפליקציה, גם בלי קליטה'}</small></span>${deferredInstall ? '<button class="btn primary sm" id="inst">התקנה</button>' : ''}</div>`;
+  box.innerHTML = `<div class="lrow"><span class="mic">${icon('home', 20)}</span><span class="grow"><b>התקנה במסך הבית</b>${ios ? '<small>שיתוף ← הוסף למסך הבית</small>' : ''}</span>${deferredInstall ? '<button class="btn ghost sm" id="inst">התקנה</button>' : ''}</div>`;
   const b = $('#inst'); if (b) b.onclick = async () => { deferredInstall.prompt(); deferredInstall = null; box.innerHTML = ''; };
 }
 
 // ---------- ניתוב ----------
+// מספר ניווט: מסך איטי שסיים (או נכשל) אחרי שהמשתמש כבר עבר מסך — לא כותב על המסך החדש
+let navSeq = 0;
+export const navToken = () => navSeq;
 async function route() {
-  try { await routeInner(); } catch (e) { console.error(e); app.innerHTML = `<div class="empty-card"><span><b>משהו השתבש בטעינת המסך</b><small>${esc(e.message || e)}</small></span></div><button class="btn ghost block" onclick="location.reload()">רענון</button>`; }
+  const my = ++navSeq;
+  try { await routeInner(); } catch (e) { console.error(e); if (my !== navSeq) return; app.innerHTML = `<div class="empty-card"><span><b>משהו השתבש בטעינת המסך</b><small>${esc(e.message || e)}</small></span></div><button class="btn ghost block" onclick="location.reload()">רענון</button>`; }
 }
 async function routeInner() {
   const h = location.hash.replace(/^#\/?/, '').split('/');
@@ -152,7 +163,7 @@ async function routeInner() {
   $('#sheet').hidden = true;
   // מסך שורש של לשונית (בלי תת-נתיב) — בלי כפתור חזרה בכותרת
   if (h.length === 1 && TABS.some(t => t.k === h[0] && t.ok())) document.body.dataset.root = ''; else delete document.body.dataset.root;
-  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'alerts' || h[0] === 'reports' ? (isManager() ? '' : 'menu') : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses'].includes(h[0]) ? 'menu' : h[0]);
+  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' ? '' : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses'].includes(h[0]) ? 'menu' : h[0]);
   const guard = m => { if (!can(m)) { app.innerHTML = `<div class="empty-card"><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; } return true; };
   const home = () => import('./modules/home.js');
   switch (h[0]) {
@@ -166,7 +177,7 @@ async function routeInner() {
     case 'menu': case 'me': return renderMenu();
     case 'hours': return (await import('./modules/attendance.js')).renderHours(app, null, h[1]);
     case 'attendance': { const m = await import('./modules/attendance.js'); if (h[1] === 'm' || !h[1]) return m.renderAttendance(app, h[2]); return m.renderHours(app, h[1], h[2]); }
-    case 'purchase': if (guard('purchase')) { await (await import('./modules/purchase.js')).renderPurchase(app); if (h[1] === 'new') $('#newreq')?.click(); } return;
+    case 'purchase': if (guard('purchase')) { await (await import('./modules/purchase.js')).renderPurchase(app); } return;
     case 'dispatch': return (await import('./modules/dispatch.js')).renderDispatch(app, h[1]);
     case 'client-report': return (await import('./modules/clientreport.js')).renderClientReport(app, h[1]);
     case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
@@ -180,7 +191,7 @@ async function routeInner() {
     case 'tour': return (await import('./modules/tour.js')).renderTour(app, h[1] || 'ops');
     case 'plan': if (guard('projects')) return (await import('./modules/plan.js')).renderPlan(app, h[1], h[2] === 'print'); return;
     case 'visit': { const m = await import('./modules/visits.js'); return h[1] === 'new' ? m.renderVisitForm(app, h[2]) : h[1] === 'edit' ? m.renderVisitForm(app, h[2], h[3]) : h[2] === 'report' ? m.renderVisitReport(app, h[1]) : m.renderVisit(app, h[1]); }
-    case 'expenses': await (await import('./modules/expenses.js')).renderExpenses(app); if (h[1] === 'new') $('#newx')?.click(); return;
+    case 'expenses': await (await import('./modules/expenses.js')).renderExpenses(app); return;
     case 'myfile': return (await import('./modules/files.js')).renderMyFile(app);
     case 'staff': case 'files': { const m = await import('./modules/staff.js'); return h[1] ? m.renderEmployee(app, h[1], h[2]) : m.renderStaff(app); }
     case 'signoff': return (await import('./modules/reports.js')).renderSignoff(app, h[1]);

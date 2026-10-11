@@ -43,7 +43,7 @@ export async function renderChat(el, { site, project, conversation }) {
     if (!m.important) return '';
     const who = acks.get(m.id) || [];
     if (me) return `<button class="ackinfo" data-ack="${m.id}">${icon('users', 14)} אישרו ${who.length}${audience > 1 ? ' מתוך ' + (audience - 1) : ''}</button>`;
-    return who.includes(state.user.id) ? `<div class="acked">אישרת ✓</div>` : `<button class="btn primary sm ackbtn" data-do-ack="${m.id}">קראתי ואישרתי</button>`;
+    return who.includes(state.user.id) ? `<div class="acked">${icon('check', 14)} אישרת</div>` : `<button class="btn primary sm ackbtn" data-do-ack="${m.id}">קראתי ואישרתי</button>`;
   }
   const tagHtml = m => { let h = esc(m.body);
     for (const u of m.mentions || []) { const n = names.get(u); if (n) h = h.split('@' + esc(n)).join(`<span class="tag ${u === state.user.id ? 'me' : ''}">@${esc(n)}</span>`); }
@@ -63,11 +63,11 @@ export async function renderChat(el, { site, project, conversation }) {
         ${m.photo_path ? `<img src="${esc(urls[m.photo_path]?.t || '')}" alt="" data-full="${esc(urls[m.photo_path]?.f || '')}" data-z="${esc(urls[m.photo_path]?.f || '')}">` : ''}
         ${m.body ? `<div class="tx">${tagHtml(m)}</div>` : ''}
         ${ackLine(m, me)}<div class="when">${new Date(m.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div></div>`;
-    }).join('') : `<div class="empty-card"><span class="ei">${icon('chat', 26)}</span><span><b>אין הודעות עדיין</b><small>${conversation ? 'כתבו את ההודעה הראשונה' : site ? `שיחת האפיון של ${esc(label)} — מנהלים וסוקרים בלבד` : `צ'אט הצוות של ${esc(label)} — רק מי ששובץ לפרויקט`}</small></span></div>`;
+    }).join('') : `<div class="empty-line">אין הודעות עדיין</div>`;
     $$('[data-z]', box).forEach(i => i.onclick = () => i.dataset.z && zoom(i.dataset.z, ''));
     $$('[data-do-ack]', box).forEach(b => b.onclick = async () => { const id = b.dataset.doAck; if (!acks.has(id)) acks.set(id, []); acks.get(id).push(state.user.id); draw(); await enqueue({ kind: 'insert', table: 'message_acks', row: { message_id: id, user_id: state.user.id } }); });
     $$('[data-ack]', box).forEach(b => b.onclick = () => { const who = acks.get(b.dataset.ack) || [];
-      sheet(`<h3>אישרו קריאה</h3><div class="list">${who.map(u => `<div class="lrow"><span class="avatar sm">${esc(initials(names.get(u)))}</span><b class="grow">${esc(names.get(u) || '')}</b><span class="pill ok">✓</span></div>`).join('') || '<div class="muted">עדיין אף אחד</div>'}</div><button class="btn ghost block" data-close>סגירה</button>`); });
+      sheet(`<h3>אישרו קריאה</h3><div class="list">${who.map(u => `<div class="lrow"><span class="avatar sm">${esc(initials(names.get(u)))}</span><b class="grow">${esc(names.get(u) || '')}</b><span class="pill ok" aria-label="אישר">${icon('check', 16)}</span></div>`).join('') || '<div class="empty-line">עדיין אף אחד</div>'}</div><button class="btn ghost block" data-close>סגירה</button>`); });
     const sc = document.getElementById('app'); sc.scrollTo({ top: sc.scrollHeight });
   }
   await load();

@@ -25,20 +25,20 @@ export async function myTasks(box) {
   const urls = await signedUrls('field', mine.flatMap(t => t.photos?.before || [])).catch(() => ({}));
   const row = (t, mineRow) => {
     const s = t.sites, ph = s?.contact_phone, em = emailIn(t.instructions);
-    return `<div class="tcard" data-id="${t.id}">
+    return `<div class="card stack" data-id="${t.id}">
       <div class="row"><span class="grow"><b>${esc(t.title)}</b><small>${[s?.name && !t.project_id ? esc(s.name) : '', dueTxt(t.due), !mineRow ? 'אצל ' + esc((names.get(t.assignee_id) || '').split(' ')[0]) : ''].filter(Boolean).join(' · ')}</small></span>
         ${mineRow ? `<button class="btn primary sm" data-done="${t.id}">בוצע</button>` : ''}</div>
-      ${t.instructions ? `<div class="small" style="white-space:pre-line">${esc(t.instructions)}</div>` : ''}
+      ${t.instructions ? `<div class="small">${esc(t.instructions).replace(/\n/g, '<br>')}</div>` : ''}
       ${mineRow && t.photos?.before?.length ? `<div class="fphs sm">${t.photos.before.map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : ''}
-      ${mineRow && (ph || em || s) ? `<div class="tacts">${s?.contact_name ? `<span class="small muted grow">${esc(s.contact_name)}</span>` : '<span class="grow"></span>'}
+      ${mineRow && (ph || em || s) ? `<div class="chips tacts">${s?.contact_name ? `<span class="small muted grow">${esc(s.contact_name)}</span>` : '<span class="grow"></span>'}
         ${ph ? `<a class="chip" href="tel:${tel(ph)}">חיוג</a><a class="chip" href="${wa(ph)}" target="_blank" rel="noopener">וואטסאפ</a>` : ''}
         ${em ? `<a class="chip" href="mailto:${esc(em)}">מייל</a>` : ''}${s ? `<a class="chip" href="#/site/${esc(s.slug)}">לליד</a>` : ''}</div>` : ''}
     </div>`;
   };
   // מקובץ לפי פרויקט: צ'קליסט אחד לכל פרויקט, עם מעבר לצ'קליסט המלא
   const groups = new Map(); mine.forEach(t => { const k = t.project_id || t.site_id || '-'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(t); });
-  const head = t => t.project_id ? `<a class="tgroup" href="#/p/${t.project_id}/t"><b class="grow">${esc(t.projects?.name || 'פרויקט')}</b><span class="small muted">לצ'קליסט ›</span></a>` : t.sites ? `<div class="tgroup"><b>${esc(t.sites.name)}</b></div>` : groups.size > 1 ? '<div class="tgroup"><b>כללי</b></div>' : '';
-  box.innerHTML = `${mine.length ? `<section><div class="sh-row"><h3 class="sh">המשימות שלי</h3><span class="count">${mine.length}</span></div><div class="stack">${[...groups.values()].map(g => `<div class="stack tg">${head(g[0])}${g.map(t => row(t, true)).join('')}</div>`).join('')}</div></section>` : ''}
+  const head = t => t.project_id ? `<div class="row"><b class="grow">${esc(t.projects?.name || 'פרויקט')}</b><a class="more" href="#/p/${t.project_id}/t">לצ'קליסט</a></div>` : t.sites ? `<div class="row"><b>${esc(t.sites.name)}</b></div>` : groups.size > 1 ? '<div class="row"><b>כללי</b></div>' : '';
+  box.innerHTML = `${mine.length ? `<section><div class="sh-row"><h3 class="sh">המשימות שלי</h3><span class="count">${mine.length}</span></div><div class="stack">${[...groups.values()].map(g => `<div class="stack">${head(g[0])}${g.map(t => row(t, true)).join('')}</div>`).join('')}</div></section>` : ''}
     ${others.length ? `<details class="fold"><summary><span class="sh">משימות שפתחתי לצוות</span><span class="count">${others.length}</span></summary><div class="stack">${others.map(t => row(t, false)).join('')}</div></details>` : ''}`;
   $$('.fph', box).forEach(i => i.onclick = () => zoom(i.src, ''));
   $$('[data-done]', box).forEach(b => b.onclick = async () => {
@@ -63,7 +63,7 @@ export async function newTask({ site, title = '', notes = '', project = null, on
     <label class="field">מה לעשות<input id="ntt" value="${esc(title)}" placeholder="למשל: ליצור קשר ולתאם פגישת אפיון"></label>
     <div class="field">למי<div class="chips">${(team || []).map(u => `<button type="button" class="chip" data-u="${u.id}" aria-pressed="false"><span class="avatar xs">${esc(initials(u.full_name))}</span> ${esc(u.full_name)}</button>`).join('')}</div></div>
     <label class="field">עד מתי<input type="date" id="ntd" value="${tomorrow}"></label>
-    <label class="field">פרטים<small>מייל או טלפון שכתובים כאן הופכים לכפתור אצל העובד</small><textarea id="ntn">${esc(notes)}</textarea></label>
+    <label class="field">פרטים<textarea id="ntn">${esc(notes)}</textarea></label>
     <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="nts">פתיחת משימה</button></div>`, (s, close) => {
     $$('[data-u]', s).forEach(c => c.onclick = () => { who = c.dataset.u; $$('[data-u]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); });
     $('#nts', s).onclick = async () => {

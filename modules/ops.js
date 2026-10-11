@@ -1,7 +1,7 @@
 // הבית של המנהל (מנהל תפעול ומעלה): מסך אחד שעונה על "מה קורה בשטח, מה תקוע, ומה מחכה לי" — ומאשרים ישר מכאן.
 // סדר קבוע: מדדים · דורש טיפול (רשימה אחת) · לאישורך · היום בשטח · מחר · המשימות שלי · אתמול.
 // היום ומחר בשטח (צוות, מי החתים, מי אישר הגעה, מזג אוויר) · בעיות (מחושבות מהנתונים, שבוע קדימה) · לאישורך (תיקוני שעות, היעדרויות, בקשות למשרד, רכש).
-import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, HE_DOW, toast, ask, timeAgo, can, initials } from '../lib/core.js';
+import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, HE_DOW, toast, ask, timeAgo, can, initials, sheet, leadMark, shortName } from '../lib/core.js';
 import { attentionItems, sortNeeds, needsList, bindNeeds } from './attention.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
@@ -74,20 +74,26 @@ export async function renderOps(el) {
   const N = sortNeeds([
     ...issues.map(i => ({ tone: i.tone, ic: icon(i.ic, 20), title: i.t, sub: i.s, href: i.href })),
     ...sys.filter(a => a.k !== 'shiftreq').map(a => ({ tone: a.tone, ic: icon(a.ic, 20), title: a.title, sub: a.sub, href: a.href })),
-    ...mineA]);
+    ...mineA.filter(x => x.k !== 'push')]);
+  const pushA = mineA.find(x => x.k === 'push');   // הגדרה אישית — לא חלק מתור הניהול
 
   // ---- היום ומחר ----
   const dayCard = w => {
     const crew = (w.work_day_crew || []).slice().sort((a, b) => (a.user_id === w.crew_lead_id ? -1 : 0) - (b.user_id === w.crew_lead_id ? -1 : 0));
     const chip = c => { const lead = c.user_id === w.crew_lead_id, onShift = openBy.has(c.user_id), was = inToday.has(c.user_id);
       const st = w.day === t ? (onShift ? ['on', 'במשמרת'] : was ? ['done', 'סיים'] : ['off', 'לא החתים']) : (c.confirmed_at || lead ? ['on', 'אישר'] : ['off', 'לא אישר']);
-      return `<span class="opc ${st[0]}" title="${st[1]}"><i></i>${esc(name(c.user_id))}${lead ? ' ★' : ''}<small>${st[1]}</small></span>`; };
+      return `<span class="opc ${st[0]}" title="${st[1]}"><i></i>${esc(name(c.user_id))}${lead ? leadMark() : ''}<small>${st[1]}</small></span>`; };
     const site = w.projects?.site_id;
     return `<a class="card opday" href="#/day/${w.id}"><div class="row"><b class="grow">${esc(w.projects?.name || '')}</b>${site ? `<span data-wx="${site}|${w.day}"></span>` : ''}</div>
       <small class="muted">${w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) + ' · ' : ''}${w.crew_lead_id ? 'ראש צוות ' + esc(name(w.crew_lead_id)) : 'אין ראש צוות'}${D.get(w.drone_id) ? ' · ' + esc(D.get(w.drone_id).name) : ''}</small>
       <div class="opcrew">${crew.map(chip).join('') || '<small class="muted">לא שובץ צוות</small>'}</div></a>`;
   };
   const dToday = days.filter(w => w.day === t), dTom = days.filter(w => w.day === tm);
+  // בבית: שורה אחת לכל יום שטח (שעה · מקום · צוות · רק חריגים). הכרטיס המלא — בפירוט
+  const dayRow = w => { const ppl = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
+    const miss = w.day === t ? ppl.filter(u => !openBy.has(u) && !inToday.has(u)).length : ppl.filter(u => u !== w.crew_lead_id && !(w.work_day_crew || []).find(c => c.user_id === u)?.confirmed_at).length;
+    return `<a class="lrow" href="#/day/${w.id}"><span class="timebox"><b>${w.report_time ? w.report_time.slice(0, 5) : '—'}</b></span><span class="grow"><b>${esc(shortName(w.projects?.name))}</b><small>${ppl.map(u => esc(name(u)) + (u === w.crew_lead_id ? leadMark() : '')).join(' · ') || 'לא שובץ צוות'}</small>
+      <span class="tags">${w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${w.day}"></span>` : ''}${miss ? `<span class="pill warn">${miss} ${w.day === t ? 'לא החתימו' : 'לא אישרו'}</span>` : ''}</span></span></a>`; };
 
   // ---- לאישורך ----
   const pendAbs = abs.filter(a => a.status === 'pending');
@@ -104,25 +110,45 @@ export async function renderOps(el) {
   ];
   if (preq.length) approvals.push(`<a class="lrow card" href="#/purchase"><span class="mic">${icon('cart', 19)}</span><span class="grow"><b>${preq.length > 1 ? preq.length + ' בקשות רכש ממתינות' : 'בקשת רכש ממתינה'}</b><small>לאישור ושליחה לספק</small></span><span class="chev">${icon('chev', 18)}</span></a>`);
 
-  const kpi = (n, l, go, tone = '') => `<button class="kpi ${tone}" data-go="${go}"><b>${n}</b><span>${l}</span></button>`;
+  const kpi = (n, l, k, tone = '') => n ? `<button class="kpi ${tone}" data-kpi="${k}" aria-haspopup="dialog"><b>${n}</b><span>${l}</span></button>` : `<div class="kpi zero"><b>0</b><span>${l}</span></div>`;   // 0 = שקט ולא לחיץ
   const nextDay = days.find(w => w.day > tm);
   const none = (title, sub) => `<div class="empty-card"><span class="ei">${icon('drone', 24)}</span><span><b>${title}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></div>`;
   $('#hm', el).innerHTML = `
-      <div class="kpis opk">${kpi(dToday.length, 'ימי שטח היום', 'sec-today')}${kpi(open.length, 'במשמרת עכשיו', 'sec-today')}${kpi(N.length, 'לטיפול', 'needs', N.some(i => i.tone === 'bad') ? 'bad' : N.length ? 'warn' : '')}${kpi(approvals.length, 'לאישורך', 'sec-appr', approvals.length ? 'warn' : '')}</div>
-      ${needsList(N)}
+      ${pushA ? `<div class="lrow slim" id="pushA"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span>${pushA.btn ? `<button class="btn ghost sm" id="pushOn">${pushA.btn}</button>` : ''}</div>` : ''}
+      <div class="kpis opk">${kpi(dToday.length, 'בשטח היום', 'today')}${kpi(open.length, 'במשמרת', 'shift')}${kpi(N.length, 'לטיפול', 'needs', N.some(i => i.tone === 'bad') ? 'bad' : N.length ? 'warn' : '')}${kpi(approvals.length, 'לאישור', 'appr', approvals.length ? 'warn' : '')}</div>
+      ${needsList(N, { limit: 3 })}
       ${approvals.length ? `<section id="sec-appr"><div class="sh-row"><h3 class="sh">לאישורך</h3><span class="count">${approvals.length}</span></div>${approvals.join('')}</section>` : ''}
-      <section id="sec-today"><div class="sh-row"><h3 class="sh">היום בשטח</h3><a class="more" href="#/schedule">לו״ז ושיבוץ</a></div>${dToday.map(dayCard).join('') || none('אין ימי שטח היום', nextDay ? `הבא: ${nextDay.projects?.name || ''} · ${dm(nextDay.day)}` : '')}</section>
-      ${dTom.length ? `<section><h3 class="sh">מחר</h3>${dTom.map(dayCard).join('')}</section>` : ''}
+      <section id="sec-today"><div class="sh-row"><h3 class="sh">היום בשטח</h3><a class="more" href="#/schedule">לו״ז</a></div>${dToday.length ? `<div class="list">${dToday.map(dayRow).join('')}</div>` : `<div class="empty-line">אין ימי שטח היום${nextDay ? ` · הבא ${dm(nextDay.day)} ${esc(shortName(nextDay.projects?.name))}` : ''}</div>`}</section>
+      ${dTom.length ? `<section><h3 class="sh">מחר</h3><div class="list">${dTom.map(dayRow).join('')}</div></section>` : ''}
       <div id="mytasks"></div><div id="yday"></div>`;
-  $$('[data-go]', el).forEach(b => b.onclick = () => document.getElementById(b.dataset.go)?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  // מדד = כניסה לפירוט המלא (לא קפיצה למה שכבר על המסך)
+  const shead = (t, n) => `<div class="sh-row"><h3 class="sh">${t}</h3>${n ? `<span class="count">${n}</span>` : ''}</div>`;
+  const dur = iso => { const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 6e4)); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
+  const crewToday = [...new Set(dToday.flatMap(w => [w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)]).filter(Boolean))];
+  const KPI = {
+    today: () => sheet(`${shead('היום בשטח', dToday.length)}${dToday.map(dayCard).join('') || none('אין ימי שטח היום', '')}<a class="btn ghost block" href="#/schedule">לו״ז ושיבוץ</a>`, s2 => import('../lib/wx.js').then(m => m.fillWx(s2)).catch(() => {})),
+    shift: () => { const missing = crewToday.filter(u => !openBy.has(u) && !inToday.has(u));
+      sheet(`${shead('במשמרת עכשיו', open.length)}${open.length ? `<div class="list">${open.map(x => `<a class="lrow" href="#/hours/${x.user_id}"><span class="avatar sm">${esc(initials(P.get(x.user_id)?.full_name || ''))}</span><span class="grow"><b>${esc(P.get(x.user_id)?.full_name || '')}</b><small>מ-${hm(x.start_at)} · ${dur(x.start_at)} שעות${x.start_place ? ' · ' + esc(x.start_place) : ''}${(x.start_dist_m || 0) > 800 ? ` · ${(x.start_dist_m / 1000).toFixed(1)} ק״מ מהאתר` : ''}</small></span></a>`).join('')}</div>` : none('אף אחד לא במשמרת', '')}
+        ${missing.length ? `${shead('משובצים היום ולא החתימו', missing.length)}<div class="list">${missing.map(u => `<a class="lrow" href="#/hours/${u}"><span class="avatar sm">${esc(initials(P.get(u)?.full_name || ''))}</span><span class="grow"><b>${esc(P.get(u)?.full_name || '')}</b><small>${esc(dToday.find(w => w.crew_lead_id === u || (w.work_day_crew || []).some(c => c.user_id === u))?.projects?.name || '')}</small></span></a>`).join('')}</div>` : ''}
+        <a class="btn ghost block" href="#/attendance">נוכחות צוות</a>`); },
+    needs: () => sheet(N.length ? needsList(N, { title: 'לטיפול', limit: 99, id: 'needs-all' }) : none('הכל תחת שליטה', ''), s2 => bindNeeds(s2, N, () => renderOps(el))),
+    appr: () => sheet(`${shead('לאישורך', approvals.length)}${approvals.join('') || none('אין מה לאשר', '')}`, (s2, close) => bindAppr(s2, () => { close(); again(); })),
+  };
+  $$('[data-kpi]', el).forEach(b => b.onclick = () => KPI[b.dataset.kpi]());
+
   bindNeeds(el, N, () => renderOps(el));
+  const po = $('#pushOn', el); if (po) po.onclick = async () => { const { enablePush } = await import('../lib/core.js'); try { await enablePush(); toast('ההתראות הופעלו'); $('#pushA', el)?.remove(); } catch (e) { toast(e.message); } };
+  $$('[data-nmore]', el).forEach(b => b.onclick = KPI.needs);   // "עוד" בבית = אותו פירוט מלא
   home.extras();
   import('../lib/wx.js').then(m => m.fillWx(el)).catch(() => {});
   const again = () => renderOps(el);
-  $$('[data-sr]', el).forEach(b => b.onclick = async e => { e.preventDefault(); const ok = b.dataset.ok === '1'; const reply = ok ? '' : await ask('סיבת הדחייה', { optional: true, ok: 'דחייה' }); if (reply === null) return;
-    const { error } = await sb.rpc('decide_shift_request', { rid: b.dataset.sr, ok, reply: (reply || '').trim() }); if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); again(); });
-  $$('[data-ab]', el).forEach(b => b.onclick = async () => { const ok = b.dataset.ok === '1';
-    const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, decided_at: new Date().toISOString() }).eq('id', b.dataset.ab); if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); again(); });
-  $$('[data-or]', el).forEach(b => b.onclick = async () => { const r = await ask('מה נעשה?', { optional: true, ok: 'סגירה' }); if (r === null) return;
-    const { error } = await sb.from('office_requests').update({ status: 'done', reply: (r || '').trim() || 'טופל', handled_by: state.user.id }).eq('id', b.dataset.or); if (error) return toast(error.message); toast('נסגר'); again(); });
+  bindAppr(el, again);
+  function bindAppr(root, after) {
+    $$('[data-sr]', root).forEach(b => b.onclick = async e => { e.preventDefault(); const ok = b.dataset.ok === '1'; const reply = ok ? '' : await ask('סיבת הדחייה', { optional: true, ok: 'דחייה' }); if (reply === null) return;
+      const { error } = await sb.rpc('decide_shift_request', { rid: b.dataset.sr, ok, reply: (reply || '').trim() }); if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); after(); });
+    $$('[data-ab]', root).forEach(b => b.onclick = async () => { const ok = b.dataset.ok === '1';
+      const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, decided_at: new Date().toISOString() }).eq('id', b.dataset.ab); if (error) return toast(error.message); toast(ok ? 'אושר' : 'נדחה'); after(); });
+    $$('[data-or]', root).forEach(b => b.onclick = async () => { const r = await ask('מה נעשה?', { optional: true, ok: 'סגירה' }); if (r === null) return;
+      const { error } = await sb.from('office_requests').update({ status: 'done', reply: (r || '').trim() || 'טופל', handled_by: state.user.id }).eq('id', b.dataset.or); if (error) return toast(error.message); toast('נסגר'); after(); });
+  }
 }
