@@ -8,7 +8,7 @@ const today = () => isoDay();
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
 const ARCHIVE = 'group_mm5052gw';
-export const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'הסתיים — ממתין לתשלום': 'ok', 'הסתיים — להוצאת חשבונית': 'ok' };   // שאר השלבים — אפור ניטרלי
+export const TONE = { 'בביצוע': 'lime', 'תקוע': 'bad', 'הסתיים — ממתין לתשלום': 'ok', 'הסתיים — להוצאת חשבונית': 'ok', 'פיילוט הסתיים': 'ok' };   // שאר השלבים — אפור ניטרלי
 const DAY_ST = { planned: 'מתוכנן', en_route: 'בדרך', on_site: 'באתר', working: 'בעבודה', issue: 'תקלה', done: 'נסגר' };
 const RANK = { 'בביצוע': 0, 'תואם - ממתין לביצוע': 1, 'אושר מול לקוח': 2, 'קביעת מועד': 3, 'תקוע': 4 };
 const isOpen = isOpenProject;

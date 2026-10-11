@@ -410,6 +410,9 @@ export async function renderProject(el, id, tab = 'o') {
     if (sign?.signature_path && urls[sign.signature_path]) $('#sgimg').innerHTML = `<img src="${esc(urls[sign.signature_path])}" alt="חתימה" class="sigimg">`;
     $$('[data-z]', box).forEach(b => b.onclick = () => zoom(b.dataset.z, ''));
     const c = $('#cls'); if (c) c.onclick = async () => {
+      // פיילוט: האפליקציה רק מדווחת שבוצע. ההחלטה אם להמשיך להצעה — ניהולית, במאנדי (הליד עובר ל"פיילוט בוצע — ממתין להצעה")
+      if (p.engagement === 'פיילוט') { if (!(await confirmBox('סיום הפיילוט?', { ok: 'סיום' }))) return;
+        const { error } = await sb.rpc('close_pilot', { p: id, ok: true }); if (error) return toast(error.message); toast('הפיילוט הסתיים'); return reload('s'); }
       const openDays = D.days.some(d => d.status !== 'done');
       if (!(await confirmBox(openDays ? 'יש ימים שלא נסגרו' : 'לסגור את הפרויקט?', { body: openDays ? 'לסגור את הפרויקט בכל זאת?' : '', ok: 'סגירת פרויקט' }))) return;
       const { error } = await sb.rpc('close_project', { p: id }); if (error) return toast(error.message);
