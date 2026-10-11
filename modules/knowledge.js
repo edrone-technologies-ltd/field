@@ -39,8 +39,8 @@ export async function renderKb(el, cat = '') {
   function row(x) {
     const v = seen.get(x.id), kind = x.video_url ? 'play' : (x.files || []).length ? 'file' : 'report';
     return `<a class="item kb" href="#/kb/${x.id}" data-q="${esc((x.title + ' ' + (x.body || '') + ' ' + x.category).toLowerCase())}"><span class="kbic ${x.video_url ? 'vid' : ''}">${kind === 'play' ? '<svg width="20" height="20" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>' : icon(kind, 20)}</span>
-      <span class="t"><b>${esc(x.title)}</b><small>${esc(x.category)}${x.video_url ? ' · סרטון' : ''}${(x.files || []).some(isImg) ? ' · עם צילומי מסך' : ''}${M && x.roles?.length ? ' · ' + esc(audTxt(x.roles)) : ''}</small></span>
-      ${kbDone(x, v) ? '<span class="pill ok">✓</span>' : x.quiz ? '<span class="pill warn">מבחן</span>' : x.sign_required ? '<span class="pill warn">חתימה</span>' : !v ? '<span class="pill lime">חדש</span>' : ''}</a>`;
+      <span class="t"><b>${esc(x.title)}</b><small>${esc([x.video_url ? 'סרטון' : 'מדריך', (x.files || []).some(isImg) ? 'עם צילומי מסך' : null, M && x.roles?.length ? audTxt(x.roles) : null].filter(Boolean).join(' · '))}</small></span>
+      ${kbDone(x, v) ? '<span class="pill ok">✓</span>' : x.quiz ? '<span class="pill warn">מבחן</span>' : x.sign_required ? '<span class="pill warn">חתימה</span>' : !v ? '<span class="newdot" title="חדש" aria-label="חדש"></span>' : ''}</a>`;
   }
   const draw = () => {
     const q = $('#kbq').value.trim().toLowerCase();

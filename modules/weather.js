@@ -42,7 +42,6 @@ export async function renderWeather(el, siteId = '') {
       <div class="wxmap" id="wxmap"></div>
       ${S.length ? `<div class="chips wxsites">${S.map((s, i) => `<button class="chip" data-s="${i}">${esc(s.name.replace(/^[^—]*—\s*/, '').slice(0, 26) || s.name)}</button>`).join('')}</div>` : ''}
       <div id="wxbody"><div class="skel"></div></div>
-      <div class="small muted">רוח ומשבים בגובה 10 מ׳ · ספי עצירה: רוח 25, משבים 35 קמ״ש, גשם 2 מ״מ לשעה, סבירות 60%, Kp 5 · Kp — NOAA, בבלוקים של 3 שעות · לחיצה על המפה = תחזית לנקודה</div>
     </div>`;
 
   let map, Lf, marks = [], am = null;
@@ -84,7 +83,6 @@ export async function renderWeather(el, siteId = '') {
       ${airBtn()}
       <div class="wxtiles">${tile('w', 'רוח', Math.round(d.w), 'קמ״ש')}${tile('g', 'משבים', Math.round(d.g), 'קמ״ש')}${tile('r', 'גשם', d.r == null ? null : d.r.toFixed(1), 'מ״מ')}${tile('p', 'סבירות לגשם', d.p, '%')}${tile('kp', 'Kp', d.kp, d.kp >= 5 ? 'סערה' : d.kp >= 4 ? 'מוגבר' : 'שקט')}</div>
       <div class="wxhours" id="wxh">${idx.map(i => { const h = hourData(F, K, i); return `<button class="wxh l${h.L} ${i === hi ? 'on' : ''}" data-h="${i}"><small>${h.t.slice(11, 13)}</small><i style="height:${Math.min(100, Math.round(h.g / 50 * 100))}%"></i><b>${Math.round(h.g)}</b></button>`; }).join('')}</div>
-      <div class="small muted wxhint">גובה העמודה = משבים · הצבע = המצב הכולל באותה שעה · הקשה על שעה מציגה אותה</div>
       <div class="wxdays">${days.map(x => `<button class="wxd l${dayLevel(F, K, x)} ${x === day ? 'on' : ''}" data-d="${x}"><b>${x === days[0] ? 'היום' : HE_D1[new Date(x + 'T12:00').getDay()]}</b><small>${dm(x)}</small></button>`).join('')}</div>`;
     $$('[data-h]', el).forEach(b => b.onclick = () => { hi = +b.dataset.h; draw(); });
     $$('[data-d]', el).forEach(b => b.onclick = () => { day = b.dataset.d; hi = -1; draw(); });

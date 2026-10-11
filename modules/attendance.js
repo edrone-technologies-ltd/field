@@ -313,8 +313,7 @@ export async function renderAttendance(el, month) {
     <section><div class="sh-row"><h3 class="sh">סיכום חודשי</h3>${can('finance') ? '<button class="more" id="exp" style="border:0;background:none;cursor:pointer">ייצוא לחשבת השכר</button>' : ''}</div>
       <div class="list">${rows.map(({ p, R, am }) => `<a class="lrow" href="#/attendance/${p.id}/${month}"><span class="avatar sm">${esc(p.full_name.split(' ').map(w => w[0]).slice(0, 2).join(''))}</span><span class="grow"><b>${esc(p.full_name)}</b>
         <small>${R.totals.days} ימים · ${hhmm(R.totals.net)} שעות${R.totals.ot125 + R.totals.ot150 ? ` · נוספות ${hhmm(R.totals.ot125 + R.totals.ot150)}` : ''}${R.flags.length ? ` · ${R.flags.length} הערות` : ''}</small></span>
-        <span class="pill ${am?.locked ? 'ok' : am?.worker_ok_at ? 'lime' : ''}">${am?.locked ? 'נעול' : am?.worker_ok_at ? 'העובד אישר' : R.totals.days ? 'פתוח' : '—'}</span></a>`).join('')}</div></section>
-    ${can('finance') ? '<div class="small muted">החישוב מסווג שעות לפי החוק (יומי ואז שבועי, 42 שעות). הקובץ לשכר במבנה של קונקטים, עם פירוק 100/125/150. את התלוש מכינה הנהלת החשבונות.</div>' : ''}`;
+        <span class="pill ${am?.locked ? 'ok' : am?.worker_ok_at ? 'lime' : ''}">${am?.locked ? 'נעול' : am?.worker_ok_at ? 'העובד אישר' : R.totals.days ? 'פתוח' : '—'}</span></a>`).join('')}</div></section>`;
   bindDecide(box, () => renderAttendance(el, month)); bindAbsDecide(box, () => renderAttendance(el, month));
   $$('.maplink', box).forEach(m => m.onclick = e => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.google.com/maps?q=${m.dataset.ll}`, '_blank'); });
   const xb = $('#exp'); if (xb) xb.onclick = () => exportXlsx(month, rows, mabs || [], rates || [], S);

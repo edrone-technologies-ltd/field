@@ -1,5 +1,5 @@
 // בית: עונה רק על "מה קורה היום ומה צריך אותי". כל השאר בלשוניות.
-// מנהל: היום בשטח · לטיפול (3 הכי חשובים) · השבוע · פרויקטים פעילים. עובד שטח: היום שלי · הימים הקרובים · הודעות.
+// מנהל: היום בשטח · לטיפול (3 הכי חשובים) · השבוע (הפרויקטים עצמם — בלשונית פרויקטים). עובד שטח: היום שלי · הימים הקרובים · הודעות.
 import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel } from '../lib/core.js';
 
 const today = () => isoDay();
@@ -115,8 +115,6 @@ export async function renderHome(el) {
   const field = [...inField.values()].filter(x => x.p);
   const nextField = !field.length ? schedule(d, addDays(t, 1), 13).find(x => x.items.some(i => i.kind !== 'v')) : null;
   const week = schedule(d, t, 7);
-  const active = P.filter(isOpen).filter(x => x.status_label !== 'פיילוט' || inField.has(x.id))
-    .sort((a, b) => (inField.has(b.id) - inField.has(a.id)) || (RANK[a.status_label] ?? 5) - (RANK[b.status_label] ?? 5) || ((a.planned_from || '9') < (b.planned_from || '9') ? -1 : 1)).slice(0, 8);
 
   box.innerHTML = `
     <div id="attn"></div><div id="mytasks"></div>${myDay}<div id="yday"></div>${quick()}
@@ -135,10 +133,6 @@ export async function renderHome(el) {
       <div id="wkday" class="ditems"></div>
     </section>
 
-    <section><div class="sh-row"><h3 class="sh">פרויקטים פעילים</h3><a class="more" href="#/projects">הכל</a></div>
-      <div class="rail">${active.map(x => `<a class="pcard sm" href="#/p/${x.id}"><span class="img" style="background-image:url('${cov[x.id]}')"><span class="pill ${TONE[x.status_label] ?? ''}">${esc(stLabel(x.status_label))}</span></span>
-        <span class="pc-b"><b>${esc(x.name)}</b><small>${esc([x.client_name, x.planned_from ? dm(x.planned_from) : null].filter(Boolean).join(' · '))}</small></span></a>`).join('')}</div>
-    </section>
 
     ${inboxPeek(d)}
     <div class="foot">${d.sync?.[0] ? `מסונכרן עם מאנדי · ${timeAgo(d.sync[0].created_at)}` : ''}</div>`;
