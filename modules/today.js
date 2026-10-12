@@ -1,6 +1,7 @@
 // יום שטח: בוקר ← העמסה ← באתר ← בעבודה ← סיום. השלב נגזר ממה שכבר נשמר, כל פעולה נכנסת לתור ונשלחת כשיש קליטה.
 import { coverArt, icon, leadMark, navButtons, thumbUrls } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
+import { loadZones, dayZones, zonePrefill, zonesHtml, bindZones, zonesPayload } from './zones.js';
 import { sb, state, cache, enqueue, sendsLabel, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, haptic } from '../lib/core.js';
 
 const STEPS = ['בוקר', 'העמסה', 'באתר', 'בעבודה', 'סיום'];
@@ -31,21 +32,22 @@ export async function loadDay(id) {
   ]);
   if (error) throw error;
   const q = p => p.then(r => r.data || []).catch(() => []);
-  const [open, sp, ch, fixes, plan, ops, prep] = await Promise.all([
+  const [open, sp, ch, fixes, plan, ops, prep, zones] = await Promise.all([
     day.kind === 'report' ? q(sb.from('tasks').select('*').eq('project_id', day.project_id).in('status', ['todo', 'in_progress', 'blocked']).order('day_no', { nullsFirst: false }).order('seq')) : [],   // דוח יומי: אפשר לסמן כל משימה פתוחה של הפרויקט
     // תמונות האפיון של האתר = ה"לפני" המקורי. מוצגות כרפרנס לזווית הצילום (שרשרת אפיון → ביצוע → דוח)
     day.projects?.site_id ? q(sb.from('photos').select('storage_path').eq('site_id', day.projects.site_id).in('kind', ['facade', 'site']).order('created_at').limit(12)) : [],
     // שעות מהשעון — מילוי מראש של סגירת היום (כל מי שבצוות היום; null = לא ידוע)
     sb.rpc('day_shift_hours', { d: id }).then(r => r.error ? null : r.data || []).catch(() => null),
     // תיקונים מדוח ביקור של אותו פרויקט — מבוצעים בזמן יום השטח
-    q(sb.from('tasks').select('id,title,instructions,status,project_id,photos,assignee_id').eq('project_id', day.project_id).eq('phase', 'מעקב').like('instructions', 'מדוח ביקור%').not('status', 'in', '(done,dropped)')),
+    q(sb.from('tasks').select('id,title,instructions,status,project_id,photos,assignee_id').eq('project_id', day.project_id).eq('phase', 'מעקב').like('instructions', 'מדוח ביקור%').not('status', 'in', '(done,dropped)').or('review.is.null,review.neq.pending')),   // ממתין לאישור — כבר לא לטיפול
     day.kind === 'report' ? null : import('./plan.js').then(m => m.dayPlan(day)).catch(() => undefined),
     // שטח ולוגיסטיקה מהאפיון (מים, חשמל, גישה, המראה, תיאומים, סיכונים, מרחב אווירי) + משימות ההכנה הפתוחות של הפרויקט
     day.projects?.site_id ? q(sb.from('buildings').select('name,specs(site_ops,hydrants,power)').eq('site_id', day.projects.site_id)) : [],
     q(sb.from('tasks').select('id,title,status,work_day_id').eq('project_id', day.project_id).eq('phase', 'הכנה').not('status', 'in', '(done,dropped)').or(`work_day_id.is.null,work_day_id.eq.${id}`).order('seq')),   // הכנות של היום + כלליות (של יום אחר — ביום ההוא)
+    loadZones(day.project_id).catch(() => null),   // אזורים מהאפיון (חזיתות + מ״ר) — לסגירת היום
   ]);
   const allTasks = (tasks || []).concat(open.filter(t => !(tasks || []).some(x => x.id === t.id)));
-  const D = { ops: siteOps(ops), prep, at: Date.now(), clockH: ch ? Object.fromEntries(ch.map(r => [r.user_id, Number(r.hours)])) : null, specPh: sp, fixes, plan, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
+  const D = { zones, ops: siteOps(ops), prep, at: Date.now(), clockH: ch ? Object.fromEntries(ch.map(r => [r.user_id, Number(r.hours)])) : null, specPh: sp, fixes, plan, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
   // רשימת ההעמסה לפי האפיון (רק כשלא נקבעה ידנית ליום): ברז/הידרנט → בלי מיכל מים, שקע → בלי גנרטור, חומר הניקוי בשמו, גג → רתמות
   const def = D.S.equip_default || [], req = day.equip_required || [];
   if (Object.keys(D.ops).length && (!req.length || (req.length === def.length && req.every(x => def.includes(x))))) day.equip_required = tailorEquip(def, D.ops, day.material_planned);
@@ -264,6 +266,7 @@ export async function renderDay(el, id) {
       sign: { name: site.contact_name || '', role: '', satisfied: true, notes: '' },
       start: D.day.arrived_at ? hm(D.day.arrived_at) : '07:00', end: D.day.finished_at ? hm(D.day.finished_at) : (D.day.day === isoDay() ? hm(new Date().toISOString()) : '15:00'),
       crew: D.day.work_day_crew.map(c => c.user_id),
+      zones: zonePrefill(D.zones, D.tasks, D.day.id),   // אילו חזיתות הושלמו היום — לפי המשימות שבוצעו
     };
     C = { ...base, ...O, sign: { ...base.sign, ...(O.sign || {}) } };
     if (REPORT) { const [a, b] = [C.start, C.end].map(x => x.split(':').map(Number)), sp = Math.round(Math.max(0, (b[0] * 60 + b[1] - a[0] * 60 - a[1]) / 60) * 2) / 2;   // דוח ידני: לפי שעות ההתחלה/סיום
@@ -295,7 +298,7 @@ export async function renderDay(el, id) {
         <b>מי עבד</b><div class="chips">${D.team.filter(u => ['crew_lead', 'crew', 'ops_manager', 'admin'].includes(u.role)).map(u => `<button class="chip" data-crew="${u.id}" aria-pressed="${C.crew.includes(u.id)}" ${u.id === D.day.crew_lead_id ? 'disabled' : ''}>${esc(u.full_name)}</button>`).join('')}</div></div>
       ${D.tasks.length ? `<div class="sec"><h3>מה בוצע מהתכנית</h3><div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-rt="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : ''}</span><span class="t"><b>${esc(t.title)}</b><small>${esc(t.phase || '')}</small></span></button>`).join('')}</div></div>` : ''}
       ${baBlock()}`;
-    return reportTop + (REPORT ? '' : `<div class="card row"><div class="ring" style="--p:${tot ? Math.round(done / tot * 100) : 0}"><b>${done}/${tot}</b></div><div class="grow"><b>משימות שבוצעו היום</b><div class="small muted">${tot - done ? `${tot - done} ${D.day.is_last_day ? 'לא בוצעו' : 'עוברות למחר'}` : 'הכל בוצע'}</div></div></div>`) + `
+    return reportTop + (REPORT ? '' : `<div class="card row"><div class="ring" style="--p:${tot ? Math.round(done / tot * 100) : 0}"><b>${done}/${tot}</b></div><div class="grow"><b>משימות שבוצעו היום</b><div class="small muted">${tot - done ? `${tot - done} ${D.day.is_last_day ? 'לא בוצעו' : 'עוברות למחר'}` : 'הכל בוצע'}</div></div></div>`) + zonesHtml(dayZones(D.zones, D.tasks, D.day.id), C.zones) + `
       <div class="sec"><b>חומר</b>${chips('material', D.S.materials || ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'])}
         <b>גלונים</b><div class="stepper"><button type="button" data-g="-0.5">−</button><input class="days grow" id="gal" type="number" inputmode="decimal" step="0.5" min="0" value="${C.gallons ?? ''}" placeholder="${D.day.gallons_planned ? nf(D.day.gallons_planned) : ''}"><button type="button" data-g="0.5">+</button></div>
         ${D.day.gallons_planned ? `<div class="chips"><button type="button" class="chip" id="galp" aria-pressed="${C.gallons != null && +C.gallons === +D.day.gallons_planned}">כמתוכנן · ${nf(D.day.gallons_planned)}</button></div>` : ''}
@@ -553,6 +556,7 @@ export async function renderDay(el, id) {
     $$('[data-q]').forEach(b => b.onclick = () => { setC('quality', Number(b.dataset.q)); draw(); });
     $('#tmr').oninput = e => setC('tomorrow', e.target.value);
     $('#nts').oninput = e => setC('notes', e.target.value);
+    bindZones(body, dayZones(D.zones, D.tasks, D.day.id), () => C.zones, L => setC('zones', L));
     if (REPORT) {
       const span = () => { const [a, b] = [C.start, C.end].map(x => x.split(':').map(Number)); const h = Math.max(0, (b[0] * 60 + b[1] - a[0] * 60 - a[1]) / 60); return Math.round(h * 2) / 2; };
       const setAll = () => { C.crew.forEach(u => setC('hours', span(), u)); draw(); };
@@ -594,7 +598,8 @@ export async function renderDay(el, id) {
       D.day.work_day_crew.forEach(c => c.hours = C.hours[c.user_id]);
       await enqueue({ kind: 'rpc', fn: 'set_day_hours', args: { d: D.day.id, rows: D.day.work_day_crew.map(c => ({ user_id: c.user_id, role: c.role, hours: c.hours })) } });
       await save('work_days', { status: 'done', finished_at: now, ...extra, closed_at: now, material_used: C.material, gallons: C.gallons, work_types: C.work, equipment_ok: C.equipment_ok,
-        weather_stop: !!C.weather, quality: C.quality || null, flights: C.flights ?? null, air_minutes: C.air ?? null, notes: C.notes || null, tomorrow: C.tomorrow || null, signoff });
+        weather_stop: !!C.weather, quality: C.quality || null, flights: C.flights ?? null, air_minutes: C.air ?? null, notes: C.notes || null, tomorrow: C.tomorrow || null, signoff,
+        ...(dayZones(D.zones, D.tasks, D.day.id).length ? { zones_done: zonesPayload(C.zones) } : {}) });
       (D.prep || []).forEach(t => { if (!t.work_day_id || t.work_day_id === D.day.id) t.status = 'done'; });   // השרת סוגר את ההכנות עם היום (db/109) — גם כאן, שלא יופיעו מחר
       D.local = { stage: null, checks: {}, loaded: null }; D.tried = false; await keep();
       haptic('success'); celebrate(); draw();
@@ -604,7 +609,7 @@ export async function renderDay(el, id) {
     bar.insertAdjacentHTML('afterbegin', `<button class="bsq bad" type="button" id="fiss">${icon('alert', 20)}<small>תקלה</small></button><button class="bsq" type="button" id="fmis">${icon('cart', 20)}<small>חסר לי</small></button>`);
     $('#fiss').onclick = () => {
       // מספיק אחד מהשלושה: סוג (בלחיצה), מילים או תמונה — לא חובה לכתוב
-      let kind = null, crit = false, ph = null;
+      let kind = null, crit = false, ph = null, orig = null;
       sheet(`<h3>דיווח תקלה</h3><div class="chips">${(D.S.issue_types || Object.keys(ISSUE_KIND)).map(k => `<button class="chip" data-k="${esc(k)}" aria-pressed="false">${esc(k)}</button>`).join('')}</div>
         <textarea id="ib" placeholder="מה קרה?"></textarea>
         <label class="tog"><span>קריטי — העבודה נעצרה</span><span class="sw"><input type="checkbox" id="ic"><i></i></span></label>
@@ -612,7 +617,10 @@ export async function renderDay(el, id) {
         <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="isend">דיווח תקלה</button></div>`, (s, close) => {
         $$('[data-k]', s).forEach(b => b.onclick = () => { kind = kind === b.dataset.k ? null : b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x.dataset.k === kind)); });
         $('#ic', s).onchange = e => crit = e.target.checked;
-        $('#ip', s).onchange = e => { ph = e.target.files[0]; $('#ipn', s).textContent = ph ? 'התמונה תצורף' : ''; };
+        // אחרי הצילום: סימון על התמונה (עיגול / חץ / תווית) — המקור נשמר גם הוא
+        $('#ip', s).onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+          const r = await import('../lib/viewer.js').then(m => m.markupFile(f)).catch(() => ({ blob: f, marked: false })); if (!r) return;
+          ph = r.blob; orig = r.marked ? f : null; $('#ipn', s).textContent = r.marked ? 'התמונה המסומנת תצורף' : 'התמונה תצורף'; };
         $('#isend', s).onclick = async () => {
           const text = $('#ib', s).value.trim(); if (!text && !kind && !ph) { $('#ib', s).focus(); return toast('בחרו סוג, כתבו או צלמו'); }
           if ($('#isend', s).disabled) return; $('#isend', s).disabled = true;
@@ -620,7 +628,8 @@ export async function renderDay(el, id) {
           const row = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, kind: ISSUE_KIND[kind] || 'other', severity: crit ? 'critical' : 'normal',
             body, opened_by: state.user.id, equipment_id: kind === 'רחפן' ? D.day.drone_id : null };
           D.issues.push(row); await insert('issues', row);
-          let phErr = false; if (ph) try { await addFieldPhoto(ph, { kind: 'issue', work_day_id: D.day.id, project_id: D.day.project_id, issue_id: row.id }); } catch { phErr = true; }
+          let phErr = false; if (ph) try { await addFieldPhoto(ph, { kind: 'issue', work_day_id: D.day.id, project_id: D.day.project_id, issue_id: row.id, ...(orig ? { caption: 'מסומן' } : {}) });
+            if (orig) await addFieldPhoto(orig, { kind: 'issue', work_day_id: D.day.id, project_id: D.day.project_id, issue_id: row.id, caption: 'מקור' }); } catch { phErr = true; }
           if (crit) await save('work_days', { status: 'issue' });
           close(); phErr ? toast('התקלה דווחה · התמונה לא נשמרה', 4000, 'warn') : toast('התקלה דווחה למשרד'); draw();
         };

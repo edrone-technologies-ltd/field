@@ -74,15 +74,21 @@ export async function renderVisitForm(el, pid, vid) {
     $$('[data-r]').forEach(b => b.onclick = () => { keep(); f.rating = +b.dataset.r; draw(); });
     $$('.fph').forEach(i => i.onclick = () => zoom(i.src, ''));
     // העלאה: כמה תמונות בבת אחת; "צילום ממצא" פותח ממצא חדש עם התמונות
+    const put = async (file, caption) => {
+      const blob = await shrink(file), path = `${state.user.id}/visits/${crypto.randomUUID()}.jpg`;
+      const { error } = await sb.storage.from('field').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
+      await sb.from('photos').insert({ storage_path: path, project_id: pid, kind: 'visit', uploaded_by: state.user.id, caption });
+      return path;
+    };
     const upload = async (files, x) => {
-      keep(); toast('מעלה תמונות…');
+      keep();
+      // תמונה אחת: סימון לפני השמירה (עיגול / חץ / תווית) — נשמרת המסומנת, והמקור נשמר לצידה
+      let mk = null;
+      if (files.length === 1) { mk = await import('../lib/viewer.js').then(m => m.markupFile(files[0])).catch(() => ({ blob: files[0], marked: false })); if (mk === null) return draw(); }
+      toast('מעלה תמונות…');
       try {
-        for (const file of files) {
-          const blob = await shrink(file), path = `${state.user.id}/visits/${crypto.randomUUID()}.jpg`;
-          const { error } = await sb.storage.from('field').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
-          await sb.from('photos').insert({ storage_path: path, project_id: pid, kind: 'visit', uploaded_by: state.user.id, caption: 'דוח ביקור' });
-          x.photos = [...PH(x), path]; delete x.photo;
-        }
+        if (mk?.marked) { const path = await put(mk.blob, 'דוח ביקור · מסומן'); await put(files[0], 'דוח ביקור · מקור'); x.photos = [...PH(x), path]; delete x.photo; }
+        else for (const file of files) { const path = await put(file, 'דוח ביקור'); x.photos = [...PH(x), path]; delete x.photo; }
         Object.assign(urls, await signedUrls('field', PH(x)));
       } catch (e) { toast(errText(e, 'התמונה לא עלתה — נסו שוב')); }
       draw();
@@ -233,7 +239,7 @@ export async function renderRepairProtocol(el, id) {
   el.innerHTML = '<div class="skel tall"></div>';
   const [{ data: v }, { data: tk }] = await Promise.all([
     sb.from('project_visits').select('*, projects(name,client_name)').eq('id', id).maybeSingle(),
-    sb.from('tasks').select('id,title,status,due,done_at,done_note,photos,profiles:assignee_id(full_name)').eq('visit_id', id).neq('status', 'dropped').order('created_at')]);
+    sb.from('tasks').select('id,title,status,review,review_note,due,done_at,done_note,photos,profiles:assignee_id(full_name)').eq('visit_id', id).neq('status', 'dropped').order('created_at')]);
   if (!v) { el.innerHTML = `<header class="phead">${backBtn('#/reports')}<h1>פרוטוקול תיקונים</h1></header><div class="empty-line">הדוח לא נמצא</div>`; return; }
   // סדר הפריטים כמו בדוח; לכל משימה — הממצא שממנו נוצרה (תמונות לפני)
   const src = new Map([...(v.findings || []), ...(v.todo || [])].filter(x => x.task_id).map(x => [x.task_id, x]));
@@ -242,7 +248,7 @@ export async function renderRepairProtocol(el, id) {
   const urls = await signedUrls('field', T.flatMap(t => [...before(t), ...(t.photos?.after || [])])).catch(() => ({}));
   const strip = (list, tag) => list.length ? `<div class="vpics">${list.map(ph => urls[ph] ? `<div class="vp"><img src="${esc(urls[ph])}" alt=""><span class="tg ${tag === 'אחרי' ? 'a' : ''}">${tag}</span></div>` : '').join('')}</div>` : '';
   const date = d => new Date(d + 'T12:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' });
-  const stat = t => t.status === 'done' ? ['ok', 'טופל'] : t.status === 'in_progress' ? ['warn', 'בטיפול'] : t.status === 'blocked' ? ['bad', 'נתקע'] : ['bad', 'פתוח'];
+  const stat = t => t.status === 'done' ? ['ok', t.review === 'approved' ? 'טופל · אושר' : 'טופל'] : t.review === 'pending' ? ['warn', 'ממתין לאישור'] : t.review === 'returned' ? ['bad', 'הוחזר לתיקון'] : t.status === 'in_progress' ? ['warn', 'בטיפול'] : t.status === 'blocked' ? ['bad', 'נתקע'] : ['bad', 'פתוח'];
   el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/visit/${id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">פרוטוקול תיקונים</b><button class="btn primary sm" id="print">הדפסה / PDF</button></div>
     <div class="creport vrep"><div class="pg flow"><div class="pad">
       <div class="vhead"><img src="logo.png" alt="E-Drone"></div>
@@ -254,7 +260,8 @@ export async function renderRepairProtocol(el, id) {
         <div class="vt"><span>${esc(t.title)}</span><span class="vs ${c}">${l}</span></div>
         <div class="small muted">${[t.profiles?.full_name ? 'מטפל: ' + esc(t.profiles.full_name) : t.status === 'done' ? '' : 'ממתין לשיוך', t.due && t.status !== 'done' ? 'עד ' + dm(t.due) : ''].filter(Boolean).join(' · ')}</div>
         ${t.status === 'done' ? `<div class="vdone">טופל · ${dm(isoDay(new Date(t.done_at)))}${t.done_note ? ' — ' + esc(t.done_note) : ''}</div>` : ''}
-        ${strip(before(t), 'לפני')}${t.status === 'done' ? strip(t.photos?.after || [], 'אחרי') : ''}</div></div>`; }).join('') : '<p>אין פריטי תיקון בדוח הזה</p>'}
+        ${t.review === 'returned' && t.status !== 'done' && t.review_note ? `<div class="small">הוחזר: ${esc(t.review_note)}</div>` : ''}
+        ${strip(before(t), 'לפני')}${t.status === 'done' || t.review === 'pending' ? strip(t.photos?.after || [], 'אחרי') : ''}</div></div>`; }).join('') : '<p>אין פריטי תיקון בדוח הזה</p>'}
       <div class="end"><div class="l"><b>E-Drone Technologies</b></div><img src="logo.png" alt="E-Drone"></div>
     </div></div></div>`;
   document.body.classList.add('printing-report');

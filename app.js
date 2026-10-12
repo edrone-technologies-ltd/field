@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir, skeleton } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir, skeleton, freshReads } from './lib/core.js';
 import { errText } from './lib/audit.js';
 
 const app = $('#app');
@@ -12,7 +12,7 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch', 'tasks']);
+const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch', 'tasks']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -80,6 +80,7 @@ function renderMenu() {
       can('purchase') && ['#/purchase', 'cart', 'רכש ומלאי', 'בקשת רכש'],
     ]],
     ['ניהול', [
+      isManager() && ['#/live', 'map', 'מגדל פיקוח', 'כל השטח עכשיו — מפה, צוותים והתראות'],
       isManager() && ['#/requests', 'send', 'בקשות מהצוות', 'שכר, ציוד, מסמכים'],
       isManager() && ['#/attendance', 'team', 'נוכחות צוות', can('finance') ? 'אישורים וייצוא לשכר' : 'אישורים ושעות'],
       isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
@@ -163,11 +164,78 @@ function transition(kind) {
   rtObs.observe(app, { childList: true });
 }
 app.addEventListener('animationend', e => { if (e.target.parentElement === app && /^rt/.test(e.animationName)) { clearTimeout(rtT); app.classList.remove('rt-fwd', 'rt-back', 'rt-fade'); } });
-const NOANIM = { noAnim: true };
+const NOANIM = { noAnim: true }, REFRESH = { noAnim: true, refresh: true };   // REFRESH = משיכה לרענון: התוכן הנוכחי נשאר עד שהחדש מוכן
+// ---------- מסך שכבר ראינו: מוצג מיד (תמונת מצב), והגרסה העדכנית מחליפה אותו כשהיא מוכנה ----------
+// חזרה / מעבר בין לשוניות = בלי שלד טעינה ובלי הבהוב, ובאותו מקום גלילה. רק מסכים עם הבר התחתון (לא טפסים)
+const SNAP = new Map(), SCROLL = new Map();
+const snapKey = h => (h || '#/').replace(/^#\/?/, '').split('/')[0];
+function snapSave(h) {
+  if (h == null) return;
+  SCROLL.set(h, app.scrollTop);
+  if (!WITH_NAV.has(snapKey(h)) || document.querySelector('.bar,.composer,.tourfs') || !app.children.length || app.querySelector('.sk,.skel,.boot,.oops')) return;
+  SNAP.delete(h); SNAP.set(h, { html: app.innerHTML, y: app.scrollTop, at: Date.now() });
+  if (SNAP.size > 14) SNAP.delete(SNAP.keys().next().value);
+}
+let snapEl = null;
+function snapShow(h, keepY) {
+  snapEl?.remove(); snapEl = null; app.classList.remove('under');
+  const s = SNAP.get(h); if (!s || Date.now() - s.at > 30 * 6e4) return false;
+  snapEl = document.createElement('div'); snapEl.id = 'snap'; snapEl.className = 'app snap'; snapEl.setAttribute('aria-hidden', 'true'); snapEl.inert = true;
+  snapEl.innerHTML = s.html; app.after(snapEl);   // אחרי #app — חיפוש לפי מזהה מוצא קודם את המסך האמיתי
+  snapEl.scrollTop = keepY ? s.y : 0;
+  app.classList.add('under');
+  return true;
+}
+// כשהמסך האמיתי מוכן (בלי שלד) — מחזירים את מקום הגלילה ומורידים את תמונת המצב. לכל היותר 3 שניות
+function snapDone(my, y) {
+  const t0 = performance.now();
+  const tick = () => {
+    if (my !== navSeq) return;
+    if (app.querySelector('.sk,.skel,.boot') && performance.now() - t0 < 3000) return requestAnimationFrame(tick);
+    if (y) app.scrollTop = y;
+    if (snapEl) { snapEl.remove(); snapEl = null; }
+    app.classList.remove('under');
+  };
+  requestAnimationFrame(tick);
+}
+// ---------- מקומות שמורים: מכולה ריקה שמתמלאת אחרי הטעינה (#attn, #pulse, #mytasks…) מקבלת מראש
+// את הגובה שהיה לה בפעם הקודמת במסך הזה — התוכן שמתחתיה לא קופץ. נזכר גם בין פתיחות (localStorage)
+let SLOTS = {}; try { SLOTS = JSON.parse(localStorage.getItem('edrone-slots') || '{}'); } catch { /* */ }
+let slotObs = null, slotSeen = new Set(), slotKey = '';
+const isEmptyEl = e => !e.children.length && !e.textContent.trim();
+function slotWatch(key) {
+  slotObs?.disconnect(); slotSeen = new Set(); slotKey = key;
+  const mem = SLOTS[key] || {};
+  const fill = e => { const h = mem[e.id]; if (h && !e.dataset.slot) { e.dataset.slot = '1'; e.style.minHeight = h + 'px'; e.style.display = 'block'; } };
+  const free = e => { e.style.minHeight = ''; e.style.display = ''; delete e.dataset.slot; };
+  slotObs = new MutationObserver(ms => {
+    for (const m of ms) for (const n of m.addedNodes) {
+      if (n.nodeType !== 1) continue;
+      for (const e of n.id ? [n, ...n.querySelectorAll('[id]')] : n.querySelectorAll('[id]')) if (isEmptyEl(e) && !e.closest('#snap')) { slotSeen.add(e.id); fill(e); }
+    }
+    app.querySelectorAll('[data-slot]').forEach(e => { if (!isEmptyEl(e)) free(e); });
+  });
+  slotObs.observe(app, { childList: true, subtree: true });
+  clearTimeout(slotWatch.t); slotWatch.t = setTimeout(() => app.querySelectorAll('[data-slot]').forEach(free), 5000);   // נשאר ריק הפעם — משחררים
+}
+function slotSave() {
+  if (!slotKey || !slotSeen.size) return;
+  const m = {};
+  slotSeen.forEach(id => { const e = app.querySelector('#' + CSS.escape(id)); const h = e && !e.dataset.slot ? e.offsetHeight : 0; if (h > 0 && h < 700) m[id] = h; });
+  SLOTS[slotKey] = m; const ks = Object.keys(SLOTS); if (ks.length > 30) delete SLOTS[ks[0]];
+  try { localStorage.setItem('edrone-slots', JSON.stringify(SLOTS)); } catch { /* */ }
+}
+addEventListener('pagehide', slotSave);
+document.addEventListener('visibilitychange', () => { if (document.hidden) slotSave(); });
 async function route(ev) {
   const my = ++navSeq;
-  const cur = location.hash || '#/', d = navDir();
-  transition(ev === NOANIM ? '' : !ev ? 'fade' : d === 'same' ? '' : lastHash != null && isRootHash(cur) && isRootHash(lastHash) ? 'fade' : d === 'back' ? 'back' : 'fwd');
+  const cur = location.hash || '#/', d = navDir(), prev = lastHash;
+  snapSave(prev); slotSave(); slotWatch(cur.replace(/\/[0-9a-f-]{36}/g, '/:id') + '|' + (state.profile?.role || ''));
+  // חזרה או מעבר בין לשוניות — אותו מקום גלילה; מסך חדש — מלמעלה
+  const quiet = ev?.noAnim; if (quiet) freshReads();
+  const keepY = !quiet && (d === 'back' || (prev != null && isRootHash(cur) && isRootHash(prev) && cur !== prev));
+  const snapped = ev === REFRESH ? snapShow(cur, true) : !quiet && d !== 'same' && cur !== prev && snapShow(cur, keepY);
+  transition(snapped || quiet ? '' : !ev ? 'fade' : d === 'same' ? '' : prev != null && isRootHash(cur) && isRootHash(prev) ? 'fade' : d === 'back' ? 'back' : 'fwd');
   lastHash = cur; titleReset();
   // מסך שנתקע על שלד טעינה (קליטה חלשה) — אחרי 15 שניות מציעים לנסות שוב במקום להמתין לנצח
   clearTimeout(route.wd); route.wd = setTimeout(() => { if (my === navSeq && app.querySelector(':scope > .sk, :scope > .stack > .sk') && !app.querySelector('.oops')) app.insertAdjacentHTML('beforeend', oops('הטעינה לוקחת יותר מהרגיל', !navigator.onLine)); }, 15000);
@@ -176,13 +244,18 @@ async function route(ev) {
     if (chunkErr(e)) return;
     app.innerHTML = oops('המסך לא נטען', !navigator.onLine);
   }
-  finally { if (my === navSeq) { rtObs?.disconnect(); rtObs = null; } }   // מסך שלא החליף תוכן — לא מנפישים מאוחר
+  finally {
+    if (my === navSeq) { rtObs?.disconnect(); rtObs = null; }   // מסך שלא החליף תוכן — לא מנפישים מאוחר
+    if (my === navSeq && (snapped || keepY)) snapDone(my, keepY ? SCROLL.get(cur) || 0 : 0);
+  }
 }
 // כרטיס תקלה ידידותי: בלי הודעת שגיאה טכנית, כפתור אחד שמנסה שוב באותו מסך
 function oops(t, off) {
   return `<div class="oops" role="alert"><span class="oops-ic">${icon(off ? 'sync' : 'alert', 28)}</span><b>${off ? 'אין קליטה כרגע' : t}</b><button class="btn primary" data-retry>${icon('sync', 18)} לנסות שוב</button>${t !== 'המסך לא נטען' ? '' : '<a class="oops-home" href="#/">למסך הבית</a>'}</div>`;
 }
 app.addEventListener('click', e => { if (e.target.closest('[data-retry]')) { haptic('tap'); route(NOANIM); } });
+// רטט קצר בבחירה: פעולה ראשית, לשונית, מקטע, צ׳יפ בחירה, מתג (אנדרואיד; באייפון אין API)
+document.addEventListener('click', e => { if (e.target.closest?.('.btn.primary,.tabs button,.seg button,.chip[aria-pressed],.sw,.wkd,.rdy[data-rdy]')) haptic('tap'); }, { passive: true });
 // קובץ מסך מגרסה קודמת לא נמצא (עדכון באמצע) — טעינה מחדש אחת, בלי מסך שגיאה
 function chunkErr(e) {
   if (!/dynamically imported module|Importing a module script failed|error loading dynamically|Failed to fetch/i.test(String(e?.message || e)) || !navigator.onLine) return false;
@@ -213,6 +286,7 @@ async function routeInner() {
   switch (h[0]) {
     case '': return (await home()).renderHome(app);
     case 'ops': return (await import('./modules/ops.js')).renderOps(app);
+    case 'live': if (!isManager()) return deny(); return (await import('./modules/live.js')).renderLive(app);
     case 'schedule': case 'today': return (await home()).renderSchedule(app);
     case 'alerts': return (await home()).renderAlerts(app);
     case 'reports': return (await home()).renderReports(app);
@@ -356,7 +430,7 @@ document.body.appendChild(ptr);
     if (!armed || e.type === 'touchcancel') { hide(); return; }
     busy = true; ptr.classList.add('spin'); ptr.style.transform = `translate3d(-50%,${TH}px,0)`; ptr.style.opacity = 1;
     const t0 = Date.now();
-    try { await Promise.race([route(NOANIM), new Promise(r => setTimeout(r, 10000))]); } catch { /* */ }
+    try { await Promise.race([route(REFRESH), new Promise(r => setTimeout(r, 10000))]); haptic('light'); } catch { /* */ }
     setTimeout(() => { hide(); busy = false; }, Math.max(0, 450 - (Date.now() - t0)));
   };
   app.addEventListener('touchend', end, { passive: true });

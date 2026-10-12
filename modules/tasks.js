@@ -3,7 +3,7 @@
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials, ask, signedUrls, zoom, addFieldPhoto, enqueue, flush, cache, haptic } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
-const SEL = 'id,title,instructions,due,status,assignee_id,created_by,site_id,project_id,done_at,photos,sites(name,slug,contact_name,contact_phone),projects(name)';
+const SEL = 'id,title,instructions,due,status,review,review_note,assignee_id,created_by,site_id,project_id,done_at,photos,sites(name,slug,contact_name,contact_phone),projects(name)';
 const emailIn = t => (String(t || '').match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [])[0];
 const tel = p => String(p || '').replace(/\D/g, '').replace(/^972/, '0');
 const wa = p => 'https://wa.me/972' + tel(p).replace(/^0/, '');
@@ -36,7 +36,8 @@ export async function myTasks(box) {
     const s = t.sites, ph = s?.contact_phone, em = emailIn(t.instructions);
     return `<div class="card stack" data-id="${t.id}">
       <div class="row"><span class="grow"><b>${esc(t.title)}</b><small>${[s?.name && !t.project_id ? esc(s.name) : '', dueTxt(t.due), !mineRow ? 'אצל ' + esc((names.get(t.assignee_id) || '').split(' ')[0]) : ''].filter(Boolean).join(' · ')}</small></span>
-        ${mineRow ? `<button class="btn primary sm" data-done="${t.id}">${t.project_id && t.photos?.before?.length ? `${icon('photo', 16)} טיפלתי` : 'בוצע'}</button>` : ''}</div>
+        ${t.review === 'pending' ? '<span class="pill warn">ממתין לאישור</span>' : mineRow ? `<button class="btn primary sm" data-done="${t.id}">${t.project_id && t.photos?.before?.length ? `${icon('photo', 16)} טיפלתי` : 'בוצע'}</button>` : ''}</div>
+      ${t.review === 'returned' && t.review_note && t.status !== 'done' ? `<div class="small err">${icon('alert', 14)} הוחזר: ${esc(t.review_note)}</div>` : ''}
       ${t.instructions ? `<div class="small">${esc(t.instructions).replace(/\n/g, '<br>')}</div>` : ''}
       ${mineRow && t.photos?.before?.length ? `<div class="fphs sm">${t.photos.before.map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : ''}
       ${mineRow && (ph || em || s) ? `<div class="chips tacts">${s?.contact_name ? `<span class="small muted grow">${esc(s.contact_name)}</span>` : '<span class="grow"></span>'}
@@ -116,7 +117,8 @@ export function completeTask(t, onDone, meta = {}) {
       if ($('#cok', s).disabled) return; $('#cok', s).disabled = true;
       const patch = { status: 'done', done_by: state.user.id, done_at: new Date().toISOString(), done_note: $('#cn', s).value.trim() || null, photos: { before, after } };
       await enqueue({ kind: 'update', table: 'tasks', rowId: t.id, patch });   // אחרי התמונות בתור — נשלח לפי הסדר
-      Object.assign(t, patch); close(); haptic('success'); toast(navigator.onLine ? 'סומן כטופל' : 'סומן כטופל — יישלח כשתהיה קליטה'); await flush(); onDone && onDone();
+      const rev = !isManager() && t.project_id && before.length;   // פריט תיקון: עובר לאישור ראש הצוות / מנהל התפעול (db/112)
+      Object.assign(t, patch, rev ? { status: 'in_progress', review: 'pending' } : {}); close(); haptic('success'); toast(rev ? (navigator.onLine ? 'נשלח לאישור' : 'נשלח לאישור — יישלח כשתהיה קליטה') : navigator.onLine ? 'סומן כטופל' : 'סומן כטופל — יישלח כשתהיה קליטה'); await flush(); onDone && onDone();
     };
   });
 }

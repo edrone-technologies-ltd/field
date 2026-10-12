@@ -17,7 +17,7 @@ export async function renderOps(el) {
   const now = new Date(), hr = now.getHours(), me = state.profile;
   const greet = hr < 5 ? 'לילה טוב' : hr < 12 ? 'בוקר טוב' : hr < 17 ? 'צהריים טובים' : hr < 21 ? 'ערב טוב' : 'לילה טוב';
   const head = `<header class="hhead"><div class="grow"><div class="eyebrow">יום ${HE_DOW[now.getDay()]}, ${now.toLocaleDateString('he-IL', { day: 'numeric', month: 'long' })}</div><h1>${greet}, ${esc(first(me.full_name))}</h1></div>
-    <a class="avatar" href="#/menu" aria-label="החשבון שלי">${esc(initials(me.full_name))}</a></header>`;
+    <a class="lvgo" href="#/live" aria-label="מגדל פיקוח"><i></i>שטח חי</a><a class="avatar" href="#/menu" aria-label="החשבון שלי">${esc(initials(me.full_name))}</a></header>`;
   if (!el.querySelector('#hm')) el.innerHTML = `${head}<div id="hm" class="stack lg"><div class="skel"></div><div class="skel tall"></div></div>`;
   const home = await import('./home.js');
   home.warmExtras?.();

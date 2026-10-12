@@ -107,7 +107,7 @@ async function pushRows() {
 
 // כל מה שמחכה למשתמש עצמו (הודעות, הדרכות, קליטה, התראות, שיבוץ שחסר)
 export async function attentionItems() {
-  const parts = await Promise.all([noPushRows(), tourRows(), schedRows(), certRows(), equipRows(), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));
+  const parts = await Promise.all([noPushRows(), tourRows(), schedRows(), certRows(), equipRows(), import('./repairs.js').then(m => m.repairRows()), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));   // תיקונים: ממתינים לאישור / הוחזרו (db/112)
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   return items;

@@ -372,7 +372,8 @@ async function mySchedule(el) {
 export async function renderReports(el) {
   // דוחות שטח מסודרים בתיקיות: תיקייה לכל פרויקט (תמונה, כמה דוחות, האחרון, תקלות). לחיצה = הדוחות של אותו פרויקט
   el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1>דוחות שטח</h1></header>
-    <input type="search" class="search" id="rq" placeholder="חיפוש פרויקט"><div id="rl"><div class="skel"></div></div>`;
+    <div id="prodx"></div><input type="search" class="search" id="rq" placeholder="חיפוש פרויקט"><div id="rl"><div class="skel"></div></div>`;
+  import('./zones.js').then(m => m.prodSection($('#prodx'))).catch(() => {});   // תפוקה: מ״ר לשעה (db/112)
   const [{ data: reps }, { data: days }, { data: projs }] = await Promise.all([
     sb.from('field_reports').select('project_id,report_date,had_issues').limit(2000),
     sb.from('work_days').select('project_id,day,status').eq('status', 'done').limit(2000),

@@ -206,6 +206,7 @@ export async function renderProject(el, id, tab = 'o') {
       ${kpiRow(appPlan
         ? [[done && Math.round(done / tot * 100) + '%', 'מהתכנית בוצע'], [dDone && `${dDone}/${D.days.length}`, 'ימי שטח']]
         : [[range, 'לו״ז'], [fdays && `${fdays}${p.field_days_planned ? '/' + nf(p.field_days_planned) : ''}`, 'ימי שטח'], [D.reps.length, 'דוחות שטח']])}
+      ${p.site_id ? '<div id="zprog"></div>' : ''}
       ${open.length ? `<section><h3 class="sh">תקלות פתוחות</h3><div class="alist">${open.map(i => `<div class="arow ${i.severity === 'critical' ? 'bad' : 'warn'}"><span class="aic">${icon('alert', 20)}</span><span class="grow"><b>${esc(i.body)}</b><small>${KIND_HE[i.kind] || ''} · ${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span>${M ? `<button class="chip" data-x="${i.id}">טופל</button>` : ''}</div>`).join('')}</div></section>` : ''}
       <div class="menu">
         ${M && p.client_id ? `<a class="lrow kv" href="#/client/${p.client_id}"><span class="mic">${icon('users', 19)}</span><span class="grow"><small>לקוח</small><b>${esc(p.client_name || '')}</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
@@ -226,6 +227,7 @@ export async function renderProject(el, id, tab = 'o') {
     if (p.site_id) { const cb = document.createElement('div'); $('.menu', box)?.after(cb); import('../lib/contacts.js').then(m => m.renderContacts(cb, { siteId: p.site_id, clientId: p.client_id, org: p.client_name || p.sites?.name, title: 'אנשי קשר באתר', empty: p.sites?.contact_name ? contactCard(p.sites.contact_name, p.sites.contact_phone) : '' })); }
     import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
     bindSched(box); bindReady(box); readyWx(box).catch(() => {});
+    if (p.site_id) import('./zones.js').then(m => m.progressCard($('#zprog', box), id, { started: D.days.some(d => d.status !== 'planned') })).catch(() => {});   // התקדמות לפי חזית (db/112)
     const sh = $('#share', box); if (sh) sh.onclick = shareSheet;
   }
   async function shareSheet() {
@@ -345,7 +347,7 @@ export async function renderProject(el, id, tab = 'o') {
   }
   function taskRow(t) {
     return `<button class="task ${t.status}" data-t="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : t.status === 'blocked' ? icon('alert', 14) : ''}</span><span class="t"><b>${esc(t.title)}</b>
-      <small>${esc([t.phase, T_STATUS[t.status]?.[0], t.status_note].filter(Boolean).join(' · '))}</small>${t.risk && t.status !== 'done' ? `<small class="issue">${esc(t.risk)}</small>` : ''}</span></button>`;
+      <small>${esc([t.phase, t.review === 'pending' ? 'ממתין לאישור' : T_STATUS[t.status]?.[0], t.status_note].filter(Boolean).join(' · '))}</small>${t.risk && t.status !== 'done' ? `<small class="issue">${esc(t.risk)}</small>` : ''}</span></button>`;
   }
   function bindTasks(box, redraw) {
     $$('[data-t]', box).forEach(b => {
@@ -507,6 +509,7 @@ export async function renderProject(el, id, tab = 'o') {
     const cs = p.closed_summary;
     box.innerHTML = `${cs ? `<div class="card row"><span class="dot ok"></span><b class="grow">הפרויקט נסגר ${new Date(cs.closed_at).toLocaleDateString('he-IL')}</b></div>` : ''}
       ${kpiRow([[hrs && nf(hrs), 'שעות צוות'], [gal && nf(gal), 'גלונים'], [D.issues.length, 'תקלות'], [D.tasks.filter(t => t.is_extra).length, 'תוספות מהלקוח']])}
+      ${M ? '<div id="zrate"></div>' : ''}
       <div id="labor"></div>
       ${SG.length ? `<section><h3 class="sh">${SG.length > 1 ? 'חתימות הלקוח' : 'חתימת הלקוח'}</h3>${SG.map((g, i) => `<div class="card stack tight"><div class="row"><b class="grow">${esc(g.name || '')}${g.role ? ' · ' + esc(g.role) : ''}</b><span class="pill ${g.ok ? 'ok' : 'warn'}">${g.ok ? 'אושר' : 'עם הערות'}</span></div>
         <small class="muted">${[g.at ? new Date(g.at).toLocaleDateString('he-IL') : '', g.days.length ? 'ימים: ' + daysTxt(g.days) : '', g.rating ? `שביעות רצון ${g.rating}/5` : ''].filter(Boolean).join(' · ')}</small>
@@ -514,6 +517,7 @@ export async function renderProject(el, id, tab = 'o') {
       <section id="galsec" hidden><h3 class="sh">לפני / אחרי</h3><div class="photos" id="gal"></div></section>
       ${closeFlow(SG, cs)}`;
     if (M) laborBlock();
+    if (M) import('./zones.js').then(m => m.projectRate($('#zrate', box), id)).catch(() => {});   // מ״ר לשעה (db/112)
     const { data: ph } = await sb.from('photos').select('kind,storage_path,work_day_id').eq('project_id', id).in('kind', ['before', 'after']).order('created_at');
     const urls = await signedUrls('field', [...(ph || []).map(x => x.storage_path), ...SG.map(g => g.path).filter(Boolean)]);
     const tu = await thumbUrls('field', (ph || []).map(x => x.storage_path));
