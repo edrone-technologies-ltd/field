@@ -1,5 +1,5 @@
 // Service worker: האפליקציה נפתחת גם בלי קליטה, ותמונות שכבר נצפו זמינות מהטלפון.
-const VERSION = 'edrone-field-v107';
+const VERSION = 'edrone-field-v108';
 const SHELL = ['./', 'index.html', 'tour/ops.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png', 'lib/audit.js', 'lib/avail.js', 'lib/contacts.js', 'lib/core.js', 'lib/labor.js', 'lib/pay.js', 'lib/store.js', 'lib/sun.js', 'lib/track.js', 'lib/viewer.js', 'lib/wx.js', 'modules/activity.js', 'modules/admin.js', 'modules/attendance.js', 'modules/attention.js', 'modules/chat.js', 'modules/clientreport.js', 'modules/clients.js', 'modules/dayadmin.js', 'modules/dispatch.js', 'modules/equipment.js', 'modules/expenses.js', 'modules/files.js', 'modules/home.js', 'modules/inbox.js', 'modules/knowledge.js', 'modules/live.js', 'modules/login.js', 'modules/news.js', 'modules/onboarding.js', 'modules/ops.js', 'modules/plan.js', 'modules/projects.js', 'modules/purchase.js', 'modules/repairs.js', 'modules/reports.js', 'modules/signoff.js', 'modules/specs.js', 'modules/staff.js', 'modules/tasks.js', 'modules/today.js', 'modules/tour.js', 'modules/visits.js', 'modules/weather.js', 'modules/welcome.js', 'modules/zones.js'];
 
 // קבצי הגרסה נשמרים בהתקנה ישירות מהשרת (cache: 'reload' — לא מהמטמון של הדפדפן), כך שכל הגרסה עקבית

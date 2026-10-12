@@ -73,7 +73,7 @@ function dimRows(rows, max) {
 // סיכום הפרויקט (מנהלים): מ״ר שהושלם, מ״ר לשעה, ופירוק לפי ראש צוות / רחפן / גובה
 export async function projectRate(box, pid) {
   if (!box || !isManager()) return;
-  const { data } = await sb.rpc('productivity', { p: pid }).catch(() => ({ data: null }));
+  const { data } = await sb.rpc('productivity', { p: pid }).then(r => r, () => ({ data: null }));
   const t = data?.total?.[0]; if (!t) return;
   const sub = DIMS.slice(0, 3).map(([k, l]) => (data[k] || []).length > 1 ? `<details class="fold"><summary><span class="sh">${l}</span></summary><div class="zlist">${dimRows(data[k], Math.max(...data[k].map(r => r.rate || 0)))}</div></details>` : '').join('');
   box.innerHTML = `<div class="kpis"><div class="kpi"><b>${nf(t.m2)}</b><span>מ״ר הושלמו</span></div><div class="kpi"><b>${rateTxt(t)}</b><span>מ״ר לשעת צוות</span></div></div>${sub}`;
@@ -82,7 +82,7 @@ export async function projectRate(box, pid) {
 export async function prodSection(box) {
   if (!box || !isManager()) return;
   const since = new Date(Date.now() - 90 * 864e5).toISOString().slice(0, 10);
-  const { data } = await sb.rpc('productivity', { since }).catch(() => ({ data: null }));
+  const { data } = await sb.rpc('productivity', { since }).then(r => r, () => ({ data: null }));
   const t = data?.total?.[0]; if (!t) return;
   let dim = 'lead';
   const draw = () => { const rows = data[dim] || [], max = Math.max(0, ...rows.map(r => r.rate || 0));

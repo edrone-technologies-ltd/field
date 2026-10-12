@@ -1,10 +1,17 @@
 // הדרכה אינטראקטיבית (מסך מלא בתוך האפליקציה). התמונות באחסון המוגן — נפתחות רק למשתמש מחובר.
 import { sb, state, isManager, signedUrls, icon } from '../lib/core.js';
 
-const SHOTS = ['01_home', '02_sched', '03_proj', '04_sheet', '05_sheet_wx', '06_pick', '07_pick_sel', '08_plan', '09_visit_form', '11_crew_home', '12_crew_done', '13_visit_done', '14_tasks', '16_purchase', '17_attendance', '19_visit_pdf', '20_visit_new'];
+// לכל הדרכה — רשימת המסכים שלה (tours/<name>/<shot>.jpg) ומי רשאי לפתוח. mgmt כולל מסכי שכר — הנהלה בלבד (גם באחסון: db/120)
+const TOURS = {
+  ops: { ok: isManager, shots: ['01_home', '02_sched', '03_proj', '04_sheet', '05_sheet_wx', '06_pick', '07_pick_sel', '08_plan', '09_visit_form', '11_crew_home', '12_crew_done', '13_visit_done', '14_tasks', '16_purchase', '17_attendance', '19_visit_pdf', '20_visit_new'] },
+  mgmt: { ok: () => state.profile?.role === 'admin', shots: ['m01_home', 'm02_needs', 'm03_projects', 'm04_notready', 'm05_proj', 'm06_ready', 'm07_sched', 'm08_sheet', 'board', 'c01_home', 'c02_tomorrow', 'c04_load', 'c05_site', 'c06_work', 'c07_close', 'm32_psum', 'm14_signoff', 'm16_crep', 'm17_att', 'm18_emp', 'm19_equip', 'm20_drone', 'm21_service', 'm23_purch', 'm24_purch_new', 'm25_specs', 'm26_logi', 'm27_plan', 'm28_launch', 'm29_person', 'm31_sync'] },
+};
 
 export async function renderTour(el, name = 'ops') {
-  if (!isManager()) { el.innerHTML = '<div class="empty">ההדרכה הזו למנהלים.</div>'; return; }
+  const T = TOURS[name];
+  if (!T) { location.hash = '#/kb'; return; }
+  if (!T.ok()) { el.innerHTML = '<div class="empty">ההדרכה הזו להנהלה.</div>'; return; }
+  const SHOTS = T.shots;
   el.innerHTML = '<div class="skel tall"></div>';
   const [html, urls] = await Promise.all([
     fetch(`tour/${name}.html`, { cache: 'no-cache' }).then(r => r.text()),

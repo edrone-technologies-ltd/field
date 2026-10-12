@@ -227,7 +227,7 @@ export async function renderProject(el, id, tab = 'o') {
     if (p.site_id) { const cb = document.createElement('div'); $('.menu', box)?.after(cb); import('../lib/contacts.js').then(m => m.renderContacts(cb, { siteId: p.site_id, clientId: p.client_id, org: p.client_name || p.sites?.name, title: 'אנשי קשר באתר', empty: p.sites?.contact_name ? contactCard(p.sites.contact_name, p.sites.contact_phone) : '' })); }
     import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
     bindSched(box); bindReady(box); readyWx(box).catch(() => {});
-    if (p.site_id) import('./zones.js').then(m => m.progressCard($('#zprog', box), id, { started: D.days.some(d => d.status !== 'planned') })).catch(() => {});   // התקדמות לפי חזית (db/112)
+    if (p.site_id) import('./zones.js').then(m => m.progressCard($('#zprog', box), id, { started: D.days.some(d => ['en_route', 'on_site', 'working', 'issue'].includes(d.status)) }   /* ימים שנסגרו לפני מעקב החזיתות — לא מציגים 0% מטעה */)).catch(() => {});   // התקדמות לפי חזית (db/112)
     const sh = $('#share', box); if (sh) sh.onclick = shareSheet;
   }
   async function shareSheet() {

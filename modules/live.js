@@ -36,7 +36,7 @@ function stop() {
   removeEventListener('hashchange', c.off); document.removeEventListener('visibilitychange', c.vis); document.removeEventListener('keydown', c.key);
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   c.lock?.release?.().catch(() => {});
-  try { c.map?.remove(); } catch { /* */ }
+  try { c.map?.stop(); c.map?.off(); c.map?.remove(); } catch { /* */ }   // עוצרים אנימציית זום/טיסה לפני הסרה
 }
 
 export async function renderLive(el) {

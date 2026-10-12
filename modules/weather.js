@@ -99,7 +99,7 @@ export async function renderWeather(el, siteId = '') {
     $$('[data-gs]', el).forEach(b => b.onclick = () => { if (b.dataset.gd) { day = b.dataset.gd; hi = -1; } pick(+b.dataset.gs); });
     $$('[data-h]', el).forEach(b => b.onclick = () => { hi = +b.dataset.h; draw(); });
     $$('[data-d]', el).forEach(b => b.onclick = () => { day = b.dataset.d; hi = -1; draw(); });
-    const on = $('.wxh.on', el); if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });
+    const on = $('.wxh.on', el); if (on) { const bx = on.parentElement, a = on.getBoundingClientRect(), b = bx.getBoundingClientRect(); bx.scrollBy({ left: a.left - b.left - (b.width - a.width) / 2 }); }   // רק אופקית — המסך לא קופץ למטה
   }
   $$('[data-s]', el).forEach(b => b.onclick = () => pick(+b.dataset.s));
   // חיפוש מקום
