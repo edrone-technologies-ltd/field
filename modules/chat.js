@@ -60,6 +60,8 @@ export async function renderChat(el, { site, project, conversation }) {
   }
   const tagHtml = m => { let h = esc(m.body);
     for (const u of m.mentions || []) { const n = names.get(u); if (n) h = h.split('@' + esc(n)).join(`<span class="tag ${u === state.user.id ? 'me' : ''}">@${esc(n)}</span>`); }
+    // קישורים לחיצים: קישור לאפליקציה שלנו נפתח באותה לשונית, חיצוני — בלשונית חדשה
+    h = h.replace(/(https?:\/\/[^\s<]+)/g, u => u.startsWith(location.origin + location.pathname) ? `<a href="${u}">${u}</a>` : `<a href="${u}" target="_blank" rel="noopener">${u}</a>`);
     return h.replace(/\n/g, '<br>'); };
   async function draw() {
     const urls = await thumbUrls('field', rows.map(r => r.photo_path).filter(Boolean));

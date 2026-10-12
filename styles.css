@@ -2436,7 +2436,6 @@ body:has(.viewer) #sheet,body:has(.annot) #sheet{z-index:70}
 .pdf-render .creport{margin:0!important}
 .pdf-render .creport .pg{width:210mm!important;box-shadow:none!important;margin:0!important;zoom:1!important;transform:none!important}
 .pdf-render .creport [contenteditable]{outline:none!important}
-.pdf-render .creport .hero:after{top:0;right:0;bottom:0;left:0;width:100%;height:100%}   /* html2canvas לא מכיר inset */
 /* פרויקט בפאנל השולחן: מעל הטבלה (כיסוי) עד מסך רחב מאוד; ב-1800+ הטבלה מתכווצת לצידו */
 @media (max-width:1799px){body.ws.dk-open .dk.dkwide :is(.dkw,.dkk,.dkbar,.dkh){margin-inline-end:0}.dk.dkwide .dkp{box-shadow:0 0 0 100vmax rgba(0,0,0,.28),0 0 40px rgba(0,0,0,.25)}}
 body.ws .reqcard .row-btns{justify-content:flex-end}
@@ -2445,6 +2444,3 @@ body.ws .xrow .stack.tight{flex-direction:row;gap:6px}
 .wsdrb .phero>a.back,.wsdrb .phero .back.glass{display:none}
 @media (max-width:1499px){.wsdr{box-shadow:0 0 0 100vmax rgba(0,0,0,.22),0 0 44px rgba(0,0,0,.22)}}
 @media screen and (max-width:420px){.rep-toolbar #print{display:none}.rep-toolbar .rt-l{display:none}}
-.pdf-render .creport .hero:after{display:none}
-.pdf-render .creport .hero>div{filter:none;opacity:.8}
-.pdf-render .creport .hero-txt,.pdf-render .creport .hero-top{text-shadow:0 2px 14px rgba(0,0,0,.75)}
