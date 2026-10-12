@@ -96,6 +96,19 @@ async function unclosedRows() {
     : [{ k: 'unclosed', tone: old ? 'bad' : 'warn', ic: icon('report', 18), title: `${D.length} ימי שטח בלי דוח סגור`, sub: [...new Set(D.map(d => d.projects?.name).filter(Boolean))].join(' · '),
         list: D.map(d => ({ href: `#/day/${d.id}`, t: d.projects?.name || 'יום שטח', s: s(d) })) }];
 }
+// הנהלה, ביום חמישי: פרויקט ארוך (יותר מ-5 ימי שטח) שנסגרו בו ימים השבוע — העדכון השבועי ללקוח מוכן לשיתוף. נעלם אחרי ששותף
+async function weeklyRows() {
+  if (!['admin', 'ops_manager'].includes(state.profile.role) || new Date().getDay() !== 4) return [];
+  const { weeklyFor, weeklyShared } = await import('./clientreport.js');
+  const { data } = await sb.from('projects').select('id,name,status_label,monday_group,closed_summary,work_days(day,status)').or('monday_group.is.null,monday_group.neq.group_mm5052gw');
+  const due = (data || []).filter(isOpenProject).map(p => ({ p, w: weeklyFor(p.work_days) })).filter(x => x.w && x.w.ws === weekStartOf() && !weeklyShared(x.p.id, x.w.ws));
+  if (!due.length) return [];
+  const go = x => `#/client-report/${x.p.id}/w/${x.w.ws}`;
+  return due.length === 1 ? [{ k: 'weekly', tone: '', ic: icon('report', 18), title: 'עדכון שבועי ללקוח מוכן', sub: due[0].p.name, href: go(due[0]) }]
+    : [{ k: 'weekly', tone: '', ic: icon('report', 18), title: `${due.length} עדכונים שבועיים ללקוחות מוכנים`, sub: due.map(x => x.p.name.split(' — ')[0]).join(' · '),
+        list: due.map(x => ({ href: go(x), t: x.p.name, s: x.w.n === 1 ? 'יום אחד השבוע' : `${x.w.n} ימים השבוע` })) }];
+}
+const weekStartOf = () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 async function tourRows() {
   if (state.profile.role !== 'ops_manager') return [];
   const { data: it } = await sb.from('kb_items').select('id').eq('video_url', '#/tour/ops').maybeSingle(); if (!it) return [];
@@ -121,7 +134,7 @@ async function pushRows() {
 
 // כל מה שמחכה למשתמש עצמו (הודעות, הדרכות, קליטה, התראות, שיבוץ שחסר)
 export async function attentionItems() {
-  const parts = await Promise.all([noPushRows(), tourRows(), unclosedRows(), schedRows(), certRows(), equipRows(), import('./repairs.js').then(m => m.repairRows()), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));   // תיקונים: ממתינים לאישור / הוחזרו (db/112)
+  const parts = await Promise.all([noPushRows(), tourRows(), unclosedRows(), schedRows(), weeklyRows(), certRows(), equipRows(), import('./repairs.js').then(m => m.repairRows()), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));   // תיקונים: ממתינים לאישור / הוחזרו (db/112)
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   return items;

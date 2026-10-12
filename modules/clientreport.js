@@ -1,6 +1,6 @@
 // דוח ללקוח — נבנה לבד מהחתימה האחרונה (מה שהחותם בחר: ימים, זוגות לפני/אחרי מאותו יום, משימות, כמויות, תקלות שטופלו, דירוג, חתימה). לא נשלח במייל — PDF/קישור/קולאז׳ מהמנהל.
 // כללים: אחריות על משימות = "E-Drone" (לא שמות עובדים); איש קשר בפוטר = החברה; זוג לפני/אחרי רק מאותו יום עבודה (לא זוגות מזויפים).
-import { sb, state, isManager, signedUrls, icon, $, $$, esc, toast, dm, coverArt, cache, isoDay } from '../lib/core.js';
+import { sb, state, isManager, signedUrls, icon, backBtn, $, $$, esc, toast, dm, coverArt, cache, isoDay, replaceHash } from '../lib/core.js';
 import { shareIcon, shareFile, sharePrint } from '../lib/share.js';
 
 const bdi = t => esc(t).replace(/([+−~≤≥]?[0-9A-Za-z][0-9A-Za-z.,%°~+−≤≥–—/ -]*[0-9A-Za-z%°])/g, '<bdi dir="ltr">$1</bdi>');
@@ -23,7 +23,7 @@ export async function renderClientReport(el, pid) {
     sb.from('app_settings').select('value').eq('key', 'company').maybeSingle(),
     cache.get('signoff-last:' + pid).catch(() => null),
   ]);
-  if (!p) { el.innerHTML = '<div class="empty">הפרויקט לא נמצא</div>'; return; }
+  if (!p) { el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>דוח ללקוח</h1></header><div class="empty-line">הפרויקט לא נמצא</div>`; return; }
   // החתימה האחרונה קובעת מה נכלל (ימים, תמונות, משימות, מקטעים). חתימה שנשמרה בטלפון ועוד לא הגיעה לשרת — משמשת מיד
   let so = sos[0] || null;
   if (local && (!so || so.id === local.id || new Date(local.created_at) > new Date(so.created_at))) so = { ...(so || {}), ...local };
@@ -146,4 +146,105 @@ async function collage(before, after, name, btn) {
     const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
     await shareFile(blob, `לפני-אחרי-${name}.jpg`, 'לפני / אחרי · E-Drone', '', { btn });
   } catch { toast('התמונות לא נטענו — נסו שוב'); }
+}
+
+// ================= עדכון שבועי ללקוח (פרויקט ארוך: יותר מ-5 ימי שטח) =================
+// נבנה לבד מהימים שנסגרו בשבוע: תאריכים, חזיתות שהושלמו והתקדמות %, זוגות לפני/אחרי מאותו יום, נקודות שטופלו, ומה מתוכנן לשבוע הבא.
+// לא נשלח לבד ללקוח (אף פעם לא מייל אוטומטי) — המנהל משתף PDF בלחיצה. שבוע = ראשון–שבת.
+const addD = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
+export const weekStart = s => addD(s, -new Date(s + 'T12:00:00').getDay());
+const LONG = 5;
+// השבוע של העדכון: השבוע הנוכחי אם נסגר בו יום; אחרת השבוע שעבר (ראשון בבוקר עוד מראה את השבוע שהסתיים)
+export function weeklyFor(days) {
+  const live = (days || []).filter(d => d.status !== 'cancelled');
+  if (live.length <= LONG) return null;
+  for (const ws of [weekStart(isoDay()), addD(weekStart(isoDay()), -7)]) {
+    const we = addD(ws, 6), wd = live.filter(d => d.status === 'done' && d.day >= ws && d.day <= we);
+    if (wd.length) return { ws, we, n: wd.length };
+  }
+  return null;
+}
+const wkKey = (pid, ws) => `wkup:${pid}:${ws}`;
+export const weeklyShared = (pid, ws) => { try { return !!localStorage.getItem(wkKey(pid, ws)); } catch { return false; } };
+const markShared = (pid, ws) => { try { localStorage.setItem(wkKey(pid, ws), '1'); } catch { /* */ } };
+
+// כרטיס בסיכום הפרויקט: "עדכון שבועי מוכן" — לחיצה = העדכון, "שיתוף" = PDF מיד
+export function weeklyCard(box, p, days) {
+  if (!box || !isManager()) return;
+  const w = weeklyFor(days); if (!w) { box.innerHTML = ''; return; }
+  const sent = weeklyShared(p.id, w.ws), base = `#/client-report/${p.id}/w/${w.ws}`;
+  box.innerHTML = `<div class="card wkup"><a class="mic" href="${base}" aria-hidden="true">${icon('report', 20)}</a><a class="grow" href="${base}"><b>${sent ? 'עדכון שבועי שותף' : 'עדכון שבועי מוכן'}</b><small class="muted">${w.n === 1 ? 'יום אחד' : w.n + ' ימים'} · ${dm(w.ws)}–${dm(w.we)}</small></a>
+    <a class="btn ${sent ? 'ghost' : 'primary'} sm" href="${base}/s">${shareIcon(16)} שיתוף</a></div>`;
+}
+
+export async function renderWeeklyUpdate(el, pid, ws0, autoShare = false) {
+  el.innerHTML = '<div class="skel tall"></div>';
+  if (!isManager()) { el.innerHTML = `<header class="phead"><a class="back" href="#/p/${pid}" aria-label="חזרה">${icon('back', 20)}</a></header><div class="empty-card"><span class="ei">${icon('shield', 26)}</span><span><b>העדכון השבועי — למנהלים</b></span></div>`; return; }
+  const ws = /^\d{4}-\d\d-\d\d$/.test(ws0 || '') ? weekStart(ws0) : weekStart(isoDay()), we = addD(ws, 6);
+  const q = x => x.then(r => r.data || []).catch(() => []);
+  const [{ data: p }, all, { data: Z }, { data: me }] = await Promise.all([
+    sb.from('projects').select('*, sites(name,address)').eq('id', pid).single(),
+    q(sb.from('work_days').select('id,day,status,work_types,zones_done,gallons').eq('project_id', pid).neq('status', 'cancelled').order('day')),
+    sb.rpc('project_zones', { p: pid }).then(r => r, () => ({ data: null })),
+    sb.from('app_settings').select('value').eq('key', 'company').maybeSingle()]);
+  if (!p) { el.innerHTML = '<div class="empty">הפרויקט לא נמצא</div>'; return; }
+  const W = all.filter(d => d.status === 'done' && d.day >= ws && d.day <= we);
+  const ids = W.map(d => d.id);
+  const [ph, iss] = await Promise.all([
+    ids.length ? q(sb.from('photos').select('kind,storage_path,work_day_id,created_at').in('work_day_id', ids).in('kind', ['before', 'after']).order('created_at')) : [],
+    q(sb.from('issues').select('kind,body,resolution,closed_at').eq('project_id', pid).eq('status', 'closed').in('kind', ['site', 'other']).gte('closed_at', ws + 'T00:00:00').lte('closed_at', we + 'T23:59:59'))]);
+  const urls = await signedUrls('field', ph.map(x => x.storage_path)).catch(() => ({}));
+  const place = p.sites?.name || p.name.replace(/^[^—]*—\s*/, '');
+  // התקדמות: חזיתות שהושלמו עד סוף השבוע מתוך כל החזיתות של האתר
+  const zones = Z?.zones || [], zd = Z?.done || [];
+  const upTo = zd.filter(z => z.day <= we).length, before = zd.filter(z => z.day < ws).length;
+  const prog = zones.length ? Math.round(upTo / zones.length * 100) : null, progPrev = zones.length ? Math.round(before / zones.length * 100) : null;
+  const zName = z => [z.bn, z.t].filter(Boolean).join(' · ');
+  const L = W.map(d => ({ d: d.day, work: (d.work_types || []).join(' · '), zones: (Array.isArray(d.zones_done) ? d.zones_done : []).map(zName).filter(Boolean) }));
+  const zWeek = [...new Set(L.flatMap(x => x.zones))];
+  const nextW = all.filter(d => d.status !== 'done' && d.day > we && d.day <= addD(we, 7)).map(d => d.day);
+  const wdDay = new Map(W.map(d => [d.id, d.day]));
+  const PH = ph.filter(x => urls[x.storage_path]).map(x => ({ u: urls[x.storage_path], k: x.kind, d: wdDay.get(x.work_day_id) }));
+  const blocks = W.map(d => { const b = PH.filter(x => x.d === d.day && x.k === 'before'), a = PH.filter(x => x.d === d.day && x.k === 'after'); const pairs = []; while (b.length && a.length) pairs.push([b.shift(), a.pop()]);
+    return { d: d.day, work: L.find(x => x.d === d.day)?.work, pairs }; }).filter(x => x.pairs.length);
+  const pages = []; let cur = [], n8 = 0;
+  for (const bl of blocks) { for (const pr of bl.pairs) { if (n8 >= 2) { pages.push(cur); cur = []; n8 = 0; } let c = cur.find(x => x.d === bl.d); if (!c) cur.push(c = { d: bl.d, work: bl.work, pairs: [] }); c.pairs.push(pr); n8++; } }
+  if (cur.length) pages.push(cur);
+  const hero = (p.cover_path && (await signedUrls('media', [p.cover_path]).catch(() => ({})))[p.cover_path]) || PH.filter(x => x.k === 'after').at(-1)?.u || PH[0]?.u || coverArt(p.name);
+  const co = me?.value || {}, coLine = [co.phone, co.email, co.web].filter(Boolean).map(x => `<bdi dir="ltr">${esc(x)}</bdi>`).join(' · ');
+  const range = `${dm(ws)}–${dm(we)}`;
+  const intro = W.length ? `השבוע (${range}) עבד צוות E-Drone ${W.length === 1 ? 'יום אחד' : W.length + ' ימים'} ב${place}${zWeek.length ? ` והשלים ${zWeek.length === 1 ? 'חזית אחת' : zWeek.length + ' חזיתות'}` : ''}.${prog != null ? ` הפרויקט הושלם ב-${prog}%.` : ''}${nextW.length ? ` בשבוע הבא מתוכננים ${nextW.length === 1 ? 'יום עבודה אחד' : nextW.length + ' ימי עבודה'}.` : ''}`
+    : `לא נסגרו ימי עבודה בשבוע ${range}.`;
+  const shot = (x, tag) => `<div class="shot"><img src="${esc(x.u)}" alt=""><span class="tag ${tag === 'אחרי' ? 'a' : ''}">${tag}</span></div>`;
+  const foot = n => `<div class="cr-pf"><span><bdi dir="ltr"><b>E-Drone</b> Technologies</bdi> · ${esc(place)}</span><span>${n}</span></div>`;
+  let pn = 1;
+  const title = `עדכון שבועי E-Drone - ${place} ${range.replace(/\./g, '-')}`;
+  el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/p/${pid}/s" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">עדכון שבועי <small class="muted"><bdi dir="ltr">${range}</bdi></small></b>
+      <button class="btn ghost sm" id="wkprev" aria-label="שבוע קודם">‹</button><button class="btn ghost sm" id="wknext" aria-label="שבוע הבא">›</button>
+      <button class="btn primary sm" id="wksh" aria-label="שיתוף PDF">${shareIcon(16)} PDF</button></div>
+    <div class="creport" id="cr">
+      <div class="pg"><div class="hero wk"><img src="${esc(hero)}" alt=""><div class="hero-top"><div class="wordmark"><div class="w">E-DRONE</div><div class="t">TECHNOLOGIES</div></div><div class="kicker">WEEKLY UPDATE</div></div>
+        <div class="hero-txt"><div class="lbl">עדכון שבועי · <bdi dir="ltr">${range}</bdi></div><h1 contenteditable="true">${bdi(place)}</h1><div class="sub" contenteditable="true">${bdi(p.client_name || '')}</div></div></div>
+        <div class="stats"><div class="stat"><div class="n">${W.length || '—'}</div><div class="c">ימי עבודה השבוע</div></div><div class="stat"><div class="n">${zWeek.length || '—'}</div><div class="c">חזיתות שהושלמו</div></div>
+          <div class="stat"><div class="n">${prog != null ? `${prog}<em>%</em>` : '—'}</div><div class="c">${prog != null && progPrev != null && prog > progPrev ? `התקדמות (+${prog - progPrev}%)` : 'התקדמות'}</div></div><div class="stat"><div class="n">${PH.length || '—'}</div><div class="c">תמונות תיעוד</div></div></div>
+        ${prog != null ? `<div class="wk-prog"><i style="width:${progPrev}%"></i><i class="now" style="width:${prog - progPrev}%"></i></div>` : ''}
+        <div class="intro"><p contenteditable="true">${bdi(intro)}</p></div>
+        ${L.length ? `<div class="pad wk-log"><div class="rsec">FIELD LOG</div><table class="cr-log"><tr><th>תאריך</th><th>עבודה</th><th>הושלם</th></tr>${L.map(x => `<tr><td class="cr-d"><bdi dir="ltr">${dm(x.d)}</bdi></td><td contenteditable="true">${bdi(x.work || 'עבודה באתר')}</td><td contenteditable="true">${x.zones.length ? x.zones.map(bdi).join('<br>') : ''}</td></tr>`).join('')}</table></div>` : ''}
+        <div class="foot"><span><b>E-Drone</b> Technologies</span>${coLine ? `<span>${coLine}</span>` : ''}</div></div>
+      ${pages.map((pg, i) => `<div class="pg"><div class="pad">${i ? '' : '<div class="rsec">BEFORE / AFTER</div><h2>לפני ואחרי</h2><div class="rule"></div>'}
+        ${pg.map(bl => `<div class="ba"><div class="band"><span class="t">${esc(fmt(bl.d))}</span>${bl.work ? `<span class="d">${esc(bl.work)}</span>` : ''}<span class="ln"></span></div>
+          ${bl.pairs.map(([b, a]) => `<div class="row2 cr-pair">${shot(b, 'לפני')}${shot(a, 'אחרי')}</div>`).join('')}</div>`).join('')}</div>${foot(++pn)}</div>`).join('')}
+      ${iss.length || nextW.length ? `<div class="pg"><div class="pad">
+        ${iss.length ? `<div class="rsec">RESOLVED</div><h2>נקודות שטופלו השבוע</h2><div class="rule"></div><ul class="cl" contenteditable="true">${iss.map(x => `<li><b>${bdi(x.body || '')}</b>${x.resolution ? ` — ${bdi(x.resolution)}` : ''}</li>`).join('')}</ul>` : ''}
+        ${nextW.length ? `<div class="rsec" style="margin-top:${iss.length ? 11 : 0}mm">NEXT WEEK</div><h2 class="cr-h3">מתוכנן לשבוע הבא</h2><ul class="cl" contenteditable="true">${nextW.map(d => `<li>${esc(fmt(d))}</li>`).join('')}</ul>` : ''}
+        <div class="end"><div class="l"><b>E-Drone Technologies</b>${coLine ? `<br>${coLine}` : ''}</div><img src="logo.png" alt="E-Drone"></div></div>${foot(++pn)}</div>` : ''}
+    </div>`;
+  document.body.classList.add('printing-report');
+  addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });
+  const go = n => { location.hash = `#/client-report/${pid}/w/${addD(ws, n * 7)}`; };
+  $('#wkprev').onclick = () => go(-1); $('#wknext').onclick = () => go(1);
+  const share = btn => { markShared(pid, ws); return sharePrint(btn, $('#cr'), title, `עדכון שבועי · ${place}`); };
+  $('#wksh').onclick = e => share(e.currentTarget);
+  // הגעה מ"שיתוף" בכרטיס: ה-PDF נבנה ונפתח השיתוף מיד (אם הטלפון מבקש לחיצה נוספת — גיליון שיתוף אחד)
+  if (autoShare) { replaceHash(`#/client-report/${pid}/w/${ws}`, false); if (W.length) share($('#wksh')); }
 }

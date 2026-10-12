@@ -2456,3 +2456,50 @@ body.ws .xrow .stack.tight{flex-direction:row;gap:6px}
 .kbc-go{flex:none;padding:7px 14px;border-radius:99px;background:var(--lime);color:var(--lime-ink);font-weight:800;font-size:.85rem}
 .msg .kbc+.kbc{margin-top:8px}
 .shs-og{display:block;width:100%;aspect-ratio:1200/630;object-fit:cover;border-radius:14px;border:1px solid var(--line)}
+/* ---- עלויות (costs.js, אדמין) ---- */
+.cx-big{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.cx-big b{font-family:var(--f-display);font-size:2rem;font-variant-numeric:tabular-nums;line-height:1.1}
+.cx-wk{align-self:flex-start}
+.kpi.ok b{color:var(--ok)}
+.cx-bar{display:flex;height:10px;border-radius:6px;background:var(--card2);overflow:hidden}
+.cx-bar i{background:var(--lime)} .cx-bar i.rest{background:repeating-linear-gradient(45deg,var(--lime) 0 4px,transparent 4px 8px);opacity:.55}
+.cx-weeks{display:grid;grid-template-columns:repeat(10,1fr);gap:4px;align-items:end}
+.cx-w{display:flex;flex-direction:column;align-items:center;gap:4px;border:0;background:transparent;padding:4px 0;border-radius:10px;cursor:pointer;color:var(--muted);font:inherit}
+.cx-w small{font-size:.66rem;font-variant-numeric:tabular-nums}
+.cx-w.on{background:var(--card2);color:var(--ink)}
+.cx-col{height:72px;width:60%;display:flex;align-items:flex-end}
+.cx-col i{display:block;width:100%;border-radius:5px 5px 2px 2px;background:var(--lime)}
+.cx-col i.est{background:repeating-linear-gradient(45deg,var(--lime) 0 4px,transparent 4px 8px);outline:1px solid var(--lime);outline-offset:-1px}
+.wkup{display:flex;align-items:center;gap:12px}
+/* עדכון שבועי ללקוח (clientreport.js) */
+.creport .hero.wk{height:112mm}
+.creport .wk-prog{display:flex;height:3mm;margin:0 18mm 2mm;border-radius:2mm;background:#EEF0F2;overflow:hidden}
+.creport .wk-prog i{background:#9DB84A} .creport .wk-prog i.now{background:#C6EA5E}
+.creport .wk-log{padding-top:4mm;padding-bottom:4mm}
+/* פעימות — לו״ז לא רציף (projects.js pulseEditor) */
+.pulses{display:flex;flex-direction:column;gap:6px}
+.prow{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px}
+.prow .field{margin:0;min-width:0;flex:1 1 0}
+.prow .field input{width:100%}
+.padd,.pdel{flex:0 0 44px;height:44px;border-radius:var(--r2);border:1px solid var(--line);background:var(--card2);color:var(--ink);font:inherit;font-size:20px;line-height:1;display:grid;place-items:center;cursor:pointer}
+.padd{background:var(--limebg);border-color:var(--lime);color:var(--lime)}
+.padd:active,.pdel:active{transform:scale(.94)}
+.prow.bad input[data-pt]{border-color:var(--bad);color:var(--bad)}
+.perr{flex-basis:100%;color:var(--bad);font-weight:600}
+.pulsetxt{font-variant-numeric:tabular-nums}
+.wkup a{color:inherit;text-decoration:none}
+.wkup>a.grow{display:flex;flex-direction:column;min-width:0}
+.wkup>a.grow small{font-size:.8rem}
+/* דופק לפני עבודה (db/130): כרטיס לכל חלק — רחפן (מטיס) / בטיחות (מפעיל קרקע) */
+.prest .pic{width:38px;height:38px;flex:none;border-radius:12px;display:grid;place-items:center;background:var(--card2);color:var(--muted)}
+.prest.ok .pic{background:color-mix(in srgb,var(--ok) 14%,var(--card));color:var(--ok)}
+.prest.bad{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
+.prest.bad .pic{background:color-mix(in srgb,var(--bad) 12%,var(--card));color:var(--bad)}
+.prest .pall{min-height:58px;font-size:1.08rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.prest .pall small{font-weight:500;opacity:.85;font-size:.78rem}
+.prest .pdet summary{cursor:pointer;color:var(--muted);font-size:.9rem;padding:2px 0}
+.prest .pdet .lrow .chip{color:var(--bad)}
+.prest .alert .btn.sm{flex:none}
+.psdec .btn{flex:1}
+.pulsetxt span{white-space:nowrap}
+.prest>.row>.grow{display:flex;flex-direction:column;gap:2px;min-width:0}

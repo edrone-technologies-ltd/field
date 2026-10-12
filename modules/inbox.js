@@ -12,6 +12,7 @@ export async function renderInbox(el) {
   let rows;
   try { const { data, error } = await sb.rpc('my_inbox'); if (error) throw error; rows = data || []; await cache.set('inbox', rows); }
   catch { rows = (await cache.get('inbox')) || []; }
+  await kbNames(rows);
   const groups = rows.filter(c => c.kind === 'group'), dms = rows.filter(c => c.kind === 'dm');
   const row = c => `<a class="lrow msgrow ${c.unread ? 'unread' : ''}" href="#/c/${c.id}">${av(c)}<span class="grow"><span class="r1"><b>${esc(c.title || '')}</b><small>${c.muted ? `<span class="mutei" aria-label="מושתק">${bell(true, 13)}</span>` : ''}${c.last_message_at ? timeAgo(c.last_message_at) : ''}</small></span>
     <small class="r2">${esc(c.last_message || (c.kind === 'group' ? `${(c.members || []).length} חברים` : 'אין הודעות עדיין'))}</small></span>${c.unread ? `<span class="badge">${c.unread}</span>` : ''}</a>`;
@@ -19,6 +20,21 @@ export async function renderInbox(el) {
   const all = [...dms, ...groups].sort((a, b) => (b.unread && !b.muted ? 1 : 0) - (a.unread && !a.muted ? 1 : 0) || String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
   $('#ib').innerHTML = all.map(row).join('') + (dms.length ? '' : `<button class="lrow msgrow newdm" id="new2"><span class="avatar grp">${icon('plus', 20)}</span><span class="grow"><b>הודעה אישית</b></span></button>`);
   $('#new').onclick = newMessage; const n2 = $('#new2'); if (n2) n2.onclick = newMessage;
+}
+
+// קישור להדרכה בתצוגה המקדימה → "הדרכה: <שם>" (השרת כבר שומר כך — db/128; כאן למה שנשמר/נשמר במטמון קודם)
+const KB_U = /https?:\/\/\S*?(?:\/s\/kb-|#\/kb\/)([0-9a-f-]{36})\S*/g;
+async function kbNames(rows) {
+  const ids = [...new Set(rows.flatMap(c => [...String(c.last_message || '').matchAll(KB_U)].map(m => m[1])))];
+  if (!ids.length) return;
+  let T = new Map();
+  try { const { data } = await sb.from('kb_items').select('id,title').in('id', ids); T = new Map((data || []).map(x => [x.id, x.title])); } catch { /* */ }
+  for (const c of rows) {
+    const s = String(c.last_message || ''); if (!KB_U.test(s)) continue; KB_U.lastIndex = 0;
+    const ts = [...s.matchAll(KB_U)].map(m => T.get(m[1])).filter(Boolean), t = ts.join(' · ');
+    const lead = s.replace(KB_U, '').trim().replace(/\s*…$/, '');
+    c.last_message = !t ? (lead || 'הדרכה') : !lead || (lead.includes(t) && lead.length <= t.length + 26) ? `הדרכה: ${t}` : `${lead} · הדרכה: ${t}`;
+  }
 }
 
 async function newMessage() {

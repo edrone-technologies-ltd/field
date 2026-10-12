@@ -3,6 +3,9 @@ import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $
 import { shrink } from '../lib/store.js';
 import { airBtn } from '../lib/wx.js';
 import { errText } from '../lib/audit.js';
+// כסף לא מוצג למי שאין לו כספים (מנהל תפעול): משפטים בטקסט חופשי ממאנדי עם סכום/מע״מ/חשבונית/תנאי תשלום יורדים
+const MONEY_RE = /₪|ש["״]ח|שקל|מע["״]מ|חשבוני|קבל[הות]\s*\d|תשלום|תשלומ|משלמ|כספים|חשבון בנק|ניכוי מס|\d[\d,.]*\s*(?:אלף|K\b)/;
+const noMoney = t => !t || can('finance') ? t : String(t).split(/(?<=[.!?\n])\s+|\s+(?=⚠)/).filter(x => !MONEY_RE.test(x)).join(' ').trim() || null;
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
 const DENS = ['נמוכה', 'בינונית', 'גבוהה'];
@@ -36,7 +39,7 @@ const prepSite = data => { data.buildings.sort((a, b) => a.sort - b.sort);
   data.buildings.forEach(b => { b.plan_images.sort((x, y) => x.sort - y.sort); b.spec = b.specs?.[0] || b.specs || null; }); return data; };
 async function fetchSite(slug) {
   try {
-    const { data, error } = await sb.from('sites').select(SITE_FULL).eq('slug', slug).single();
+    const { data, error } = await sb.from('sites').select(SITE_FULL).eq(/^[0-9a-f]{8}-[0-9a-f-]{27}$/.test(slug) ? 'id' : 'slug', slug).single();   // קישור לפי מזהה (שולחן ניהול, Ctrl+K) עובד גם הוא
     if (error) throw error;
     prepSite(data); await cache.set('site:' + slug, data); return data;
   } catch { return await cache.get('site:' + slug); }
@@ -373,7 +376,7 @@ export async function renderBuilding(el, slug, bid) {
   el.innerHTML = `<header class="phead"><a class="back" id="bk" data-hard="1" href="javascript:void 0" aria-label="חזרה ל${esc(s.name)}">${icon('back', 20)}</a><h1 class="grow">${esc(one ? s.name : b.name)}</h1><span class="pill ${sc}" id="stp">${st}</span></header>
     ${ctx ? `<div class="muted">${esc(ctx)}</div>` : ''}
     ${editable ? '<div class="ready" id="ready"></div>' : ''}
-    ${s.kind === 'lead' ? `<div class="menu">${[['שלב', s.lead_stage], ['היקף', s.scope_text], ['אחראי', s.lead_owner], ['תאריך סיור', s.visit_date ? dm(s.visit_date) : null], ['הערות מהליד', s.lead_notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}
+    ${s.kind === 'lead' ? `<div class="menu">${[['שלב', s.lead_stage], ['היקף', noMoney(s.scope_text)], ['אחראי', s.lead_owner], ['תאריך סיור', s.visit_date ? dm(s.visit_date) : null], ['הערות מהליד', noMoney(s.lead_notes)]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}
       ${NAMES.length > 1 && editable ? `<button class="lrow" type="button" id="splitb"><span class="grow"><b>יצירת ${NAMES.length} מבנים</b><small>${esc(NAMES.join(' · '))}</small></span><span class="chev">${icon('plus', 18)}</span></button>` : ''}
       <a class="lrow" href="#/site/${esc(slug)}"><span class="grow"><b>${s.buildings.length > 1 ? `כל המבנים בליד (${s.buildings.length})` : 'הוספת מבנה'}</b></span><span class="chev">${icon('chev', 18)}</span></a></div>` : !b.facade_area_m2 && b.plan_source !== 'plans' ? '' : `
     <div class="kpis"><div class="kpi"><b>${b.facade_area_m2 ? nf(b.facade_area_m2) : 'למדידה'}</b><span>${b.facade_area_m2 ? 'מ״ר לפי התכנית' : 'שטח חזיתות'}</span></div>

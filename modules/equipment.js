@@ -147,7 +147,9 @@ async function renderDrone(el, r, ctx) {
   const tone = !last ? '' : pct >= 100 ? 'bad' : pct >= (S.warn_pct || 85) ? 'warn' : 'ok';
   const compUse = c => { const u = sum(c.installed_on, true); return { m: Number(c.base_minutes || 0) + u.m, f: u.f }; };
   const compPct = c => { const u = compUse(c); return Math.round(Math.max(c.replace_hours ? u.m / 60 / c.replace_hours : 0, c.replace_cycles ? u.f / c.replace_cycles : 0) * 100); };
-  const batCycles = b => Math.round(Number(b.cycles || 0) + (b.cycles_at ? sum(b.cycles_at).f : 0) / Math.max(1, B.length));
+  // מחזורים לסוללה: מה שנרשם בפועל (cycles נכון ל-cycles_at) + הטיסות של הכלי מאז, מחולקות בין הסוללות שלו (אין רישום טיסה לפי סוללה — לכן "≈")
+  const batEst = b => { const f = b.cycles_at ? sum(b.cycles_at).f : 0; return { n: Math.round(Number(b.cycles || 0) + f / Math.max(1, B.length)), est: f > 0 }; };
+  const batCycles = b => batEst(b).n;
   const dueC = C.filter(c => compPct(c) >= 85).sort((a, b) => compPct(b) - compPct(a));
   const op = (ctx.iss || []).filter(i => i.equipment_id === r.id && i.status === 'open');
   const meter = (p, t) => `<span class="meter ${t}"><i style="width:${Math.max(3, Math.min(100, p))}%"></i></span>`;
@@ -166,8 +168,8 @@ async function renderDrone(el, r, ctx) {
         return `<button type="button" class="lrow stockrow" data-c="${c.id}"><span class="grow"><b>${esc(CK[c.kind])}${c.position ? ' ' + esc(c.position) : ''}</b><small>${esc([c.serial ? 'מס׳ ' + c.serial : '', `${hrs(u.m)} ש׳ · ${u.f} טיסות`, 'מ-' + dm(c.installed_on)].filter(Boolean).join(' · '))}</small>${c.replace_hours || c.replace_cycles ? meter(p, t) : ''}</span>${p >= 100 ? '<span class="pill bad">להחליף</span>' : p >= 85 ? '<span class="pill warn">בקרוב</span>' : ''}</button>`; }).join('')}</div>`
         : M ? `<button class="btn ghost block" id="cadd2">${icon('plus', 18)} מנועים, פרופלורים, משאבה, נחיר</button>` : ''}</section>
     <section><div class="sh-row"><h3 class="sh">סוללות</h3>${M ? `<button class="more" type="button" id="badd">${icon('plus', 16)} סוללה</button>` : ''}</div>
-      ${B.length ? `<div class="list">${B.map(b => { const n = batCycles(b), p = b.replace_cycles ? Math.round(n / b.replace_cycles * 100) : null, t = p >= 100 ? 'bad' : p >= 85 ? 'warn' : 'ok';
-        return `<button type="button" class="lrow stockrow" data-b="${b.id}"><span class="grow"><b>${esc(b.name)}</b><small>${esc([b.serial ? 'מס׳ ' + b.serial : '', `~${n} מחזורים${b.replace_cycles ? ' מתוך ' + b.replace_cycles : ''}`].filter(Boolean).join(' · '))}</small>${p != null ? meter(p, t) : ''}</span>${p >= 100 ? '<span class="pill bad">להחליף</span>' : ''}</button>`; }).join('')}</div>`
+      ${B.length ? `<div class="list">${B.map(b => { const { n, est } = batEst(b), p = b.replace_cycles ? Math.round(n / b.replace_cycles * 100) : null, t = p >= 100 ? 'bad' : p >= 85 ? 'warn' : 'ok';
+        return `<button type="button" class="lrow stockrow" data-b="${b.id}"><span class="grow"><b>${esc(b.name)}</b><small>${esc([b.serial ? 'מס׳ ' + b.serial : '', `${est ? '≈' : ''}${n} מחזורים${b.replace_cycles ? ' מתוך ' + b.replace_cycles : ''}`].filter(Boolean).join(' · '))}</small>${p != null ? meter(p, t) : ''}</span>${p >= 100 ? '<span class="pill bad">להחליף</span>' : ''}</button>`; }).join('')}</div>`
         : M ? `<button class="btn ghost block" id="badd2">${icon('plus', 18)} סוללות של הכלי</button>` : ''}</section>
     <section><div class="sh-row"><h3 class="sh">יומן טיסות</h3><span class="count">${life.n}</span></div>
       ${D.length ? `<div class="list">${D.slice(0, 5).map(d => `<div class="lrow"><span class="datebox"><b>${+d.day.slice(8)}.${+d.day.slice(5, 7)}</b></span><span class="grow"><b>${d.flights != null ? d.flights + ' טיסות' : '—'}${d.air_minutes != null ? ' · ' + hrs(d.air_minutes) + ' ש׳' : ''}</b><small>${esc(PN(d.project_id) || (d.from_logs ? 'מהלוגים' : ''))}${d.from_logs && d.project_id ? ' · מהלוגים' : ''}</small></span>${d.work_day_id ? `<a class="chev" href="#/day/${d.work_day_id}" aria-label="יום השטח">${icon('chev', 16)}</a>` : ''}</div>`).join('')}</div>
@@ -190,7 +192,7 @@ async function renderDrone(el, r, ctx) {
   ['#cadd', '#cadd2'].forEach(k => { const b = $(k); if (b) b.onclick = () => compSheet(r, null, again); });
   $$('[data-c]', el).forEach(b => b.onclick = () => M && compSheet(r, C.find(c => c.id === b.dataset.c), again));
   ['#badd', '#badd2'].forEach(k => { const b = $(k); if (b) b.onclick = () => batSheet(r, null, B, again); });
-  $$('[data-b]', el).forEach(b => b.onclick = () => M && batSheet(r, B.find(x => x.id === b.dataset.b), B, again, batCycles(B.find(x => x.id === b.dataset.b))));
+  $$('[data-b]', el).forEach(b => b.onclick = () => M && batSheet(r, B.find(x => x.id === b.dataset.b), B, again, batEst(B.find(x => x.id === b.dataset.b))));
   $$('[data-h]', el).forEach(b => b.onclick = async () => { await enqueue({ kind: 'update', table: 'equipment', rowId: r.id, patch: { health: b.dataset.h, health_date: isoDay() } }); toast(`${r.name}: ${HEALTH[b.dataset.h][0]}`); again(); });
   const es = $('#esv'); if (es) es.onclick = async () => { await enqueue({ kind: 'update', table: 'equipment', rowId: r.id, patch: { insurance_until: $('#ein').value || null, license_until: $('#eli').value || null } }); toast('נשמר'); again(); };
 }
@@ -247,10 +249,12 @@ function compSheet(r, c, done) {
 function batSheet(r, b, B, done, est) {
   sheet(`<h3>${b ? esc(b.name) : 'סוללה חדשה'}</h3>
     <div class="row"><label class="field grow">שם<input id="bn" value="${esc(b?.name || `סוללה ${B.length + 1} · ${r.name.split(' ')[0]}`)}"></label><label class="field grow">מספר סידורי<input id="bs" value="${esc(b?.serial || '')}"></label></div>
-    <div class="row"><label class="field grow">מחזורים עכשיו<input type="number" inputmode="numeric" id="bc" value="${b ? est : 0}"></label><label class="field grow">להחליף אחרי<input type="number" inputmode="numeric" id="br" value="${b?.replace_cycles ?? 300}"></label></div>
+    <div class="row"><label class="field grow">מחזורים בפועל${b && est?.est ? `<small>≈${est.n} לפי הטיסות</small>` : ''}<input type="number" inputmode="numeric" id="bc" value="${b ? est.n : 0}"></label><label class="field grow">להחליף אחרי<input type="number" inputmode="numeric" id="br" value="${b?.replace_cycles ?? 300}"></label></div>
     <div class="row-btns">${b ? '<button class="btn ghost" id="bx">הוצאה מהכלי</button>' : '<button class="btn ghost" data-close>ביטול</button>'}<button class="btn primary" id="bgo">שמירת הסוללה</button></div>`, (s, close) => {
     $('#bgo', s).onclick = async () => { const go = $('#bgo', s); if (go.disabled) return; go.disabled = true;
-      const v = { name: $('#bn', s).value.trim() || 'סוללה', serial: $('#bs', s).value.trim() || null, cycles: +$('#bc', s).value || 0, cycles_at: isoDay(), replace_cycles: $('#br', s).value === '' ? null : +$('#br', s).value };
+      // מחזורים: רק אם הוקלד מספר אחר מההערכה — נרשם כ"בפועל" להיום (ההערכה ממשיכה מכאן). בלי שינוי — ההערכה נשארת רצה
+      const typed = +$('#bc', s).value || 0, over = !b || typed !== est.n || !b.cycles_at;
+      const v = { name: $('#bn', s).value.trim() || 'סוללה', serial: $('#bs', s).value.trim() || null, ...(over ? { cycles: typed, cycles_at: isoDay() } : {}), replace_cycles: $('#br', s).value === '' ? null : +$('#br', s).value };
       if (b) await enqueue({ kind: 'update', table: 'equipment', rowId: b.id, patch: v });
       else { const { error } = await sb.from('equipment').insert({ kind: 'battery', drone_id: r.id, ...v }); if (error) { go.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); } }
       close(); toast('נשמר'); done(); };

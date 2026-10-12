@@ -14,10 +14,12 @@ const sd = d => `${HE_D1[new Date(d + 'T12:00').getDay()]} ${dm(d)}`;
 
 export async function openDayAdmin(id, after) {
   if (!isManager()) return;
-  const [{ data: w, error }, { data: people }, { data: drones }] = await Promise.all([
+  const [{ data: w, error }, { data: people }, { data: drones }, { data: pre }] = await Promise.all([
     sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,lat,lng,sites(lat,lng)),work_day_crew(user_id,role,cant_come_at,cant_come_reason)').eq('id', id).single(),
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).in('role', ['crew', 'crew_lead', 'ops_manager', 'admin']).order('full_name'),
-    sb.from('equipment').select('id,name,health').eq('kind', 'drone').order('name')]);
+    sb.from('equipment').select('id,name,health').eq('kind', 'drone').order('name'),
+    // חריג בבדיקה לפני עבודה (db/130): ממתין להחלטה · הופסק · רחפן שהושבת ועוד משובץ
+    sb.from('issues').select('id,body,prestart,decision,resolution,equipment_id,opened_by,created_at,project_id,work_day_id').eq('work_day_id', id).not('prestart', 'is', null).order('created_at')]);
   if (error || !w) return toast('היום לא נמצא');
   if (w.status === 'done') { location.hash = '#/day/' + id; return; }   // יום שנסגר — מסך הביצוע
   const started = w.status !== 'planned';   // יום שהתחיל: רק צוות וראש צוות (אביחי 12/10 — ראש צוות לא נתקע)
@@ -49,10 +51,14 @@ export async function openDayAdmin(id, after) {
   // הזזה: "כל הימים יום קדימה" כשיש לפרויקט ימים אחרי היום הזה; ושני ימי עבודה פנויים (בלי ימים שכבר תפוסים בפרויקט)
   const cand = []; for (let d = w.day, g = 0; cand.length < 2 && g < 10; g++) { d = nextWork(d); if (!taken.has(d)) cand.push(d); }
   const wx = w.weather_alerted ? `<div class="arow bad"><span class="aic">${icon('sun', 18)}</span><span class="grow"><b>תחזית לא לטוס</b>${w.gust_max != null ? `<small>משבים עד ${w.gust_max} קמ״ש</small>` : ''}</span></div>` : '<div id="da-wx"></div>';
+  const preX = (pre || []).filter(i => !i.decision || i.decision === 'stopped' || (i.decision === 'grounded' && i.equipment_id === w.drone_id));
+  const preDr = preX.some(i => i.decision === 'grounded') ? (drones || []).filter(d => d.id !== w.drone_id && d.health !== 'grounded' && !av.drone(d.id)).slice(0, 3) : [];
+  const preHtml = preX.map(i => `<button type="button" class="arow bad" data-pre="${i.id}"><span class="aic">${icon(i.prestart === 'drone' ? 'drone' : 'alert', 18)}</span><span class="grow"><b>${esc(String(i.body || '').replace(/^[^·]*·\s*/, ''))}</b><small>${!i.decision ? 'ממתין להחלטתך · ' + esc(nm(i.opened_by)) : esc(i.resolution || '')}</small></span><span class="btn ${i.decision ? 'ghost' : 'primary'} sm">${i.decision ? 'שינוי' : 'החלטה'}</span></button>`).join('')
+    + (preDr.length ? `<div class="lrow"><span class="mic">${icon('drone', 18)}</span><div class="chips grow">${preDr.map((d, i) => `<button type="button" class="chip ${i ? '' : 'primary'}" data-predr="${d.id}">${esc(d.name)} במקום</button>`).join('')}</div></div>` : '');
   const done = (msg, close) => { close(); toast(msg, 2200, 'success'); after?.(); };
   const again = (msg, close) => { done(msg, close); openDayAdmin(id, after); };   // נשארים בגיליון, מעודכן
   sheet(`<div class="stack tight"><h3 class="sh">${esc(w.projects?.name || '')}</h3><small class="muted">${dayLabel(w.day)}${w.report_time ? ' · יציאה ' + w.report_time.slice(0, 5) : ''}</small></div>
-    ${started ? '' : wx}
+    ${preHtml}${started ? '' : wx}
     ${started ? '' : `<div class="lrow da-mv"><span class="mic">${icon('calendar', 18)}</span><div class="chips grow">
       ${rest.length ? `<button type="button" class="chip ${w.weather_alerted ? 'primary' : ''}" data-shift="1">כל ${rest.length + 1} הימים · יום קדימה</button>` : ''}
       ${cand.map((d, i) => `<button type="button" class="chip ${w.weather_alerted && !rest.length && !i ? 'primary' : ''}" data-mvd="${d}">${sd(d)}<small class="why" data-wxd="${d}"></small></button>`).join('')}</div></div>`}
@@ -90,6 +96,11 @@ export async function openDayAdmin(id, after) {
     const dr = $('#da-dr', s); if (dr) dr.onclick = async () => { if (dr.disabled) return; dr.disabled = true;
       const { error: e } = await sb.from('work_days').update({ drone_id: swapDr.id }).in('id', drAll.map(x => x.id)).eq('status', 'planned'); if (e) { dr.disabled = false; return toast(errText(e, 'לא נשמר — נסו שוב')); }
       again(`${swapDr.name}${drAll.length > 1 ? ` · ${drAll.length} ימים` : ''}`, close); };
+    $$('[data-pre]', s).forEach(b => b.onclick = () => { const i = (pre || []).find(x => x.id === b.dataset.pre); close();
+      import('./prestart.js').then(m => m.decideSheet({ ...i, projects: w.projects }, { who: nm(i.opened_by), after: () => openDayAdmin(id, after) })); });
+    $$('[data-predr]', s).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true;   // היום כבר התחיל — רק היום הזה; המטיס בודק את הכלי החדש מההתחלה
+      const { error: e } = await sb.from('work_days').update({ drone_id: b.dataset.predr }).eq('id', id); if (e) { b.disabled = false; return toast(errText(e, 'לא נשמר — נסו שוב')); }
+      done(`${(drones || []).find(d => d.id === b.dataset.predr)?.name || 'הרחפן'} · המטיס בודק את הכלי החדש`, close); });
     if (started) return;
     $$('[data-shift]', s).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true;
       const { data: n, error: e } = await sb.rpc('shift_days', { w: id, n: 1 }); if (e) { b.disabled = false; return toast(errText(e, 'הימים לא הוזזו — נסו שוב'), 6000); }

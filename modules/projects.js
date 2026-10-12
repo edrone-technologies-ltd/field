@@ -14,6 +14,39 @@ const FIELD_ROLES = ['admin', 'ops_manager', 'crew_lead', 'crew', 'surveyor'];
 // שורת מדדים: רק אריחים עם ערך (בלי 0 / ריק); אם הכל ריק — כלום
 const kpiRow = xs => { const k = xs.filter(([v]) => v && v !== '—'); return k.length ? `<div class="kpis">${k.map(([v, l]) => `<div class="kpi"><b>${v}</b><span>${l}</span></div>`).join('')}</div>` : ''; };
 
+// ---------- פעימות: לו״ז לא רציף (db/127). פעימה = [מ, עד]. חופפות/צמודות (רק שישי-שבת ביניהן) מתאחדות ----------
+const pAdd = (d, n = 1) => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + n); return isoDay(x); };
+const pDow = d => new Date(d + 'T12:00').getDay();
+const pNextWd = d => { let x = pAdd(d); while ([5, 6].includes(pDow(x))) x = pAdd(x); return x; };
+const mergePulses = xs => {
+  const s = xs.filter(r => r[0] && (r[1] || r[0]) >= r[0]).map(r => [r[0], r[1] || r[0]]).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0), out = [];
+  for (const r of s) { const l = out.at(-1); if (l && r[0] <= pNextWd(l[1])) { if (r[1] > l[1]) l[1] = r[1]; } else out.push([...r]); }
+  return out;
+};
+// ימים → פעימות: ימי עבודה רצופים (שישי-שבת לא שוברים רצף)
+const groupDays = ds => mergePulses([...new Set(ds)].sort().map(d => [d, d]));
+const pulseLbl = ([f, t]) => f === t ? dm(f) : f.slice(5, 7) === t.slice(5, 7) ? `${+f.slice(8)}–${dm(t)}` : `${dm(f)}–${dm(t)}`;
+const pulseWd = (pl, fri = false) => { let n = 0; for (const [f, t] of pl) for (let d = f; d <= t; d = pAdd(d)) { const g = pDow(d); if (g !== 6 && (g !== 5 || fri)) n++; } return n; };
+const projPulses = p => Array.isArray(p.pulses) && p.pulses.length > 1 ? p.pulses : p.planned_from ? [[p.planned_from, p.planned_to || p.planned_from]] : [];
+// עורך פעימות: שורת התחלה/סיום + "+" לעוד פעימה, × להסרה. סיום לפני התחלה = מסומן בשורה. onChange(פעימות תקינות ממוזגות, יש שגיאה)
+function pulseEditor(box, init, onChange) {
+  let rows = (init.length ? init : [[isoDay(), isoDay()]]).map(r => [...r]);
+  const draw = () => {
+    box.innerHTML = rows.map((r, i) => `<div class="prow" data-pr="${i}"><label class="field grow">${i ? '' : 'התחלה'}<input type="date" data-pf value="${r[0] || ''}"></label><label class="field grow">${i ? '' : 'סיום'}<input type="date" data-pt value="${r[1] || ''}"></label>
+      ${i ? `<button type="button" class="pdel" data-px aria-label="הסרת פעימה">×</button>` : `<button type="button" class="padd" data-padd aria-label="עוד פעימה">${icon('plus', 18)}</button>`}<small class="perr" ${r[1] && r[0] && r[1] < r[0] ? '' : 'hidden'}>הסיום לפני ההתחלה</small></div>`).join('');
+    $$('[data-pr]', box).forEach(el => { const i = +el.dataset.pr;
+      $('[data-pf]', el).onchange = e => { rows[i][0] = e.target.value; if (!rows[i][1] || rows[i][1] < rows[i][0]) { rows[i][1] = rows[i][0]; $('[data-pt]', el).value = rows[i][0]; } fire(); };
+      $('[data-pt]', el).onchange = e => { rows[i][1] = e.target.value; fire(); };
+      const x = $('[data-px]', el); if (x) x.onclick = () => { rows.splice(i, 1); draw(); fire(); };
+    });
+    const a = $('[data-padd]', box); if (a) a.onclick = () => { const last = rows.filter(r => r[1] || r[0]).map(r => r[1] || r[0]).sort().at(-1) || isoDay(); const s = pNextWd(pNextWd(last)); rows.push([s, s]); draw(); fire(); $$('[data-pf]', box).at(-1)?.focus(); };
+  };
+  const fire = () => { $$('[data-pr]', box).forEach(el => { const r = rows[+el.dataset.pr]; $('.perr', el).hidden = !(r[0] && r[1] && r[1] < r[0]); el.classList.toggle('bad', !!(r[0] && r[1] && r[1] < r[0])); });
+    const bad = rows.some(r => r[0] && r[1] && r[1] < r[0]); onChange(bad ? [] : mergePulses(rows), bad); };
+  draw(); fire();
+  return { get: () => mergePulses(rows), bad: () => rows.some(r => r[0] && r[1] && r[1] < r[0]) };
+}
+
 // ---------- רשימה ----------
 export async function renderProjects(el) {
   el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>פרויקטים</h1></header><input type="search" id="pq" class="search" placeholder="חיפוש פרויקט או לקוח"><div class="tabs" id="pf"><button aria-selected="true" data-f="a">פתוחים</button><button aria-selected="false" data-f="d">הסתיימו</button></div><div id="pl" class="list"><div class="skel"></div></div>`;
@@ -74,7 +107,7 @@ export async function renderProject(el, id, tab = 'o') {
     D = { p, tasks: tasks || [], days: days || [], issues: issues || [], reps: reps || [], fin: fin.data, sites: sites || [], team: (team || []).filter(x => FIELD_ROLES.includes(x.role)), drones: drones || [], ready };
     await cache.set(ck, D);
   } catch { D = await cache.get(ck); }
-  if (!D) { el.innerHTML = `<div class="empty-line">הפרויקט לא נמצא</div>`; return; }
+  if (!D) { el.innerHTML = `<header class="phead">${backBtn('#/projects')}<h1>פרויקט</h1></header><div class="empty-line">הפרויקט לא נמצא</div>`; return; }   // בלי מבוי סתום — יש חזרה
   const p = D.p, M = isManager();
   // הפרויקט = תיקייה אחת: סקירה · אפיון · תכנית · דוחות · צ׳אט · סיכום
   const TABS = [['o', 'סקירה'], ...(p.site_id && (M || can('specs')) ? [['a', 'אפיון']] : []), ['t', 'משימות'], ['d', 'דוחות'], ['c', "צ׳אט"], ['s', 'סיכום']];
@@ -117,27 +150,36 @@ export async function renderProject(el, id, tab = 'o') {
   // לו״ז הפרויקט: הטווח (מסונכרן עם מאנדי בשני הכיוונים) + ימי השטח. מנהל: שינוי תאריכים, שיבוץ, העברת יום
   function schedSection() {
     const t = isoDay(), up = D.days.filter(d => d.status !== 'done' && d.day >= t).sort((a, b) => a.day < b.day ? -1 : 1), done = D.days.filter(d => d.status === 'done').length;
-    const out = up.length && p.planned_from && (up[0].day < p.planned_from || up.at(-1).day > (p.planned_to || p.planned_from));
+    const PL = projPulses(p), out = up.length && PL.length && up.some(d => !PL.some(([f, t]) => d.day >= f && d.day <= t));
     if (!M && !up.length) return '';
     const crewOf = d => [...new Map([[d.crew_lead_id, null], ...(d.work_day_crew || []).map(c => [c.user_id, c])]).keys()].filter(Boolean)
       .map(u => { const c = (d.work_day_crew || []).find(x => x.user_id === u); return esc((c?.profiles?.full_name || D.team.find(x => x.id === u)?.full_name || '').split(' ')[0]) + (u === d.crew_lead_id ? leadMark() : ''); }).join(' · ');
     return `<section id="sched"><div class="sh-row"><h3 class="sh">לו״ז</h3>${M ? '<button class="more" id="dates">שינוי תאריכים</button>' : ''}</div>
       <div class="list">
-        <div class="lrow"><span class="mic">${icon('calendar', 19)}</span><span class="grow">${p.planned_from ? `<b>${dm(p.planned_from)} – ${dm(p.planned_to || p.planned_from)}</b><small>${(n => n === 1 ? 'יום עבודה אחד' : n + ' ימי עבודה')(wdays(p.planned_from, p.planned_to || p.planned_from))}${done ? ` · ${done} בוצעו` : ''}</small>` : '<b>אין תאריכים</b>'}</span>${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : p.dates_dirty ? '<span class="pill">מתעדכן במאנדי</span>' : ''}</div>
+        <div class="lrow"><span class="mic">${icon('calendar', 19)}</span><span class="grow">${PL.length > 1 ? `<b class="pulsetxt">${PL.map(r => `<span>${pulseLbl(r)}</span>`).join(' · ')}</b><small>${PL.length} פעימות · ${pulseWd(PL)} ימי עבודה${done ? ` · ${done} בוצעו` : ''}</small>` : p.planned_from ? `<b>${dm(p.planned_from)} – ${dm(p.planned_to || p.planned_from)}</b><small>${(n => n === 1 ? 'יום עבודה אחד' : n + ' ימי עבודה')(wdays(p.planned_from, p.planned_to || p.planned_from))}${done ? ` · ${done} בוצעו` : ''}</small>` : '<b>אין תאריכים</b>'}</span>${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : p.dates_dirty && p.monday_item_id ? '<span class="pill">מתעדכן במאנדי</span>' : ''}</div>
         ${up.map(d => `<a class="lrow" href="#/day/${d.id}"><span class="datebox ${d.day === t ? 'now' : ''}"><b>${+d.day.slice(8)}</b><small>${d.day === t ? 'היום' : HE_D1[new Date(d.day + 'T12:00').getDay()]}</small></span>
           <span class="grow"><b>${d.report_time ? 'יציאה ' + d.report_time.slice(0, 5) : 'יום שטח'}${d.is_last_day ? ' · יום אחרון' : ''}</b><small>${crewOf(d) || 'לא שובץ צוות'}</small></span>${M && d.status === 'planned' ? `<button class="chip" data-mv="${d.id}" data-day="${d.day}">העברה</button>` : ''}</a>`).join('')}
         ${M ? `<button class="addrow" id="schm">${icon('plus', 18)} ${up.length ? 'שיבוץ מחדש' : 'שיבוץ ימים'}</button>` : ''}
       </div></section>`;
   }
   // שיבוץ מתחיל מטווח מאנדי (או מהתאריך שנבחר בלוח השיבוץ)
-  const openSched = (from = null) => { const st = from || (p.planned_from && p.planned_from >= isoDay() ? p.planned_from : isoDay()); scheduleSheet({ start: st, end: p.planned_to && p.planned_to >= st ? p.planned_to : undefined }); };
+  // שיבוץ מחדש: הימים שכבר מתוכננים = הפעימות שלהם (ימי עבודה רצופים מקובצים). אחרת — הפעימות/הטווח של הפרויקט מהיום והלאה
+  const openSched = (from = null) => {
+    if (!from) {
+      const t = isoDay(), pl = D.days.filter(d => d.status === 'planned' && d.day >= t).map(d => d.day);
+      const fut = (pl.length ? groupDays(pl) : projPulses(p).filter(r => r[1] >= t).map(([f, e]) => [f < t ? t : f, e]));
+      if (fut.length > 1 || pl.length) return scheduleSheet({ pulses: fut });
+    }
+    const st = from || (p.planned_from && p.planned_from >= isoDay() ? p.planned_from : isoDay()); scheduleSheet({ start: st, end: p.planned_to && p.planned_to >= st ? p.planned_to : undefined }); };
   function bindSched(box) {
     const ds = $('#dates', box); if (ds) ds.onclick = () => sheet(`<h3 class="sh">תאריכי הפרויקט</h3>
-      <div class="row"><label class="field grow">התחלה<input type="date" id="df" value="${p.planned_from || ''}"></label><label class="field grow">סיום<input type="date" id="dt" value="${p.planned_to || p.planned_from || ''}"></label></div>
+      <div id="dpl" class="pulses"></div><div class="small muted" id="dpn"></div>
       <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="dgo">שמירת התאריכים</button></div>`, (s2, close) => {
-      $('#df', s2).onchange = e => { const to = $('#dt', s2); if (!to.value || to.value < e.target.value) to.value = e.target.value; };
-      $('#dgo', s2).onclick = async e => { const f = $('#df', s2).value, to = $('#dt', s2).value || f; if (!f) return toast('בחרו תאריך');
-        e.target.disabled = true; const { data: n, error } = await sb.rpc('set_project_dates', { p: id, d_from: f, d_to: to });
+      const ed = pulseEditor($('#dpl', s2), projPulses(p), (pl, bad) => { $('#dgo', s2).disabled = bad || !pl.length;
+        $('#dpn', s2).textContent = pl.length ? `${pl.length > 1 ? pl.length + ' פעימות · ' : ''}${pulseWd(pl)} ימי עבודה` : ''; });
+      $('#dgo', s2).onclick = async e => { const pl = ed.get(); if (ed.bad()) return toast('הסיום לפני ההתחלה'); if (!pl.length) return toast('בחרו תאריך');
+        const f = pl[0][0], to = pl.at(-1)[1];
+        e.target.disabled = true; const { data: n, error } = pl.length > 1 ? await sb.rpc('set_project_pulses', { p: id, pulses: pl }) : await sb.rpc('set_project_dates', { p: id, d_from: f, d_to: to });
         if (error) { e.target.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); }
         close(); toast(n ? `התאריכים עודכנו · ${n} ימי שטח הוזזו` : 'התאריכים עודכנו'); reload('o'); };
     });
@@ -374,7 +416,7 @@ export async function renderProject(el, id, tab = 'o') {
     const droneDef = D.drones.find(x => x.id === prev?.drone_id && x.health !== 'grounded')?.id;
     const dTag = x => x.health === 'grounded' ? ' — מקורקע' : x.health === 'warning' ? ' — במעקב' : '';
     sheet(`<h3>שיבוץ ימי שטח</h3>
-      <div class="row"><label class="field grow">התחלה<input type="date" id="sd" value="${start}"></label><label class="field grow">סיום<input type="date" id="sde" value="${pre.end || endOf(start, pre.n || maxDay)}"></label></div>
+      <div id="spl" class="pulses"></div>
       <input type="hidden" id="sn" value="${pre.n || maxDay}"><div class="small muted" id="snn"></div>
       ${(teams || []).length ? `<div class="field">צוות<div class="chips">${teams.map(t => `<button type="button" class="chip" data-team="${t.id}" aria-pressed="false">${esc(t.name)}</button>`).join('')}</div></div>` : ''}
       <label class="field">ראש צוות<select id="sl">${leads.map(x => `<option value="${x.id}" data-n="${esc(x.full_name)}" ${x.id === leadDef ? 'selected' : ''}>${esc(x.full_name)}</option>`).join('')}</select></label>
@@ -400,8 +442,11 @@ export async function renderProject(el, id, tab = 'o') {
       // זמינות בטווח שנבחר: חופש / לא יכול להגיע / משובץ בפרויקט אחר → לא ניתן לבחירה, עם הסיבה
       let avSeq = 0;
       const applyAv = async () => {
-        const a = $('#sd', s).value, b = $('#sde', s).value || a; if (!a) return;
-        const my = ++avSeq, av = await availability(a, b, { project: id, drones: D.drones }).catch(() => null); if (!av || my !== avSeq) return;
+        // זמינות לכל פעימה בנפרד (לא לחסום מישהו שתפוס רק בהפסקה שבין הפעימות), ואיחוד: חוסם בפעימה אחת = חוסם
+        const PLx = curPl(); if (!PLx.length) return;
+        const my = ++avSeq, avs = await Promise.all(PLx.map(([a, b]) => availability(a, b, { project: id, drones: D.drones }).catch(() => null))); if (avs.some(x => !x) || my !== avSeq) return;
+        const first = k => v => avs.map(x => x[k]?.(v) || '').find(Boolean) || '';
+        const av = { person: first('person'), drone: first('drone') }; av.warn = u => av.person(u) ? '' : first('warn')(u); av.droneWarn = v => av.drone(v) ? '' : first('droneWarn')(v);
         $$('[data-u]', s).forEach(c => { const why = av.person(c.dataset.u), wn = av.warn?.(c.dataset.u) || ''; c.disabled = !!why; if (why) c.setAttribute('aria-pressed', 'false'); $('.why', c).textContent = why || wn; c.classList.toggle('cwarn', !why && !!wn); });
         const sl = $('#sl', s); [...sl.options].forEach(o => { const why = av.person(o.value), wn = av.warn?.(o.value) || ''; o.disabled = !!why; o.textContent = o.dataset.n + (why ? ' — ' + why : wn ? ' · ⚠ ' + wn : ''); });
         if (sl.selectedOptions[0]?.disabled) { const ok = [...sl.options].find(o => !o.disabled); if (ok) sl.value = ok.value; }
@@ -422,13 +467,13 @@ export async function renderProject(el, id, tab = 'o') {
         return { w: Math.max(...xs.map(x => x.w)), g: Math.max(...xs.map(x => x.g)), r: xs.reduce((t, x) => t + x.r, 0) };
       };
       const add1 = d => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + 1); return isoDay(x); };
+      // ימי העבודה בכל הפעימות; יום שמדולג בגלל תחזית נדחה לסוף הפעימה האחרונה (כמו בטווח אחד)
       const plan = () => {
-        const n = +$('#sn', s).value || 1, out = []; let d = $('#sd', s).value; if (!d) return out;
-        for (let guard = 0; out.filter(x => !x.skip).length < n && guard < 60; guard++, d = add1(d)) {
-          const dow = new Date(d + 'T12:00').getDay(); if (dow === 6 || (dow === 5 && !$('#sfr', s).checked)) continue;
-          const w = wxFor(d), bad = w && (w.g >= 35 || w.w >= 25 || w.r >= 2);
-          out.push({ d, w, bad, skip: manual.has(d) ? manual.get(d) : !!bad });
-        }
+        const n = +$('#sn', s).value || 1, out = [], PLx = curPl(); if (!PLx.length) return out;
+        const fri = $('#sfr', s).checked, okDay = d => { const g = new Date(d + 'T12:00').getDay(); return g !== 6 && (g !== 5 || fri); };
+        const push = d => { const w = wxFor(d), bad = w && (w.g >= 35 || w.w >= 25 || w.r >= 2); out.push({ d, w, bad, skip: manual.has(d) ? manual.get(d) : !!bad }); };
+        for (const [f, t] of PLx) for (let d = f; d <= t && out.length < 120; d = add1(d)) if (okDay(d)) push(d);
+        for (let d = add1(PLx.at(-1)[1]), guard = 0; out.filter(x => !x.skip).length < n && guard < 60; guard++, d = add1(d)) if (okDay(d)) push(d);
         return out;
       };
       const drawWx = () => {
@@ -437,10 +482,12 @@ export async function renderProject(el, id, tab = 'o') {
           + list.map(x => `<button type="button" class="wxday ${x.skip ? 'skip' : ''} ${x.bad ? 'bad' : ''}" data-wd="${x.d}"><b>${dayLabel(x.d)}</b><small>${x.w ? `משבים ${Math.round(x.w.g)}${x.w.r >= 0.5 ? ` · גשם ${x.w.r.toFixed(1)}` : ''}` : 'אין תחזית עדיין'}</small><small>${x.skip ? 'מדולג' : 'עבודה'}</small></button>`).join('');
         $$('[data-wd]', s).forEach(b => b.onclick = () => { const x = list.find(y => y.d === b.dataset.wd); manual.set(x.d, !x.skip); drawWx(); });
       };
-      const syncN = () => { const a = $('#sd', s), b = $('#sde', s); if (!a.value) return; if (!b.value || b.value < a.value) b.value = a.value;
-        let n = 0; for (let d = a.value; d <= b.value; d = add1(d)) if (workday(d, $('#sfr', s).checked)) n++;
-        $('#sn', s).value = n || 1; $('#snn', s).textContent = `${n || 1} ימי שטח`; drawWx(); applyAv(); };
-      $('#sd', s).onchange = $('#sde', s).onchange = $('#sfr', s).onchange = syncN; $('#se', s).onchange = drawWx; syncN();
+      let PLcur = [], PLbad = false; const curPl = () => PLcur;
+      const syncN = () => { $('#sgo', s).disabled = PLbad || !PLcur.length; if (!PLcur.length) { $('#snn', s).textContent = ''; return; }
+        const n = pulseWd(PLcur, $('#sfr', s).checked);
+        $('#sn', s).value = n || 1; $('#snn', s).textContent = `${PLcur.length > 1 ? PLcur.length + ' פעימות · ' : ''}${n || 1} ימי שטח`; drawWx(); applyAv(); };
+      pulseEditor($('#spl', s), pre.pulses?.length ? pre.pulses : [[start, pre.end || endOf(start, pre.n || maxDay)]], (pl, bad) => { PLcur = pl; PLbad = bad; syncN(); });
+      $('#sfr', s).onchange = syncN; $('#se', s).onchange = drawWx;
       // יציאה מהמשרד = הגעה − נסיעה (כביש × מקדם תנועה) − העמסה. המנהל יכול לשנות ידנית
       let travelMin = null, touched = !!prev?.report_time; const Dp = { office: [31.2524, 34.7908], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15 };
       const recalc = () => {
@@ -462,11 +509,17 @@ export async function renderProject(el, id, tab = 'o') {
       else drawWx();
       $('#sgo', s).onclick = async () => {
         const crew = $$('[data-u][aria-pressed="true"]', s).map(c => c.dataset.u).filter(u => u !== $('#sl', s).value);
-        const args = { p: id, start_day: $('#sd', s).value, lead: $('#sl', s).value, crew, drone: $('#sdr', s).value || null, report: $('#st', s).value || '06:00', ndays: +$('#sn', s).value || null, skip: plan().filter(x => x.skip).map(x => x.d),
-          arrive: $('#sa', s).value || null, shift_end: $('#se', s).value || null, fridays: $('#sfr', s).checked };
-        if (!args.start_day || !args.lead || $('#sl', s).selectedOptions[0]?.disabled) return toast(args.start_day ? 'אין ראש צוות פנוי בתאריכים האלה' : 'חסר תאריך');
-        const { data, error } = await sb.rpc('schedule_work_days', args); if (error) return toast(errText(error, 'השיבוץ לא נשמר — נסו שוב'), 4000);
-        close(); toast(`שובצו ${data} ימי שטח`); reload('o');
+        if (PLbad) return toast('הסיום לפני ההתחלה');
+        const days = plan().filter(x => !x.skip).map(x => x.d), PLx = curPl();
+        // פעימה אחרונה שהתארכה בגלל דילוג תחזית — נשמרת עם היום האחרון בפועל
+        const pulses = PLx.map(r => [...r]); if (days.length && pulses.length && days.at(-1) > pulses.at(-1)[1]) pulses.at(-1)[1] = days.at(-1);
+        const args = { p: id, days, lead: $('#sl', s).value, crew, drone: $('#sdr', s).value || null, report: $('#st', s).value || '06:00',
+          arrive: $('#sa', s).value || null, shift_end: $('#se', s).value || null, pulses };
+        if (!days.length || !args.lead || $('#sl', s).selectedOptions[0]?.disabled) return toast(days.length ? 'אין ראש צוות פנוי בתאריכים האלה' : 'חסר תאריך');
+        const go = $('#sgo', s); go.disabled = true;
+        const { data, error } = await sb.rpc('schedule_work_days_multi', args); if (error) { go.disabled = false; return toast(errText(error, 'השיבוץ לא נשמר — נסו שוב'), 4000); }
+        const np = mergePulses(pulses).length;
+        close(); toast(np > 1 ? `שובצו ${data} ימי שטח ב-${np} פעימות` : `שובצו ${data} ימי שטח`); reload('o');
       };
     });
   }
@@ -512,13 +565,17 @@ export async function renderProject(el, id, tab = 'o') {
     box.innerHTML = `${cs ? `<div class="card row"><span class="dot ok"></span><b class="grow">הפרויקט נסגר ${new Date(cs.closed_at).toLocaleDateString('he-IL')}</b></div>` : ''}
       ${kpiRow([[hrs && nf(hrs), 'שעות צוות'], [gal && nf(gal), 'גלונים'], [D.issues.length, 'תקלות'], [D.tasks.filter(t => t.is_extra).length, 'תוספות מהלקוח']])}
       ${M ? '<div id="zrate"></div>' : ''}
+      ${M ? '<div id="wkup"></div>' : ''}
       <div id="labor"></div>
+      <div id="costx"></div>
       ${SG.length ? `<section><h3 class="sh">${SG.length > 1 ? 'חתימות הלקוח' : 'חתימת הלקוח'}</h3>${SG.map((g, i) => `<div class="card stack tight"><div class="row"><b class="grow">${esc(g.name || '')}${g.role ? ' · ' + esc(g.role) : ''}</b><span class="pill ${g.ok ? 'ok' : 'warn'}">${g.ok ? 'אושר' : 'עם הערות'}</span></div>
         <small class="muted">${[g.at ? new Date(g.at).toLocaleDateString('he-IL') : '', g.days.length ? 'ימים: ' + daysTxt(g.days) : '', g.rating ? `שביעות רצון ${g.rating}/5` : ''].filter(Boolean).join(' · ')}</small>
         ${g.notes ? `<small>${esc(g.notes)}</small>` : ''}<div data-sg="${i}"></div></div>`).join('')}</section>` : ''}
       <section id="galsec" hidden><h3 class="sh">לפני / אחרי</h3><div class="photos" id="gal"></div></section>
       ${closeFlow(SG, cs)}`;
     if (M) laborBlock();
+    if (M) import('./clientreport.js').then(m => m.weeklyCard($('#wkup', box), p, D.days)).catch(() => {});   // עדכון שבועי ללקוח (פרויקט ארוך)
+    if (can('finance') || state.profile.role === 'admin') import('./costs.js').then(m => m.projectCost($('#costx', box), id)).catch(() => {});   // עלות בפועל — כספים בלבד (db/129)
     if (M) import('./zones.js').then(m => m.projectRate($('#zrate', box), id)).catch(() => {});   // מ״ר לשעה (db/112)
     const { data: ph } = await sb.from('photos').select('kind,storage_path,work_day_id').eq('project_id', id).in('kind', ['before', 'after']).order('created_at');
     const urls = await signedUrls('field', [...(ph || []).map(x => x.storage_path), ...SG.map(g => g.path).filter(Boolean)]);

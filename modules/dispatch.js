@@ -8,6 +8,8 @@ const sunday = s => addDays(s, -new Date(s + 'T12:00:00').getDay());
 const ABS = { vacation: 'חופשה', sick: 'מחלה', reserve: 'מילואים', unpaid: 'חופש', other: 'היעדרות' };
 const noCome = (w, u) => (w.work_day_crew || []).find(c => c.user_id === u && c.cant_come_at);
 const openAdmin = (id, after) => import('./dayadmin.js').then(m => m.openDayAdmin(id, after));
+// יום בתוך הלו״ז של הפרויקט: בפעימות (db/127) — רק בתוך פעימה; אחרת הטווח
+const inPulse = (x, d) => Array.isArray(x.pulses) && x.pulses.length > 1 ? x.pulses.some(([f, t]) => f <= d && d <= t) : !!x.planned_from && x.planned_from <= d && (x.planned_to || x.planned_from) >= d;
 
 export async function renderDispatch(el, start, o = {}) {
   if (!isManager()) { el.innerHTML = '<div class="empty-line">למנהלים בלבד</div>'; return; }
@@ -22,7 +24,7 @@ export async function renderDispatch(el, start, o = {}) {
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).order('full_name'),
     sb.from('work_days').select('id,day,status,project_id,crew_lead_id,drone_id,report_time,gust_max,weather_alerted,projects(name,site_id),work_day_crew(user_id,confirmed_at,cant_come_at,cant_come_reason)').gte('day', start).lte('day', end).neq('status', 'cancelled'),
     sb.from('absences').select('user_id,kind,date_from,date_to,status').neq('status', 'rejected').lte('date_from', end).gte('date_to', start),
-    sb.from('projects').select('id,name,status_label,monday_group,closed_summary,planned_from,planned_to,site_id').or('monday_group.is.null,monday_group.neq.group_mm5052gw').order('name').then(r => ({ ...r, data: (r.data || []).filter(isOpenProject) })),
+    sb.from('projects').select('id,name,status_label,monday_group,closed_summary,planned_from,planned_to,pulses,site_id').or('monday_group.is.null,monday_group.neq.group_mm5052gw').order('name').then(r => ({ ...r, data: (r.data || []).filter(isOpenProject) })),
     sb.from('equipment').select('id,name,health').eq('kind', 'drone'),
   ]);
   const onWeek = p => (wds || []).some(w => w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id));
@@ -55,7 +57,7 @@ export async function renderDispatch(el, start, o = {}) {
   const viewTabs = `<div class="tabs dview">${[['people', 'לפי אנשים'], ['proj', 'לפי פרויקטים']].map(([k, l]) => `<button type="button" data-view="${k}" aria-selected="${view === k}">${l}</button>`).join('')}</div>`;
   const bindView = () => $$('[data-view]', el).forEach(b => b.onclick = () => { try { localStorage.setItem('dispatch:view', b.dataset.view); } catch { /* */ } reload(); });
   if (view === 'proj') return projView();
-  const needP = (projects || []).map(x => ({ x, d: days.find(d => new Date(d + 'T12:00').getDay() < 5 && d >= isoDay() && x.planned_from && x.planned_from <= d && (x.planned_to || x.planned_from) >= d && !(wds || []).some(w => w.project_id === x.id && w.day === d)) })).filter(n => n.d);
+  const needP = (projects || []).map(x => ({ x, d: days.find(d => new Date(d + 'T12:00').getDay() < 5 && d >= isoDay() && inPulse(x, d) && !(wds || []).some(w => w.project_id === x.id && w.day === d)) })).filter(n => n.d);
   const conflicts = staff.flatMap(p => days.filter(d => (wds || []).filter(w => w.day === d && (w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id))).length > 1).map(d => `${p.full_name.split(' ')[0]} ב-${dm(d)}`));
   $('#db').innerHTML = `${viewTabs}${needP.length ? `<div class="dneed">${needP.map(n => `<button type="button" class="dline need" data-sch="${n.x.id}" data-d="${n.d}"><span class="grow"><b>${esc(n.x.name)}</b><small>מתוכנן במאנדי מ-${dm(n.d)}</small></span><span class="pill warn">לשבץ</span></button>`).join('')}</div>` : ''}${conflicts.length ? `<button class="arow bad card-like" type="button" id="dconf"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>התנגשות שיבוץ</b><small>${esc(conflicts.join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
     <div class="dwrap"><table class="dgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
@@ -91,7 +93,7 @@ export async function renderDispatch(el, start, o = {}) {
   // לפי פרויקטים: שורה לכל פרויקט שעובד או מתוכנן במאנדי השבוע. תא = יום השטח (שעה, צוות, רחפן, תחזית, מי לא יגיע); טווח מאנדי בלי יום = "לשבץ"
   function projView() {
     const NM = new Map((people || []).map(p => [p.id, p.full_name.split(' ')[0]])), DR = new Map((drones || []).map(x => [x.id, x]));
-    const inRange = (x, d) => x.planned_from && x.planned_from <= d && (x.planned_to || x.planned_from) >= d;
+    const inRange = inPulse;
     const P = new Map((projects || []).map(x => [x.id, x]));
     const ids = [...new Set([...(wds || []).map(w => w.project_id), ...(projects || []).filter(x => days.some(d => inRange(x, d))).map(x => x.id)])];
     const first = pid => (wds || []).filter(w => w.project_id === pid).map(w => w.day).sort()[0] || P.get(pid)?.planned_from || '9';
@@ -126,7 +128,7 @@ export async function renderDispatch(el, start, o = {}) {
     const box = $('#db');
     box.innerHTML = days.map(d => {
       const dow = new Date(d + 'T12:00').getDay(), wd = (wds || []).filter(w => w.day === d);
-      const need = dow < 5 ? (projects || []).filter(x => x.planned_from && x.planned_from <= d && (x.planned_to || x.planned_from) >= d && !wd.some(w => w.project_id === x.id)) : [];
+      const need = dow < 5 ? (projects || []).filter(x => inPulse(x, d) && !wd.some(w => w.project_id === x.id)) : [];
       const ab = (abs || []).filter(a => a.date_from <= d && a.date_to >= d);
       const busy = new Map(); wd.forEach(w => new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean)).forEach(u => busy.set(u, (busy.get(u) || 0) + 1)));   // ראש צוות שגם בצוות = פעם אחת
       const free = !need.length && !wd.length && !ab.length;

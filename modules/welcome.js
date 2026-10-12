@@ -125,8 +125,11 @@ export function play(slides, { onDone, onSkip, label = 'קבלת פנים' } = {
   const go = i => { if (i >= S.length) return finish(true); cur = Math.max(0, i); S[cur].scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', inline: 'start', block: 'nearest' }); };
   const io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting && e.intersectionRatio > .6) { cur = +e.target.dataset.i; dots(); S[cur].classList.add('seen'); slides[cur].onShow?.(S[cur]); } }), { root: track, threshold: [.6] });
   S.forEach(s => io.observe(s)); dots(); S[0].classList.add('seen');
+  // מדריך שנפתח מתוך מסך (מרכז ידע / התקנה): מעבר מסך או "חזרה" סוגרים אותו — לא נשאר מעל המסך הבא. קבלת הפנים בכניסה — לא
+  const h0 = location.hash, onHash = () => { if (location.hash !== h0) finish(false); };
+  if (label !== 'קבלת פנים') addEventListener('hashchange', onHash);
   function finish(ok) {
-    if (closed) return; closed = true; io.disconnect();
+    if (closed) return; closed = true; io.disconnect(); removeEventListener('hashchange', onHash);
     w.classList.remove('in'); w.classList.add('out'); document.body.classList.remove('wl-open');
     setTimeout(() => w.remove(), 260);
     (ok ? onDone : onSkip)?.();

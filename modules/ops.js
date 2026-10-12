@@ -39,7 +39,7 @@ export async function renderOps(el) {
     q(sb.from('sync_log').select('created_at,status').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(6)),
     q(sb.rpc('readiness_list')),
     // מהשטח: תקלה קריטית פתוחה · חסר בשטח שעוד לא סופק · מלאי מתחת למינימום — לטפל מכאן בלחיצה, לא לחפש בפרויקט
-    q(sb.from('issues').select('id,body,kind,project_id,work_day_id,opened_by,created_at,projects(name)').eq('status', 'open').eq('severity', 'critical').gte('created_at', new Date(Date.now() - 14 * 864e5).toISOString()).order('created_at', { ascending: false })),
+    q(sb.from('issues').select('id,body,kind,project_id,work_day_id,equipment_id,opened_by,created_at,prestart,decision,resolution,projects(name)').eq('status', 'open').eq('severity', 'critical').gte('created_at', new Date(Date.now() - 14 * 864e5).toISOString()).order('created_at', { ascending: false })),
     q(sb.from('missing_items').select('id,item,qty,created_at,work_day_id,work_days(day,project_id,projects(name))').eq('status', 'open').gte('created_at', new Date(Date.now() - 14 * 864e5).toISOString()).order('created_at')),
     q(sb.from('catalog_items').select('name,stock,min_qty').eq('in_app', true).not('min_qty', 'is', null)).then(r => r.filter(c => c.stock != null && Number(c.stock) <= Number(c.min_qty))),
   ]);
@@ -96,7 +96,11 @@ export async function renderOps(el) {
   }
   // תקלה קריטית מהשטח: הקשה = גיליון עם "טופל" (ומה נעשה) או מעבר ליום עצמו
   const KIND = { equipment: 'ציוד', site: 'אתר', safety: 'בטיחות', near_miss: 'כמעט תאונה', other: 'תקלה' };
-  crit.forEach(i => issues.push({ tone: 'bad', ic: 'alert', t: `תקלה קריטית · ${shortName(i.projects?.name || '') || 'שטח'}`, s: `${i.body} · ${name(i.opened_by)} · ${timeAgo(i.created_at)}`, act: () => sheet(`<div class="stack tight"><h3 class="sh">${esc(i.body)}</h3><small class="muted">${esc([shortName(i.projects?.name || ''), KIND[i.kind], name(i.opened_by), timeAgo(i.created_at)].filter(Boolean).join(' · '))}</small></div>
+  // חריג בבדיקה לפני עבודה: הצוות באתר ומחכה — ראשון ברשימה, והקשה = "כשיר לעבוד" / "השבתה"
+  crit.filter(i => i.prestart).forEach(i => issues.unshift({ tone: 'bad', ic: i.prestart === 'drone' ? 'drone' : 'alert', t: `${i.prestart === 'drone' ? 'בדיקת רחפן' : 'בדיקת בטיחות'} · ${shortName(i.projects?.name || '') || 'שטח'} · ממתין לך`,
+    s: `${String(i.body || '').replace(/^[^·]*·\s*/, '')} · ${name(i.opened_by)} · ${timeAgo(i.created_at)}`,
+    act: () => import('./prestart.js').then(m => m.decideSheet(i, { who: name(i.opened_by), after: r => m.afterDecide(r, () => renderOps(el)) })) }));
+  crit.filter(i => !i.prestart).forEach(i => issues.push({ tone: 'bad', ic: 'alert', t: `תקלה קריטית · ${shortName(i.projects?.name || '') || 'שטח'}`, s: `${i.body} · ${name(i.opened_by)} · ${timeAgo(i.created_at)}`, act: () => sheet(`<div class="stack tight"><h3 class="sh">${esc(i.body)}</h3><small class="muted">${esc([shortName(i.projects?.name || ''), KIND[i.kind], name(i.opened_by), timeAgo(i.created_at)].filter(Boolean).join(' · '))}</small></div>
       <label class="field">איך טופל<textarea id="isr" rows="2" placeholder="לא חובה"></textarea></label>
       <div class="row-btns"><a class="btn ghost" href="${i.work_day_id ? '#/day/' + i.work_day_id : '#/p/' + i.project_id}" data-close>${i.work_day_id ? 'יום השטח' : 'הפרויקט'}</a><button class="btn primary" id="isok">טופל</button></div>`, (s2, close) => {
       $('#isok', s2).onclick = async e => { e.target.disabled = true;

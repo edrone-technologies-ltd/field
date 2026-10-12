@@ -36,7 +36,9 @@ function stop() {
   removeEventListener('hashchange', c.off); document.removeEventListener('visibilitychange', c.vis); document.removeEventListener('keydown', c.key);
   if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
   c.lock?.release?.().catch(() => {});
+  c.ro?.disconnect();   // שינוי גודל אחרי היציאה הפעיל invalidateSize על מפה שהוסרה (_leaflet_pos)
   try { c.map?.stop(); c.map?.off(); c.map?.remove(); } catch { /* */ }   // עוצרים אנימציית זום/טיסה לפני הסרה
+  c.map = null;
 }
 
 export async function renderLive(el) {
@@ -157,7 +159,7 @@ async function initMap(c) {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(c.map);
   c.layer = L.layerGroup().addTo(c.map);
   c.map.on('click', () => setFocus(c, null));
-  new ResizeObserver(() => c.map?.invalidateSize()).observe(box);
+  c.ro = new ResizeObserver(() => { if (C === c) c.map?.invalidateSize(); }); c.ro.observe(box);
   if (c.data) drawMap(c);
 }
 // על המפה: היום, ואם אין — מחר, ואם אין — הקרובים השבוע. יום אחד לכל אתר (הקרוב ביותר)
@@ -184,6 +186,7 @@ function drawMap(c) {
   if (key !== c.bounds) { c.bounds = key; fitAll(c); }
 }
 function fitAll(c, anim = false) {
+  if (!c.map) return;
   const pts = mapDays(c).map(w => w.g); if (c.office) pts.push(c.office.ll);
   if (pts.length > 1) c.map.fitBounds(pts, { padding: [46, 46], maxZoom: 11, animate: anim });
   else if (pts.length) c.map.setView(pts[0], 10, { animate: anim });

@@ -2,6 +2,7 @@
 import { coverArt, icon, leadMark, navButtons, thumbUrls } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
 import { loadZones, dayZones, zonePrefill, zonesHtml, bindZones, zonesPayload, zkey } from './zones.js';
+import { SEC, needsDrone, pulseRoles, mySection, decideSheet, afterDecide } from './prestart.js';
 import { sb, state, cache, enqueue, sendsLabel, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, haptic } from '../lib/core.js';
 
 const STEPS = ['בוקר', 'העמסה', 'באתר', 'בעבודה', 'סיום'];
@@ -9,7 +10,7 @@ const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיח
 const T_STATUS = { todo: ['לביצוע', ''], in_progress: ['בעבודה', 'lime'], done: ['בוצע', 'ok'], blocked: ['נתקע', 'bad'], dropped: ['בוטל', ''] };
 const NEXT = { todo: 'done', in_progress: 'done', done: 'todo', blocked: 'done', dropped: 'todo' };   // הקשה אחת = בוצע (ושוב = ביטול)
 const hhmm = t => (t || '').slice(0, 5);
-const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,access_auto,lat,lng,map_path)), work_day_crew(user_id,role,hours,clock_in,confirmed_at,cant_come_at,profiles(full_name,phone)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
+const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,access_auto,lat,lng,map_path)), work_day_crew(user_id,role,hours,clock_in,confirmed_at,cant_come_at,profiles(full_name,phone,is_pilot,field_role)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
 
 function statusPill(d) {
   const m = { planned: ['מתוכנן', ''], en_route: ['בדרך', 'warn'], on_site: ['באתר', 'lime'], working: ['בעבודה', 'lime'], issue: ['תקלה', 'bad'], done: ['נסגר', 'ok'] }[d.status] || ['', ''];
@@ -48,7 +49,7 @@ export async function loadDay(id) {
   ]);
   const allTasks = (tasks || []).concat(open.filter(t => !(tasks || []).some(x => x.id === t.id)));
   const D = { zones, ops: siteOps(ops), prep, at: Date.now(), clockH: ch ? Object.fromEntries(ch.map(r => [r.user_id, Number(r.hours)])) : null, specPh: sp, fixes, plan, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
-  // רשימת ההעמסה לפי האפיון (רק כשלא נקבעה ידנית ליום): ברז/הידרנט → בלי מיכל מים, שקע → בלי גנרטור, חומר הניקוי בשמו, גג → רתמות
+  // רשימת ההעמסה לפי האפיון (רק כשלא נקבעה ידנית ליום): ברז/הידרנט → המתאם, שקע באתר → בלי גנרטור, חומר הניקוי בשמו, גג → רתמות
   const def = D.S.equip_default || [], req = day.equip_required || [];
   if (Object.keys(D.ops).length && (!req.length || (req.length === def.length && req.every(x => def.includes(x))))) day.equip_required = tailorEquip(def, D.ops, day.material_planned);
   // חלק מהתשובות הגיעו מהעותק בטלפון (בלי קליטה / קליטה חלשה) — היום השמור מקומית (כולל מה שעשינו בו) עדכני יותר: לא דורסים אותו
@@ -58,8 +59,8 @@ export async function loadDay(id) {
 }
 function tailorEquip(base, o, mat) {
   let L = [...base]; const has = (k, v) => String(o[k] || '').split(' / ').includes(v), swap = (a, b) => { const i = L.indexOf(a); if (i >= 0) { if (b) L[i] = b; else L.splice(i, 1); } else if (b) L.push(b); };
-  if (o.water && !has('water', 'מכלית')) swap('מיכל מים', has('water', 'הידרנט') ? 'מתאם הידרנט' : 'מחבר לברז');
-  if (o.power && !has('power', 'גנרטור')) swap('גנרטור', 'כבל מאריך');
+  if (has('water', 'הידרנט')) swap(null, 'מתאם הידרנט'); else if (has('water', 'ברז באתר')) swap(null, 'מחבר לברז');   // מכלית — משימת הכנה, לא פריט להעמסה
+  if (has('power', 'שקע באתר') && !has('power', 'גנרטור')) { swap('גנרטור', null); if (!L.includes('כבל מאריך')) L.push('כבל מאריך'); }
   if (mat === 'מים בלבד') swap('חומר ניקוי', null); else if (mat && mat !== 'אחר') swap('חומר ניקוי', 'חומר ניקוי · ' + mat);
   if (has('launch', 'גג') && !L.some(x => /רתמ/.test(x))) L.push('רתמות לעבודה מהגג');
   return [...new Set(L)];
@@ -90,7 +91,7 @@ export async function renderDay(el, id) {
     if (d.status === 'done') return 5;
     if (REPORT) return 4;
     if ((D.local.stage === 4 && canClose()) || d.finished_at) return 4;
-    if (['working', 'issue'].includes(d.status)) return 3;
+    if (d.status === 'working' || (d.status === 'issue' && d.opened_at)) return 3;   // הופסק לפני שהתחילו (דופק לפני עבודה) — נשארים ב"באתר"
     if (d.arrived_at || d.status === 'on_site' || d.departed_at) return 2;
     return D.local.stage === 1 ? 1 : 0;
   }
@@ -226,12 +227,64 @@ export async function renderDay(el, id) {
       ${n < req.length ? `<button class="btn ghost block eqall" id="eqall">${icon('check', 18)} הכל בפנים</button>` : ''}
       <div class="eqgrid">${req.map(x => `<button class="eqb" aria-pressed="${D.local.loaded.includes(x)}" data-eq="${esc(x)}">${esc(x)}</button>`).join('')}</div>`;
   }
+  // ---------- דופק לפני עבודה (אביחי 12/10) ----------
+  // בדיקת רחפן = המטיס · בדיקת בטיחות = מפעיל הקרקע. "הכל תקין ✓" בלחיצה; "לא תקין" בפריט = תקלה קריטית שמחכה להחלטת מנהל התפעול
+  const secs = () => needsDrone(D.day) ? ['drone', 'safety'] : ['safety'];
+  const secItems = k => D.S[SEC[k].key] || [];
+  const roles = () => pulseRoles(D.day);
+  const fname = u => (D.team.find(x => x.id === u)?.full_name || roles().name(u) || '').split(' ')[0];
+  const grd = i => i.decision === 'grounded' && (!i.equipment_id || i.equipment_id === D.day.drone_id);
+  function secState(k) {
+    const items = secItems(k), rows = items.map(t => D.checks.find(c => c.item === t && (!c.section || c.section === k)));
+    // חריג שעוד רלוונטי: ממתין · הופסק · רחפן שהושבת ועדיין משובץ · "כשיר" שהפריט שלו עוד ברשימה (אחרי החלפת רחפן — נעלם)
+    const iss = D.issues.filter(i => i.prestart === k && ((!i.decision && i.status !== 'closed') || i.decision === 'stopped' || grd(i) || (i.decision === 'cleared' && rows.some(r => r && !r.ok))));
+    const S = { items, rows, iss, n: rows.filter(Boolean).length, signed: rows.every(Boolean),
+      pend: iss.some(i => !i.decision), stopped: iss.some(i => i.decision === 'stopped'), grounded: iss.some(grd) };
+    S.halt = S.pend || S.stopped || S.grounded;
+    S.last = rows.filter(Boolean).sort((x, y) => String(x.checked_at || '').localeCompare(String(y.checked_at || ''))).at(-1);
+    return S;
+  }
+  function pulseCard(k) {
+    const S = secState(k), R = roles(), resp = k === 'drone' ? R.pilot : R.ground, mine = mySection(R, k), can = mine || isManager();
+    const pill = S.pend ? '<span class="pill bad">ממתין להחלטה</span>' : S.stopped ? '<span class="pill bad">הופסק</span>' : S.grounded ? '<span class="pill bad">הושבת</span>'
+      : S.signed ? `<span class="pill ok">${icon('check', 14)} ${S.iss.length ? 'כשיר' : 'תקין'}</span>` : `<span class="pill">${S.n}/${S.items.length}</span>`;
+    const open = (D.local.popen || []).includes(k) || (can && S.n > 0 && !S.signed);
+    return `<div class="card stack prest ${S.halt ? 'bad' : S.signed ? 'ok' : ''}" id="pulse-${k}">
+      <div class="row"><span class="pic">${icon(SEC[k].ic, 20)}</span><span class="grow"><b>${SEC[k].t}</b><small>${SEC[k].who}: ${esc(R.name(resp) || '—')}${resp === state.user.id ? ' (את/ה)' : ''}</small></span>${pill}</div>
+      ${S.iss.map(i => `<div class="alert ${i.decision === 'cleared' ? '' : 'bad'}"><span class="dot ${i.decision === 'cleared' ? 'ok' : ''}"></span><span class="grow"><b>${esc(String(i.body || '').replace(/^[^·]*·\s*/, ''))}</b><small>${!i.decision ? 'ממתין להחלטת מנהל התפעול' : esc(i.resolution || '')}</small></span>${!isManager() || i.decision === 'cleared' ? '' : grd(i) ? `<button class="btn sm primary" type="button" data-dadm>רחפן חלופי</button>` : `<button class="btn sm primary" type="button" data-dec="${i.id}">${i.decision ? 'שינוי' : 'החלטה'}</button>`}</div>`).join('')}
+      ${S.last && S.signed ? `<small class="muted">אישר ${esc(fname(S.last.checked_by))}${S.last.on_behalf ? ` בשם ${esc(R.name(resp))}` : ''} · ${S.last.checked_at ? hm(S.last.checked_at) : ''}</small>` : ''}
+      ${!S.signed && can ? `<button class="btn primary block pall" type="button" data-pall="${k}">${S.n ? 'השאר תקין ✓' : 'הכל תקין ✓'}${mine ? '' : `<small>בשם ${esc(R.name(resp) || SEC[k].who)}</small>`}</button>`
+        : !S.signed ? `<small class="muted">ממתין ל${esc(R.name(resp) || SEC[k].who)}</small>` : ''}
+      <details class="pdet" data-sec="${k}" ${open ? 'open' : ''}><summary>פירוט</summary><div class="list">${S.items.map((t, i) => { const r = S.rows[i];
+        return `<div class="lrow"><span class="grow">${esc(t)}${r?.note ? `<small>${esc(r.note)}</small>` : ''}</span>${r ? (r.ok ? `<span class="pill ok">${icon('check', 14)}</span>` : '<span class="pill bad">לא תקין</span>') : can ? `<button class="chip" type="button" data-pbad="${k}|${i}">לא תקין</button>` : ''}</div>`; }).join('')}</div></details></div>`;
+  }
+  async function signSection(k) {
+    const now = new Date().toISOString(), R = roles(), behalf = !mySection(R, k);
+    for (const t of secItems(k)) if (!D.checks.some(c => c.item === t && (!c.section || c.section === k))) {
+      const row = { id: uid(), work_day_id: D.day.id, item: t, ok: true, section: k, checked_by: state.user.id, checked_at: now, on_behalf: behalf };
+      D.checks.push(row); await insert('safety_checks', row); }
+  }
+  // פריט לא תקין: כמה מילים + תמונה (לא חובה) → תקלה קריטית מקושרת ליום ולרחפן; מנהל התפעול מקבל התראה ומחליט
+  function failItem(k, t) {
+    let ph = null;
+    sheet(`<h3>${esc(t)}</h3><textarea id="pbn" placeholder="מה לא תקין?"></textarea>
+      <label class="btn ghost block">${icon('photo', 18)} צילום<input type="file" accept="image/*" capture="environment" id="pbp" hidden></label><div id="pbpn" class="small muted"></div>
+      <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn danger grow" id="pbsend">לא תקין</button></div>`, (s, close) => {
+      $('#pbp', s).onchange = e => { ph = e.target.files[0] || null; $('#pbpn', s).textContent = ph ? 'התמונה תצורף' : ''; };
+      $('#pbsend', s).onclick = async e => { if (e.currentTarget.disabled) return; e.currentTarget.disabled = true;
+        const note = $('#pbn', s).value.trim(), now = new Date().toISOString();
+        const iss = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, kind: k === 'drone' ? 'equipment' : 'safety', severity: 'critical', prestart: k,
+          body: `${SEC[k].t} · ${t}${note ? ' — ' + note : ''}`, opened_by: state.user.id, equipment_id: k === 'drone' ? D.day.drone_id || null : null, created_at: now };
+        D.issues.push(iss); await insert('issues', iss);
+        const row = { id: uid(), work_day_id: D.day.id, item: t, ok: false, section: k, note: note || null, issue_id: iss.id, checked_by: state.user.id, checked_at: now, on_behalf: !mySection(roles(), k) };
+        D.checks.push(row); await insert('safety_checks', row);
+        let phErr = false; if (ph) try { await addFieldPhoto(ph, { kind: 'issue', work_day_id: D.day.id, project_id: D.day.project_id, issue_id: iss.id }); } catch { phErr = true; }
+        haptic('warn'); close(); toast(phErr ? 'נשלח למנהל התפעול · התמונה לא נשמרה' : 'נשלח למנהל התפעול', 3000, phErr ? 'warn' : undefined); draw(); };
+    });
+  }
   function sSite() {
-    const items = (D.S.safety_checks || []).concat(D.day.drone_id || D.day.method === 'רחפן' ? (D.S.preflight_checks || []) : []);
-    const before = D.photos.filter(p => p.kind === 'before').length;
-    const allOk = items.every((t, i) => D.local.checks[i] || D.checks.some(c => c.item === t && c.ok));
     return `${!D.day.arrived_at ? `<button class="btn primary block" id="arrive">הגענו לאתר</button>` : `<div class="small muted">הגעתם ב-${new Date(D.day.arrived_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div>`}
-      <div class="sec"><h3>בדיקות בטיחות</h3>${items.map((t, i) => `<label class="tog"><span>${esc(t)}</span><span class="sw"><input type="checkbox" data-chk="${i}" ${D.local.checks[i] || D.checks.some(c => c.item === t && c.ok) ? 'checked' : ''}><i></i></span></label>`).join('')}</div>
+      ${secs().map(pulseCard).join('')}
       ${opsStrip(true)}
       ${baBlock({ after: false })}
       ${contactCard(site.contact_name, site.contact_phone)}`;
@@ -507,23 +560,50 @@ export async function renderDay(el, id) {
   function bindSite(bar) {
     const a = $('#arrive'); if (a) a.onclick = async () => { if (a.disabled) return; a.disabled = true; stopGeo(); await save('work_days', { arrived_at: new Date().toISOString(), status: 'on_site' }); haptic('success'); draw(); };
     if (a) arrivalWatch(a);
-    $$('[data-chk]').forEach(c => c.onchange = () => { D.local.checks[c.dataset.chk] = c.checked; keep(); draw(); });
-    const items = (D.S.safety_checks || []).concat(D.day.drone_id || D.day.method === 'רחפן' ? (D.S.preflight_checks || []) : []);
-    const allOk = items.every((t, i) => D.local.checks[i] || D.checks.some(c => c.item === t && c.ok));
+    $$('[data-pall]').forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true; await signSection(b.dataset.pall); haptic('success'); toast(SEC[b.dataset.pall].t + ' · אושר'); draw(); });
+    $$('[data-pbad]').forEach(b => b.onclick = () => { const [k, i] = b.dataset.pbad.split('|'); failItem(k, secItems(k)[+i]); });
+    $$('details.pdet').forEach(d => d.ontoggle = () => { const L = D.local.popen ||= [], k = d.dataset.sec; if (d.open && !L.includes(k)) L.push(k); if (!d.open && L.includes(k)) L.splice(L.indexOf(k), 1); keep(); });
+    $$('[data-dec]').forEach(b => b.onclick = () => { const i = D.issues.find(x => x.id === b.dataset.dec); if (i) decideSheet(i, { who: fname(i.opened_by), after: r => afterDecide(r, () => dispatchEvent(new HashChangeEvent('hashchange'))) }); });
+    $$('[data-dadm]').forEach(b => b.onclick = () => import('./dayadmin.js').then(m => m.openDayAdmin(D.day.id, () => dispatchEvent(new HashChangeEvent('hashchange')))));
+    const P0 = secs().map(k => [k, secState(k)]), halt = P0.find(([, S]) => S.stopped || S.grounded);
     const before = D.photos.some(p => p.kind === 'before');
-    const need = [!D.day.arrived_at && 'הגעה', !allOk && 'בדיקות', !before && 'תמונת לפני'].filter(Boolean);
+    const need = [!D.day.arrived_at && 'הגעה', ...P0.filter(([, S]) => !S.signed).map(([k]) => SEC[k].t), P0.some(([, S]) => S.pend) && 'החלטת מנהל', !before && 'תמונת לפני'].filter(Boolean);
+    pulsePoll();
+    if (halt && !isManager()) { bar.innerHTML = `<button class="btn ghost" type="button" disabled>${halt[1].grounded ? 'הרחפן הושבת · ממתינים לרחפן חלופי' : 'העבודה הופסקה · ממתינים למנהל התפעול'}</button>`; return; }
     bar.innerHTML = `<button class="btn primary ${need.length ? 'needs' : ''}" id="start">${need.length ? `<span class="need">חסר: ${need.join(' · ')}</span>` : 'מתחילים לעבוד'}</button>`;
     bar.querySelector('#start').onclick = async e => {
-      // עוד חסר משהו → הלחיצה לוקחת אליו (הגעה / הבדיקה הראשונה שלא סומנה / מצלמה לתמונת לפני)
+      // עוד חסר משהו → הלחיצה לוקחת אליו (הגעה / הבדיקה שלא אושרה / ההחלטה / מצלמה לתמונת לפני)
       if (need.length) { haptic('warn');
         if (!D.day.arrived_at) return $('#arrive', el)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        if (!allOk) return $$('[data-chk]', el).find(c => !c.checked)?.closest('label')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const open = P0.find(([, S]) => !S.signed || S.pend); if (open) return $('#pulse-' + open[0], el)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return $('input[data-kind="before"]', el)?.click(); }
       if (e.currentTarget.disabled) return; e.currentTarget.disabled = true;
-      for (const [i, t] of items.entries()) if (!D.checks.some(c => c.item === t)) { const row = { id: uid(), work_day_id: D.day.id, item: t, ok: true, checked_by: state.user.id }; D.checks.push(row); await insert('safety_checks', row); }
       await save('work_days', { status: 'working', opened_at: D.day.opened_at || new Date().toISOString() });
       toast('עבודה בטוחה'); draw();
     };
+  }
+  // בשלב "באתר": מה שקרה בטלפונים האחרים (המטיס אישר, מפעיל הקרקע סימן חריג, מנהל התפעול החליט, הרחפן הוחלף) — מגיע לבד
+  let pp = null;
+  function pulsePoll() {
+    if (pp) return;
+    pp = setInterval(async () => {
+      if (!here() || stage() !== 2) { clearInterval(pp); pp = null; return; }
+      if (document.hidden || !navigator.onLine) return;
+      try {
+        const [{ data: ch }, { data: is }, { data: wd }] = await Promise.all([
+          sb.from('safety_checks').select('*').eq('work_day_id', D.day.id),
+          sb.from('issues').select('*').eq('work_day_id', D.day.id).order('created_at'),
+          sb.from('work_days').select('status,opened_at,drone_id,drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)').eq('id', D.day.id).maybeSingle()]);
+        if (!ch || !is || !here()) return;
+        const { outbox } = await import('../lib/store.js'); const q = await outbox.all();
+        const merge = (srv, t) => srv.concat(q.filter(x => x.kind === 'insert' && x.table === t && x.row?.work_day_id === D.day.id && !srv.some(r => r.id === x.row.id)).map(x => x.row));
+        const nc = merge(ch, 'safety_checks'), ni = merge(is, 'issues'), sig = (c, i, w) => JSON.stringify([c.map(r => r.id + r.ok).sort(), i.map(r => r.id + r.decision + r.status), w?.drone_id, w?.status, w?.drone?.health]);
+        const dayQ = q.some(x => x.kind === 'update' && x.table === 'work_days' && x.rowId === D.day.id);
+        if (sig(nc, ni, dayQ ? D.day : wd) === sig(D.checks, D.issues, D.day)) return;
+        D.checks = nc; D.issues = ni; if (wd && !dayQ) Object.assign(D.day, wd);
+        await keep(); draw();
+      } catch { /* בלי קליטה — בפעם הבאה */ }
+    }, 15000);
   }
   // הגעה לפי GPS: כשהטלפון בתוך גדר האתר — הכפתור "הגענו" הופך לבקשה בולטת "הגעתי ✓" (עם רטט). לא מסמנים לבד:
   // מעבר ליד האתר בכביש / קפיצת GPS לא ירשמו הגעה. רק אם כבר יש הרשאת מיקום (לא מקפיצים בקשה), החישוב בטלפון — עובד בלי קליטה

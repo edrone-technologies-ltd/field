@@ -15,8 +15,10 @@ const WXW = ['טוב לטיסה', 'גבולי', 'לא לטוס'];
 const DIRS = ['צפון', 'צפון-מזרח', 'מזרח', 'דרום-מזרח', 'דרום', 'דרום-מערב', 'מערב', 'צפון-מערב'];
 const COLS = [
   ['days', 'ימי שטח'], ['crew', 'ימי אדם'], ['m2', 'מ״ר'], ['prog', 'התקדמות'], ['ready', 'מוכנות'],
-  ['iss', 'תקלות וחוסרים'], ['rep', 'תיקונים לאישור'], ['unc', 'לא נסגרו'], ['next', 'יום שטח הבא'], ['wx', 'מזג אוויר'],
+  ['iss', 'תקלות וחוסרים'], ['rep', 'תיקונים לאישור'], ['rt', 'זמן תיקון ממוצע'], ['unc', 'לא נסגרו'], ['next', 'יום שטח הבא'], ['visit', 'ביקור מנהל אחרון'], ['wx', 'מזג אוויר'],
 ];
+// זמן תיקון: שעות → "5 ש׳" / "2.5 ימים"
+const dur = h => h == null ? '' : h < 48 ? `${Math.round(h)} ש׳` : `${Math.round(h / 24 * 10) / 10} ימים`;
 const CT = Object.fromEntries([...COLS, ['all', 'הכל'], ['z', 'חזית']]);
 let D = null;   // המסך הפתוח
 
@@ -47,6 +49,7 @@ export async function renderDesk(el, qs = '') {
     <header class="dkh">${backBtn('#/')}<h1 class="grow">שולחן ניהול</h1>
       <div class="dkwk" role="group" aria-label="שבוע"><button type="button" class="dkic" id="dkprev" aria-label="שבוע קודם">‹</button><button type="button" class="dkwl" id="dkthis"></button><button type="button" class="dkic" id="dknext" aria-label="שבוע הבא">›</button></div>
       <span class="seg dktab">${[['t', 'שבוע'], ['m', 'התקדמות לפי חזית']].map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${S.tab === k}">${l}</button>`).join('')}</span>
+      ${state.modules?.includes('finance') || state.profile?.role === 'admin' ? `<a class="btn ghost sm" href="#/costs/${S.w}">${icon('cash', 16)} עלויות</a>` : ''}<!-- כספים בלבד (costs.js, db/129) -->
       <button type="button" class="btn primary sm wzbtn" id="dkwz">${icon('star', 16)} הקוסם</button></header>
     <div class="dkbar"><label class="dkq">${icon('clipboard', 16)}<input type="search" id="dkq" placeholder="חיפוש" value="${esc(S.q)}" autocomplete="off"><kbd>/</kbd></label>
       <select id="dksvc" aria-label="שירות"></select><select id="dklead" aria-label="ראש צוות"></select><select id="dkst" aria-label="סטטוס"></select>
@@ -74,13 +77,15 @@ function skeleton() { return `<div class="dksk">${'<i></i>'.repeat(7)}</div>`; }
 async function load() {
   const my = D, w = D.S.w;
   if (D.cache.has(w)) { D.data = D.cache.get(w); prep(); draw(); } else { D.data = null; $('#dkw', D.el).innerHTML = skeleton(); }
+  // זמן תיקון ממוצע + ביקור מנהל אחרון (desk_extra, db/128) — לא תלוי בשבוע; נטען במקביל
+  if (!D.ex) sb.rpc('desk_extra').then(({ data: x }) => { if (my === D && x) { D.ex = x; if (D.data) { prep(); draw(); } } }, () => {});
   const { data, error } = await sb.rpc('desk_week', { w });
   if (my !== D) return;
   if (error) { $('#dkw', D.el).innerHTML = `<div class="empty-card"><span class="ei">${icon('alert', 26)}</span><span><b>הנתונים לא נטענו</b><small>${esc(errText(error, 'נסו שוב'))}</small></span></div>`; return; }
   if (D.S.w !== w) return;
   D.cache.set(w, data); D.data = data; prep(); draw(); weather();
 }
-const reload = () => { if (D?.el.isConnected) load(); };
+const reload = () => { if (D?.el.isConnected) { D.ex = null; load(); } };
 
 // ---------- חישוב לכל פרויקט ----------
 const zkey = z => z.b + '|' + z.k;
@@ -103,7 +108,9 @@ function prep() {
       pend: (r.repairs || []).filter(x => x.review === 'pending' && x.status === 'in_progress'),
       ropen: (r.repairs || []).filter(x => !['done', 'dropped'].includes(x.status)),
       unc: r.unclosed || [], leads: [...new Set(days.map(d => d.lead).filter(Boolean))],
-      wxDays: days.filter(d => d.status === 'planned' && d.day >= t) };
+      wxDays: days.filter(d => d.status === 'planned' && d.day >= t),
+      rt: D.ex?.rt?.[r.id] || null, lv: r.site_id ? D.ex?.visit?.[r.site_id] || null : null,
+      lvDays: r.site_id && D.ex?.visit?.[r.site_id] ? Math.round((new Date(t + 'T12:00') - new Date(D.ex.visit[r.site_id].day + 'T12:00')) / 864e5) : null };
   });
   // אפשרויות המסננים — מה שקיים בשבוע הזה
   const opt = (id, all, vals, cur) => { const s = $(id, D.el); if (!s) return; s.innerHTML = `<option value="">${all}</option>` + vals.map(([v, l]) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(l)}</option>`).join(''); s.classList.toggle('on', !!cur); };
@@ -129,6 +136,7 @@ async function weather() {
 const VAL = {
   name: r => r.short, days: r => r.days.length * 100 + r.done, crew: r => r.crewDays, m2: r => r.m2 || r.zn / 1000, prog: r => r.prog ?? -1,
   ready: r => r.rdy ? r.rdy.ok / (r.rdy.n || 1) : 2, iss: r => r.iss, rep: r => r.pend.length, unc: r => r.unc.length,
+  rt: r => r.rt?.avg_h ?? -1, visit: r => r.lvDays ?? (r.site_id ? 1e5 : -1),
   next: r => r.next?.day || '9999', wx: r => wxLevel(r).L ?? -1,
 };
 function view() {
@@ -164,6 +172,8 @@ function cell(r, k) {
     case 'iss': return num(r.iss, r.crit ? 'bad' : 'warn');
     case 'rep': return num(r.pend.length, 'warn', r.ropen.length > r.pend.length ? `${r.ropen.length - r.pend.length} פתוחים` : '');
     case 'unc': return num(r.unc.length, 'bad');
+    case 'rt': return r.rt ? `<b class="dkn ${r.rt.avg_h > 72 ? 'bad' : r.rt.avg_h > 24 ? 'warn' : 'ok'}">${dur(r.rt.avg_h)}</b><small>${r.rt.n} תיקונים</small>` : num(0);
+    case 'visit': return r.lv ? `<b class="dkn ${r.lvDays > 30 ? 'bad' : ''}">${r.lvDays <= 0 ? 'היום' : r.lvDays === 1 ? 'אתמול' : `לפני ${r.lvDays} ימים`}</b><small>${esc(first(r.lv.by))}</small>` : r.site_id ? '<b class="dkn muted">אף פעם</b>' : num(0);
     case 'next': return r.next ? `<b class="dkn ${r.next.day === D.data.today ? 'lime' : ''}">${r.next.day === D.data.today ? 'היום' : sd(r.next.day)}</b><small>${esc(first(r.next.lead_name) || 'בלי ראש צוות')}</small>` : num(0);
     case 'wx': { const { L, d } = wxLevel(r); return L == null ? num(0) : `<span class="pill ${['ok', 'warn', 'bad'][L]}">${WXW[L]}</span>${L && d ? `<small>${sd(d.day)}</small>` : ''}`; }
   }
@@ -258,9 +268,9 @@ async function projPanel(p, pid) {
   try { await (await import('./projects.js')).renderProject(box, pid, 'o'); } catch { box.innerHTML = `<div class="empty-line">הפרויקט לא נטען</div>`; }
   if (D?.el.isConnected && D.S.sel === pid + '~proj' && !/^#\/desk/.test(location.hash)) push();
 }
-const none = k => `<div class="dkok">${icon('check', 18)}<span>${{ iss: 'אין תקלות או חוסרים פתוחים', rep: 'אין תיקונים שממתינים לאישור', unc: 'כל הימים נסגרו', ready: 'אין ימים מתוכננים קדימה', next: 'אין יום שטח מתוכנן', wx: 'אין ימים מתוכננים בתחזית', days: 'אין ימי שטח בשבוע', crew: 'אין ימי שטח בשבוע', m2: 'עוד לא סומנו חזיתות השבוע', prog: 'אין חזיתות מהאפיון' }[k] || 'אין פריטים'}</span></div>`;
+const none = k => `<div class="dkok">${icon('check', 18)}<span>${{ iss: 'אין תקלות או חוסרים פתוחים', rep: 'אין תיקונים שממתינים לאישור', unc: 'כל הימים נסגרו', ready: 'אין ימים מתוכננים קדימה', next: 'אין יום שטח מתוכנן', wx: 'אין ימים מתוכננים בתחזית', days: 'אין ימי שטח בשבוע', crew: 'אין ימי שטח בשבוע', m2: 'עוד לא סומנו חזיתות השבוע', prog: 'אין חזיתות מהאפיון', rt: 'עוד אין תיקונים שאושרו', visit: 'עוד לא נרשם ביקור מנהל באתר' }[k] || 'אין פריטים'}</span></div>`;
 function all(r) {
-  const order = ['ready', 'iss', 'rep', 'unc', 'next', 'wx', 'days', 'prog'];
+  const order = ['ready', 'iss', 'rep', 'rt', 'unc', 'next', 'visit', 'wx', 'days', 'prog'];
   return order.map(k => { const h = sec(k, r); return h ? `<section class="dkps"><h4>${CT[k]}</h4>${h}</section>` : ''; }).join('') || none('');
 }
 const dayBtn = (id, label = 'ניהול') => `<button type="button" class="btn ghost sm" data-da="${id}">${label}</button>`;
@@ -302,6 +312,10 @@ function sec(k, r) {
         + O.map(x => row(esc(x.title), esc([x.review === 'returned' ? 'הוחזר · ' + (x.review_note || '') : 'פתוח', first(x.who)].filter(Boolean).join(' · ')), `<a class="btn ghost sm" href="${x.visit_id ? `#/visit/${x.visit_id}/fix` : `#/p/${r.id}`}">פתיחה</a>`, x.review === 'returned' ? 'bad' : '')).join('')
         + A.map(x => row('✓ ' + esc(x.title), esc(['אושר', first(x.who), x.done_at ? timeAgo(x.done_at) : ''].filter(Boolean).join(' · ')), '', 'ok')).join('');
     }
+    case 'rt': return r.rt ? `<div class="dkbig ${r.rt.avg_h > 72 ? 'bad' : r.rt.avg_h > 24 ? 'warn' : 'ok'}"><b>${dur(r.rt.avg_h)}</b><small>ממוצע מפתיחה לאישור · ${r.rt.n} תיקונים</small></div>`
+      + (r.rt.leads || []).map(l => row(esc(l.n), `${l.c} תיקונים`, `<b class="dkn ${l.avg_h > 72 ? 'bad' : l.avg_h > 24 ? 'warn' : 'ok'}">${dur(l.avg_h)}</b>`)).join('') : '';
+    case 'visit': return r.lv ? row(`${sd(r.lv.day)} · ${r.lvDays <= 0 ? 'היום' : `לפני ${r.lvDays} ימים`}`, esc(r.lv.by || ''), `<a class="btn ghost sm" href="#/visit/${r.lv.id}">הדוח</a><a class="btn primary sm" href="#/visit/new/${r.id}">ביקור חדש</a>`, r.lvDays > 30 ? 'bad' : 'ok')
+      : r.site_id ? row('לא נרשם ביקור מנהל באתר', '', `<a class="btn primary sm" href="#/visit/new/${r.id}">ביקור חדש</a>`, 'bad') : '';
     case 'unc': return r.unc.map(d => row(`${sd(d.day)} · ${d.status === 'planned' ? 'לא התחיל' : 'לא נסגר'}`, esc([first(d.lead_name) || 'בלי ראש צוות', ST[d.status]].filter(Boolean).join(' · ')),
       d.status === 'planned' ? dayBtn(d.id, 'להעביר / לבטל') : `<a class="btn primary sm" href="#/day/${d.id}">סגירת היום</a>`, 'bad')).join('');
     case 'next': return r.next ? row(`${r.next.day === t ? 'היום' : sd(r.next.day)}`, esc(first(r.next.lead_name) || 'בלי ראש צוות'), `<a class="btn ghost sm" href="#/dispatch/${r.next.day}">לוח שיבוץ</a>${dayBtn(r.next.id)}`) : '';

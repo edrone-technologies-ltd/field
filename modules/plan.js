@@ -144,10 +144,11 @@ async function loadout(p, ndays, days) {
   else if (has('water', 'הידרנט')) L.push(['מים', 'מתאם הידרנט']);
   else if (has('water', 'ברז באתר')) L.push(['מים', 'מחבר לברז']);
   else if (S.some(x => x.hydrants)) L.push(['מים', 'מתאם הידרנט']);   // אפיונים מלפני 096
-  if (fl) L.push(['צנרת', `לגובה ${fl} קומות (≈${fl * 3} מ׳)` + (has('access', 'רחוק — סחיבה') ? ' + תוספת לסחיבה' : '')]);
-  if (has('power', 'גנרטור')) L.push(['חשמל', 'גנרטור']);
-  else if (has('power', 'שקע באתר') || S.some(x => x.power)) L.push(['חשמל', 'כבל מאריך']);
-  L.push(['בטיחות', ['גידור ושלטים', 'אפודים', haz.includes('הולכי רגל') && 'גידור מעבר הולכי רגל', has('launch', 'גג') && 'עבודה מהגג — רתמות'].filter(Boolean).join(' · ')]);
+  // צינור הלחץ והמשאבה קבועים על הנגרר — לא בהעמסה. סחיבה רחוקה — כהערה
+  if (has('access', 'רחוק — סחיבה')) L.push(['גישה', 'רחוק — סחיבה' + (fl ? ` · גובה ${fl} קומות` : '')]);
+  if (has('power', 'גנרטור')) L.push(['חשמל', 'גנרטור · כבל מאריך · עמדת חשמל ניידת']);
+  else if (has('power', 'שקע באתר') || S.some(x => x.power)) L.push(['חשמל', 'שקע באתר — בלי גנרטור · כבל מאריך']);
+  L.push(['בטיחות', ['ציוד מגן אישי', 'ערכת עזרה ראשונה', 'מערכת קשר', haz.includes('הולכי רגל') && 'גידור מעבר הולכי רגל', has('launch', 'גג') && 'עבודה מהגג — רתמות'].filter(Boolean).join(' · ')]);
   return `<section class="pload"><b>מה להעמיס</b>${L.map(([k, v]) => `<div class="pl"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</section>`;
 }
 

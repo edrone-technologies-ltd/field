@@ -128,6 +128,7 @@ export async function clockCard(box, onChange, hint = null) {
   if (!box) return;
   const draw0 = async () => {
     const open = await myOpenShift();
+    if (!box.isConnected) return;   // המסך הוחלף בזמן הבדיקה
     clearInterval(tick);
     const el = document.createElement('div'); el.className = 'clock' + (open ? ' on' : ''); el.id = 'clockcard';
     const elapsed = () => hhmm((Date.now() - new Date(open.start_at)) / 36e5);
@@ -141,8 +142,8 @@ export async function clockCard(box, onChange, hint = null) {
     }
     if (!open && hint) { el.classList.add('hint', 'go'); el.querySelector('.grow').innerHTML = `<b>להיכנס למשמרת?</b><small>${esc(hint.label || 'הצוות יצא לדרך')}</small>`; const ci = $('#cl-in', el); if (ci) ci.textContent = 'כניסה ✓'; haptic('warn'); }
     else if (!open) suggestIn(el);
-    if (open) { tick = setInterval(() => { const t = $('#cl-t'); if (t) t.textContent = elapsed() + ' שעות'; else clearInterval(tick); }, 30000); $('#cl-out').onclick = () => clockOut(open, draw); }
-    else { const ci = $('#cl-in'); ci.onclick = async () => { if (ci.disabled) return; ci.disabled = true; try { await clockIn(draw, { project_id: hint?.project_id || null }); } finally { if (ci.isConnected) ci.disabled = false; } }; }
+    if (open) { tick = setInterval(() => { const t = $('#cl-t'); if (t) t.textContent = elapsed() + ' שעות'; else clearInterval(tick); }, 30000); $('#cl-out', el).onclick = () => clockOut(open, draw); }
+    else { const ci = $('#cl-in', el); if (ci) ci.onclick = async () => { if (ci.disabled) return; ci.disabled = true; try { await clockIn(draw, { project_id: hint?.project_id || null }); } finally { if (ci.isConnected) ci.disabled = false; } }; }
   };
   // אחרי כניסה/יציאה/בקשה: המסך שמכיל את הכרטיס מתעדכן (למשל השעות שלי), אחרת רק הכרטיס
   const draw = () => onChange ? onChange() : draw0();
@@ -268,10 +269,11 @@ export async function renderHours(el, userId, month) {
     sb.from('absences').select('*').eq('user_id', userId).lt('date_from', monthStart(nextMonth(month))).gte('date_to', `${month}-01`).order('date_from'),
     can('finance') ? sb.from('employee_rates').select('*').eq('user_id', userId).maybeSingle() : Promise.resolve({ data: null }),
   ]);   // הכל במקביל — סבב אחד לשרת
+  if (!el.isConnected) return;   // עברו למסך אחר בזמן הטעינה (למשל 'השעות שלי' אחרי עובד אחר) — לא כותבים עליו
   const R0 = reqs || [], pendingNew = R0.filter(r => !r.shift_id), byShift = id => R0.filter(r => r.shift_id === id);
   if (!me) $('#ht').textContent = who?.full_name || '';
   const nowIso = new Date().toISOString(), R = computeMonth((shifts || []).map(x => x.end_at ? x : { ...x, end_at: nowIso, _open: true }), month, S);   // משמרת פתוחה נספרת עד עכשיו
-  await geoFlags(R);
+  await geoFlags(R); if (!el.isConnected) return;
   const T = R.totals, M = isManager() && !me || (isManager() && me);
   const E = livePay(shifts, month, S, rate);
   const locked = am?.locked;

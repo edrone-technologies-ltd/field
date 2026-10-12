@@ -22,7 +22,7 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'compliance', 'purchase', 'expenses', 'dispatch', 'tasks']);
+const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'compliance', 'purchase', 'expenses', 'dispatch', 'tasks', 'costs']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -97,6 +97,7 @@ function renderMenu() {
       isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
       isManager() && ['#/compliance', 'shield', 'תוקף ותעודות', 'רישיונות, תעודות, ביטוח וטיפולים'],
       isManager() && ['#/clients', 'folder', 'לקוחות', 'תיק לקוח והיסטוריית עבודות'],
+      (can('finance') || state.profile.role === 'admin') && ['#/costs', 'cash', 'עלויות', 'עלות לכל יום שטח ולפרויקט'],
       state.profile.role === 'admin' && ['#/activity', 'clock', 'פעילות', 'מי מחובר ומה קורה'],
       state.profile.role === 'admin' && ['#/onboarding/launch', 'activity', 'השקה', 'מי נכנס, התקין והפעיל התראות'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
@@ -258,7 +259,8 @@ async function route(ev) {
   // מסך שנתקע על שלד טעינה (קליטה חלשה) — אחרי 15 שניות מציעים לנסות שוב במקום להמתין לנצח
   clearTimeout(route.wd); route.wd = setTimeout(() => { if (my === navSeq && app.querySelector(':scope > .sk, :scope > .stack > .sk') && !app.querySelector('.oops')) app.insertAdjacentHTML('beforeend', oops('הטעינה לוקחת יותר מהרגיל', !navigator.onLine)); }, 15000);
   try { await routeInner(); } catch (e) {
-    console.error(e); if (my !== navSeq) return;
+    if (e?.name === 'StaleView' || my !== navSeq) return;
+    console.error(e);
     if (chunkErr(e)) return;
     app.innerHTML = oops('המסך לא נטען', !navigator.onLine);
   }
@@ -283,17 +285,30 @@ function chunkErr(e) {
 }
 // שגיאה שלא נתפסה בתוך מסך — אם המסך נשאר ריק (מסך לבן), מציגים כרטיס עם "לנסות שוב"
 const whiteGuard = () => setTimeout(() => { if (state.profile && !app.children.length) app.innerHTML = oops('המסך לא נטען', !navigator.onLine); }, 50);
-addEventListener('error', whiteGuard);
-addEventListener('unhandledrejection', e => { if (chunkErr(e.reason)) return; whiteGuard(); });
+addEventListener('error', e => { if (e.error?.name === 'StaleView') { e.preventDefault(); return; } whiteGuard(); });
+addEventListener('unhandledrejection', e => { if (e.reason?.name === 'StaleView') { e.preventDefault(); return; } if (chunkErr(e.reason)) return; whiteGuard(); });
+// מסך איטי שסיים אחרי שכבר עברו למסך אחר — לא דורס את המסך החדש. כל ניווט מקבל "חלון" משלו ל-#app;
+// כתיבה (innerHTML / הוספה) מחלון של ניווט קודם נעצרת בשקט (StaleView), והמסך הישן מפסיק באמצע
+let viewSeq = 0;
+function viewEl() {
+  const my = ++viewSeq;
+  const stale = () => { const e = new Error('stale view'); e.name = 'StaleView'; return e; };
+  return new Proxy(app, {
+    get(t, k) { if (k === 'isConnected') return my === viewSeq && t.isConnected;   // מסך ישן: el.isConnected=false — הבדיקה שהמודולים כבר עושים
+      const v = Reflect.get(t, k, t); if (typeof v !== 'function') return v; return (...a) => { if (my !== viewSeq) throw stale(); return v.apply(t, a); }; },   // גם querySelector: מסך ישן לא מוצא (ולא מחליף) רכיבים של המסך החדש
+    set(t, k, v) { if (my !== viewSeq && (k === 'innerHTML' || k === 'textContent')) throw stale(); return Reflect.set(t, k, v, t); },
+  });
+}
 setTimeout(() => { try { sessionStorage.removeItem('rr:chunk'); } catch { /* */ } }, 20000);
 async function routeInner() {
+  const app = viewEl();
   const h = location.hash.replace(/^#\/?/, '').split('/');
   app.scrollTop = 0;
   document.querySelectorAll('.bar,.composer,.fabs').forEach(x => x.remove());
   $('#sheet').hidden = true;
   // מסך שורש של לשונית (בלי תת-נתיב) — בלי כפתור חזרה בכותרת
   if (h.length === 1 && TABS.some(t => t.k === h[0] && t.ok())) document.body.dataset.root = ''; else delete document.body.dataset.root;
-  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' || h[0] === 'tasks' ? '' : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'kb', 'news', 'requests', 'weather'].includes(h[0]) ? 'menu' : h[0]);
+  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' || h[0] === 'tasks' ? '' : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'kb', 'news', 'requests', 'weather', 'costs'].includes(h[0]) ? 'menu' : h[0]);
   // מסך בלי הרשאה — מסך אחד אחיד (כותרת, חזרה, הסבר קצר), בלי לטעון את המודול
   const deny = () => { app.innerHTML = `<header class="phead">${backBtn('#/')}</header><div class="empty-card"><span class="ei">${icon('shield', 26)}</span><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; };
   const guard = m => can(m) || deny();
@@ -318,7 +333,8 @@ async function routeInner() {
     case 'attendance': { const m = await import('./modules/attendance.js'); if (h[1] === 'm' || !h[1]) return m.renderAttendance(app, h[2]); return m.renderHours(app, h[1], h[2]); }
     case 'purchase': if (guard('purchase')) { await (await import('./modules/purchase.js')).renderPurchase(app); } return;
     case 'dispatch': { await (await import('./modules/dispatch.js')).renderDispatch(app, h[1]); if (isWs() && h[2] === 'd' && /^[0-9a-f-]{36}$/.test(h[3] || '')) WS.drawerDay(h[3], h[1] || ''); return; }
-    case 'client-report': return (await import('./modules/clientreport.js')).renderClientReport(app, h[1]);
+    case 'client-report': { const m = await import('./modules/clientreport.js'); return h[2] === 'w' ? m.renderWeeklyUpdate(app, h[1], h[3], h[4] === 's') : m.renderClientReport(app, h[1]); }   // w = עדכון שבועי ללקוח
+    case 'costs': if (!(can('finance') || state.profile.role === 'admin')) return deny(); return (await import('./modules/costs.js')).renderCosts(app, h[1]);   // עלויות — כספים בלבד (db/129)
     case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
     case 'news': return (await import('./modules/news.js')).renderNews(app);

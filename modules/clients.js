@@ -1,5 +1,8 @@
 // תיק לקוח: לקוח (ישות משלמת, מסונכרן מתיק הלקוחות במאנדי) ← אתרים ← פרויקטים. היסטוריית עבודות לכל אתר, אנשי קשר, וקבוצת האם.
-import { sb, isManager, icon, $, $$, esc, backBtn, dm, stLabel, isOpenProject, navButtons, isoDay } from '../lib/core.js';
+import { sb, can, isManager, icon, $, $$, esc, backBtn, dm, stLabel, isOpenProject, navButtons, isoDay } from '../lib/core.js';
+// כסף לא מוצג למי שאין לו כספים (מנהל תפעול): משפטים בטקסט חופשי ממאנדי עם סכום/מע״מ/חשבונית/תנאי תשלום יורדים
+const MONEY_RE = /₪|ש["״]ח|שקל|מע["״]מ|חשבוני|קבל[הות]\s*\d|תשלום|תשלומ|משלמ|כספים|חשבון בנק|ניכוי מס|\d[\d,.]*\s*(?:אלף|K\b)/;
+const noMoney = t => !t || can('finance') ? t : String(t).split(/(?<=[.!?\n])\s+|\s+(?=⚠)/).filter(x => !MONEY_RE.test(x)).join(' ').trim() || null;
 const SITE_SEL = 'id,slug,name,address,contact_name,contact_phone,lat,lng,buildings(id,specs(status))';
 const intl = p => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('972') ? d : d.replace(/^0/, '972'); };
 const local = p => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('972') ? '0' + d.slice(3) : d; };
@@ -64,8 +67,8 @@ export async function renderClient(el, id) {
   const years = [...new Set(P.map(yr).filter(Boolean))];
   el.innerHTML = `<header class="phead">${backBtn('#/clients')}<h1 class="grow">${esc(c.name)}</h1></header>
     <div class="stack lg">
-      ${c.grp || c.hp || c.notes ? `<div class="card stack tight">${c.grp ? `<small class="muted">קבוצת ${esc(c.grp)}</small>` : ''}${c.hp ? `<small>ח.פ <bdi dir="ltr">${esc(c.hp)}</bdi></small>` : ''}
-        ${c.notes ? `<small class="muted clamp3">${esc(c.notes)}</small>` : ''}</div>` : ''}
+      ${c.grp || c.hp || noMoney(c.notes) ? `<div class="card stack tight">${c.grp ? `<small class="muted">קבוצת ${esc(c.grp)}</small>` : ''}${c.hp ? `<small>ח.פ <bdi dir="ltr">${esc(c.hp)}</bdi></small>` : ''}
+        ${noMoney(c.notes) ? `<small class="muted clamp3">${esc(noMoney(c.notes))}</small>` : ''}</div>` : ''}
       ${main ? `<div class="c360 card"><span class="grow"><small class="muted">${esc(main.role || 'איש קשר')}</small><b>${esc(main.name || '')}</b></span>
         <a class="cact" href="tel:${local(main.phone)}">${icon('M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2', 20)}<small>חיוג</small></a>
         <a class="cact wa" href="https://wa.me/${intl(main.phone)}" target="_blank" rel="noopener">${icon('M3 21l1.7-5A8.5 8.5 0 1 1 8 19.3z', 20)}<small>וואטסאפ</small></a></div>` : ''}
