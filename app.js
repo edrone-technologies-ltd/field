@@ -234,7 +234,7 @@ async function routeInner() {
     case 'activity': return (await import('./modules/activity.js')).renderActivity(app, h[1] || '');
     case 'tour': return (await import('./modules/tour.js')).renderTour(app, h[1] || 'ops');
     case 'plan': if (guard('projects')) return (await import('./modules/plan.js')).renderPlan(app, h[1], h[2] === 'print'); return;
-    case 'visit': { const m = await import('./modules/visits.js'); return h[1] === 'new' ? m.renderVisitForm(app, h[2]) : h[1] === 'edit' ? m.renderVisitForm(app, h[2], h[3]) : h[2] === 'report' ? m.renderVisitReport(app, h[1]) : m.renderVisit(app, h[1]); }
+    case 'visit': { const m = await import('./modules/visits.js'); return h[1] === 'new' ? m.renderVisitForm(app, h[2]) : h[1] === 'edit' ? m.renderVisitForm(app, h[2], h[3]) : h[2] === 'report' ? m.renderVisitReport(app, h[1]) : h[2] === 'fix' ? m.renderRepairProtocol(app, h[1]) : m.renderVisit(app, h[1]); }
     case 'expenses': await (await import('./modules/expenses.js')).renderExpenses(app); return;
     case 'tasks': {   // המשימות שלי — אותה רשימה כמו בבית, במסך מלא
       app.innerHTML = `<header class="phead">${backBtn('#/')}<h1>משימות</h1></header><div id="tk" class="stack lg">${skeleton('list', 4)}</div>`;

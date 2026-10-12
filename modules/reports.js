@@ -39,7 +39,7 @@ export async function newReport(projectId, links = [], type = null) {
 async function pickProject(then, back) {
   const { data, error } = await sb.rpc('reportable_projects'); if (error) return toast(errText(error, 'רשימת הפרויקטים לא נטענה — נסו שוב'));
   sheet(`<h3>על איזה פרויקט?</h3><input type="search" class="search" id="rq" placeholder="חיפוש פרויקט">
-    <div class="list" id="rl">${(data || []).map(p => `<button class="lrow" data-p="${p.id}" data-n="${esc(p.name + ' ' + (p.client_name || ''))}"><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.client_name, p.status_label].filter(Boolean).join(' · '))}</small></span>${p.mine ? '<span class="pill lime">שלי</span>' : ''}</button>`).join('')}</div>
+    <div class="list" id="rl">${(data || []).length ? '' : '<div class="empty-line">אין פרויקט שאתם משובצים אליו</div>'}${(data || []).map(p => `<button class="lrow" data-p="${p.id}" data-n="${esc(p.name + ' ' + (p.client_name || ''))}"><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.client_name, p.status_label].filter(Boolean).join(' · '))}</small></span>${p.mine ? '<span class="pill lime">שלי</span>' : ''}</button>`).join('')}</div>
     <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
     $('#rq', s).oninput = e => $$('[data-p]', s).forEach(b => b.hidden = !b.dataset.n.includes(e.target.value.trim()));
     $$('[data-p]', s).forEach(b => b.onclick = async () => { try { await sb.rpc('join_project', { p: b.dataset.p }); } catch {} close(); then(b.dataset.p); });

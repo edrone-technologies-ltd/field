@@ -6,7 +6,7 @@ const ROLES = ['admin', 'ops_manager', 'surveyor', 'crew_lead', 'crew', 'partner
 export async function renderAdmin(el) {
   el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">הרשאות</h1></header><div id="ad"><div class="skel"></div></div>`;
   const [{ data: people }, { data: mods }, { data: rm }, { data: sites }, { data: sm }, { data: logs }] = await Promise.all([
-    sb.from('profiles').select('*').order('full_name'),
+    sb.rpc('profiles_full'),
     sb.from('modules').select('*').order('sort'),
     sb.from('role_modules').select('*'),
     sb.from('sites').select('id,name'),

@@ -131,7 +131,8 @@ export async function renderVisit(el, id) {
     <div class="stack lg">
       <div class="card stack tight"><b>${esc(v.projects?.name || '')}</b><small class="muted">${dm(v.visit_date)} · ${esc(v.profiles?.full_name || '')}${v.participants ? ' · ' + esc(v.participants) : ''}</small>
         ${M && v.rating ? `<span class="rating" aria-label="${v.rating} מתוך 5">${icon('star', 14).repeat(v.rating)}</span>` : ''}</div>
-      ${tot ? `<div class="card row">${ring(dn, tot)}<div class="grow"><b>${dn === tot ? 'הכל טופל' : `טיפול בשטח · ${dn}/${tot}`}</b><div class="small muted">${unas.length ? `${unas.length} ממתינים לשיוך` : dn === tot ? '' : 'מתעדכן מהשטח'}</div></div>${M && unas.length ? `<button class="btn primary sm" id="vassign">שיוך לצוות</button>` : ''}</div>` : ''}
+      ${tot ? `<div class="card row">${ring(dn, tot)}<div class="grow"><b>${dn === tot ? 'הכל טופל' : `טיפול בשטח · ${dn}/${tot}`}</b><div class="small muted">${unas.length ? `${unas.length} ממתינים לשיוך` : dn === tot ? '' : 'מתעדכן מהשטח'}</div></div>${M && unas.length ? `<button class="btn primary sm" id="vassign">שיוך לצוות</button>` : ''}</div>
+        ${M ? `<a class="lrow" href="#/visit/${v.id}/fix"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>פרוטוקול תיקונים</b><small>${tot} פריטים · לפני ואחרי</small></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}` : ''}
       ${F.length ? `<section class="stack"><div class="sh-row"><h3 class="sh">ממצאים</h3><span class="count">${F.length}</span></div>
         ${F.map(x => `<div class="finding ro"><div class="row"><span class="pill ${SEV[x.sev]?.[1] || ''}">${SEV[x.sev]?.[0] || ''}</span><span class="grow"></span>${st(x)}</div>
           <div>${esc(x.text || '')}</div>${shots(x)}</div>`).join('')}</section>` : ''}
@@ -168,7 +169,7 @@ const pending = f => [...f.findings.filter(x => x.sev === 'fix' && !x.task_id &&
 // הכנסה אחת לטבלת המשימות → התראה מרוכזת אחת; מסמנים task_id על כל פריט
 async function toChecklist(vid, pid, f, assignee = null, due = null) {
   const P = pending(f); if (!P.length) return 0;
-  const rows = P.map(x => ({ project_id: pid, title: x.text.trim().slice(0, 120), instructions: `מדוח ביקור · ${KIND[f.kind]} · ${dm(f.visit_date)}`, phase: 'מעקב', status: 'todo', is_extra: true, created_by: state.user.id,
+  const rows = P.map(x => ({ project_id: pid, title: x.text.trim().slice(0, 120), instructions: `מדוח ביקור · ${KIND[f.kind]} · ${dm(f.visit_date)}`, phase: 'מעקב', status: 'todo', is_extra: true, created_by: state.user.id, visit_id: vid,
     assignee_id: assignee, due: due || null, photos: { before: PH(x) } }));
   const { data, error } = await sb.from('tasks').insert(rows).select('id');
   if (error) { toast(errText(error, 'הפריטים לא נוספו לצ׳קליסט — נסו שוב')); return null; }
@@ -219,6 +220,42 @@ export async function renderVisitReport(el, id) {
       ${v.client_feedback ? `<div class="rsec" style="margin-top:9mm">CLIENT FEEDBACK</div><h3 class="vh">התייחסות הלקוח</h3><p>${esc(v.client_feedback).replace(/\n/g, '<br>')}</p>` : ''}
       ${v.summary ? `<div class="rsec" style="margin-top:9mm">SUMMARY</div><h3 class="vh">סיכום</h3><p>${esc(v.summary).replace(/\n/g, '<br>')}</p>` : ''}
       <div class="end"><div class="l"><b>E-Drone Technologies</b>${coLine ? `<br>${coLine}` : ''}</div><img src="logo.png" alt="E-Drone"></div>
+    </div></div></div>`;
+  document.body.classList.add('printing-report');
+  addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });
+  $('#print').onclick = () => window.print();
+}
+
+// ----- פרוטוקול תיקונים: מסמך אחד לכל פריטי התיקון מהביקור — לפני, מטפל, סטטוס, ואחרי כשנסגר.
+// זה מה שמאנדי מקבל (קישור בעדכון אחד על הפרויקט) במקום פריט לכל תיקון -----
+export async function renderRepairProtocol(el, id) {
+  if (!isManager()) { el.innerHTML = '<div class="empty-line">אין לך גישה למסך הזה</div>'; return; }
+  el.innerHTML = '<div class="skel tall"></div>';
+  const [{ data: v }, { data: tk }] = await Promise.all([
+    sb.from('project_visits').select('*, projects(name,client_name)').eq('id', id).maybeSingle(),
+    sb.from('tasks').select('id,title,status,due,done_at,done_note,photos,profiles:assignee_id(full_name)').eq('visit_id', id).neq('status', 'dropped').order('created_at')]);
+  if (!v) { el.innerHTML = `<header class="phead">${backBtn('#/reports')}<h1>פרוטוקול תיקונים</h1></header><div class="empty-line">הדוח לא נמצא</div>`; return; }
+  // סדר הפריטים כמו בדוח; לכל משימה — הממצא שממנו נוצרה (תמונות לפני)
+  const src = new Map([...(v.findings || []), ...(v.todo || [])].filter(x => x.task_id).map(x => [x.task_id, x]));
+  const ord = [...src.keys()], T = (tk || []).sort((a, b) => (ord.indexOf(a.id) + 1 || 1e3) - (ord.indexOf(b.id) + 1 || 1e3)), dn = T.filter(t => t.status === 'done').length;
+  const before = t => t.photos?.before?.length ? t.photos.before : PH(src.get(t.id) || {});
+  const urls = await signedUrls('field', T.flatMap(t => [...before(t), ...(t.photos?.after || [])])).catch(() => ({}));
+  const strip = (list, tag) => list.length ? `<div class="vpics">${list.map(ph => urls[ph] ? `<div class="vp"><img src="${esc(urls[ph])}" alt=""><span class="tg ${tag === 'אחרי' ? 'a' : ''}">${tag}</span></div>` : '').join('')}</div>` : '';
+  const date = d => new Date(d + 'T12:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' });
+  const stat = t => t.status === 'done' ? ['ok', 'טופל'] : t.status === 'in_progress' ? ['warn', 'בטיפול'] : t.status === 'blocked' ? ['bad', 'נתקע'] : ['bad', 'פתוח'];
+  el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/visit/${id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">פרוטוקול תיקונים</b><button class="btn primary sm" id="print">הדפסה / PDF</button></div>
+    <div class="creport vrep"><div class="pg flow"><div class="pad">
+      <div class="vhead"><img src="logo.png" alt="E-Drone"></div>
+      <div class="rsec">REPAIR PROTOCOL</div><h2>פרוטוקול תיקונים</h2><div class="rule"></div>
+      <div class="meta"><div><div class="k">פרויקט</div><div class="v">${esc(v.projects?.name || '')}</div></div>
+        <div><div class="k">מדוח</div><div class="v">${esc(KIND[v.kind] || 'ביקור')} · ${date(v.visit_date)}</div></div>
+        <div><div class="k">מצב</div><div class="v">${T.length ? (dn === T.length ? 'הושלם' : `${dn} מתוך ${T.length} טופלו`) : '—'}</div></div></div>
+      ${T.length ? T.map((t, i) => { const [c, l] = stat(t); return `<div class="vrow"><div class="vn">${i + 1}</div><div class="grow">
+        <div class="vt"><span>${esc(t.title)}</span><span class="vs ${c}">${l}</span></div>
+        <div class="small muted">${[t.profiles?.full_name ? 'מטפל: ' + esc(t.profiles.full_name) : t.status === 'done' ? '' : 'ממתין לשיוך', t.due && t.status !== 'done' ? 'עד ' + dm(t.due) : ''].filter(Boolean).join(' · ')}</div>
+        ${t.status === 'done' ? `<div class="vdone">טופל · ${dm(isoDay(new Date(t.done_at)))}${t.done_note ? ' — ' + esc(t.done_note) : ''}</div>` : ''}
+        ${strip(before(t), 'לפני')}${t.status === 'done' ? strip(t.photos?.after || [], 'אחרי') : ''}</div></div>`; }).join('') : '<p>אין פריטי תיקון בדוח הזה</p>'}
+      <div class="end"><div class="l"><b>E-Drone Technologies</b></div><img src="logo.png" alt="E-Drone"></div>
     </div></div></div>`;
   document.body.classList.add('printing-report');
   addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });

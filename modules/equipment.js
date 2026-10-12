@@ -141,7 +141,7 @@ async function renderDrone(el, r, ctx) {
   const last = SV.find(x => ['periodic', 'inspection'].includes(x.kind)), since = sum(last?.done_on), life = sum(null);
   const ddays = last ? -daysTo(last.done_on) : null;
   // מה נגמר ראשון: שעות / טיסות / ימים
-  const left = last ? [[S.hours * 60 - since.m, x => `${hrs(x)} שעות`, since.m / (S.hours * 60)], [S.flights - since.f, x => `${Math.round(x)} טיסות`, since.f / S.flights], [S.days - ddays, x => `${Math.round(x)} ימים`, ddays / S.days]].sort((a, b) => b[2] - a[2])[0] : null;
+  const left = last ? [[S.hours * 60 - since.m, x => `${hrs(x)} שעות`, since.m / (S.hours * 60)], [S.flights - since.f, x => `${Math.round(x)} טיסות`, since.f / S.flights], [S.days - ddays, x => `${Math.round(x)} ימים`, ddays / S.days]].filter((_, i) => +[S.hours, S.flights, S.days][i] > 0).sort((a, b) => b[2] - a[2])[0] || null : null;
   const pct = left ? Math.round(left[2] * 100) : null;
   const h = HEALTH[r.health] || HEALTH.ok, svs = SVC[r.service_state || 'unknown'];
   const tone = !last ? '' : pct >= 100 ? 'bad' : pct >= (S.warn_pct || 85) ? 'warn' : 'ok';

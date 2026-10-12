@@ -6,7 +6,8 @@ import { errText } from '../lib/audit.js';
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
 const DENS = ['נמוכה', 'בינונית', 'גבוהה'];
-const MAT = ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'];
+const MAT = ['Assert Lemon', 'Topax', 'מסיר צמנט', 'מים בלבד', 'אחר'];
+const MAT_DEF = 'Assert Lemon', MAT_HEAVY = 'Topax';   // חלונות/חזיתות → Assert Lemon; עובש ולכלוך כבד → Topax; מסיר צמנט — רק בחריג
 const METHOD = ['רחפן', 'סנפלינג', 'משולב'];
 const TOGS = [['docking', 'אזורי עגינה'], ['secure_storage', 'אחסון ציוד מאובטח']];
 // שטח ולוגיסטיקה (specs.site_ops, 096) — זורם לתכנית: מכלית/גנרטור/תיאומים = משימות הכנה ביום 1, סיכונים = דגשים
@@ -343,6 +344,8 @@ export async function renderBuilding(el, slug, bid) {
   if (form.work_window == null) form.work_window = 'רגיל';
   // מה רלוונטי לפי השירות באתר: מידול ומיפוי — בלי שדות שטיפה; פנלים/יריעות — בלי ספירה לפי חזיתות
   const svc = s.service || '', WASH = !/מידול|מיפוי/.test(svc);
+  // ברירת מחדל לחומר — רק כשהשדה ריק (בחירה של הסוקר לא נדרסת)
+  if (editable && WASH && form.material == null && !/פנלים|סולאר/.test(svc)) form.material = MAT_DEF;   // נשמר עם השינוי הראשון / סיום — פתיחה בלבד לא הופכת לטיוטה
   const plans = await signedUrls('plans', b.plan_images.map(p => p.storage_path));
   const chips = (k, opts) => `<div class="chips">${opts.map(o => `<button type="button" class="chip" data-g="${k}" data-v="${esc(o)}" aria-pressed="${form[k] === o}">${esc(o)}</button>`).join('')}</div>`;
   const [sc, st] = STAT[spec.status];
@@ -395,7 +398,8 @@ export async function renderBuilding(el, slug, bid) {
       <div class="field">שיטת ביצוע ${chips('method', METHOD)}</div>
       ${WASH ? `<div class="field">מתי נשטף לאחרונה ${chips('washed_last', WASHED)}</div>
       <div class="field">רמת לכלוך וצפיפות ${chips('density', DENS)}</div>
-      <div class="field">חומר ניקוי ${chips('material', MAT)}</div>
+      <div class="field">חומר ניקוי ${chips('material', MAT)}
+        <div class="chips"><button type="button" class="chip" id="heavy" aria-pressed="${form.material === MAT_HEAVY}">${icon('alert', 15)} עובש / לכלוך כבד</button></div></div>
       <div class="note" id="dirtNote" ${['מעל שנתיים', 'לא נשטף מעולם'].includes(form.washed_last) ? '' : 'hidden'}>לא נשטף מעל שנתיים — כדאי להוסיף ימים</div>` : ''}
     </div>
     <div class="sec" id="secops"><h3>שטח ולוגיסטיקה</h3>
@@ -443,7 +447,15 @@ export async function renderBuilding(el, slug, bid) {
     const g = c.dataset.g; set(g, form[g] === c.dataset.v ? null : c.dataset.v);
     $$(`.chip[data-g="${g}"]`, el).forEach(x => x.setAttribute('aria-pressed', x.dataset.v === form[g]));
     if (g === 'washed_last') $('#dirtNote').hidden = !['מעל שנתיים', 'לא נשטף מעולם'].includes(form[g]);
+    if (g === 'material' && $('#heavy')) $('#heavy').setAttribute('aria-pressed', form.material === MAT_HEAVY);
   });
+  // לחיצה אחת: עובש / לכלוך כבד → Topax (ורמת לכלוך גבוהה אם לא סומנה). לחיצה שנייה מחזירה לברירת המחדל
+  const hv = $('#heavy'); if (hv) hv.onclick = () => {
+    const on = form.material !== MAT_HEAVY; set('material', on ? MAT_HEAVY : MAT_DEF);
+    if (on && form.density == null) set('density', 'גבוהה');
+    $$('.chip[data-g="material"], .chip[data-g="density"]', el).forEach(x => x.setAttribute('aria-pressed', x.dataset.v === form[x.dataset.g]));
+    hv.setAttribute('aria-pressed', on);
+  };
   const days = $('#days');
   // בדיקת מציאות: קצב שנגזר מהמספרים של הסוקר עצמו (שטח ÷ ימים) — לא מספר מומצא
   const rate = () => { const a = Number(b.facade_area_m2 || form.area_m2), d = Number(days.value); $('#rate').textContent = a && d ? `≈ ${nf(Math.round(a / d))} מ״ר חזית ליום עבודה` : ''; ready(); };

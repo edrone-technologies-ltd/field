@@ -31,7 +31,7 @@ export async function load() {
     q(sb.from('field_reports').select('monday_item_id,project_id,project_label,report_date,crew,work,had_issues,issues,photos').gte('report_date', since).order('report_date', { ascending: false })),
     M ? q(sb.from('spec_visits').select('*')) : [],
     q(sb.from('equipment').select('id,name,health,health_detail,health_date').eq('kind', 'drone').order('name')),
-    M ? q(sb.from('profiles').select('id,full_name,role,is_pilot,pilot_license_expiry,is_active')) : [],
+    M ? q(sb.rpc('profiles_full').select('id,full_name,role,is_pilot,pilot_license_expiry,is_active')) : [],
     q(sb.from('work_days').select('id,day,status,report_time,site_arrival,project_id,crew_lead_id,is_last_day,day_goal,gust_max,wind_max,weather_alerted,work_day_crew(*,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
     M ? q(sb.from('sync_log').select('created_at').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)) : [],
     M ? q(sb.from('sync_log').select('entity,entity_id,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],

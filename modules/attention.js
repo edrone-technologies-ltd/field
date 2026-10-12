@@ -55,7 +55,7 @@ async function certRows() {
   const today = new Date().toISOString().slice(0, 10), lim = new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10);
   const [{ data: docs }, { data: ppl }] = await Promise.all([
     sb.from('employee_docs').select('user_id,kind,title,expires_on').in('kind', ['certificate', 'license']).not('expires_on', 'is', null),
-    sb.from('profiles').select('id,full_name,is_pilot,pilot_license_expiry').eq('is_active', true)]);
+    sb.rpc('profiles_full').select('id,full_name,is_pilot,pilot_license_expiry').eq('is_active', true)]);
   const P = new Map((ppl || []).map(p => [p.id, p]));
   const last = new Map(); (docs || []).forEach(d => { const k = d.user_id + '|' + d.kind + '|' + (d.title || '').trim(); if (!last.has(k) || last.get(k).expires_on < d.expires_on) last.set(k, d); });   // חודש = רק האחרון קובע
   const due = [...last.values()].filter(d => P.has(d.user_id) && d.expires_on <= lim && !(/מטיס/.test(d.title || '') && P.get(d.user_id).pilot_license_expiry))
