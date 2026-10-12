@@ -82,6 +82,20 @@ async function equipRows() {
     : [{ k: 'equip', tone, ic: icon('drone', 18), title: `${due.length} ביטוחים / רישויים של כלים ${tone === 'bad' ? 'פגו או פגים' : 'פגים בקרוב'}`, sub: due.map(line).join(' · '),
         list: due.map(x => ({ href: '#/equipment', t: line(x), s: when(x) })) }];
 }
+// הנהלה: ימי שטח שעברו (30 יום אחורה) בלי דוח סגור — חור בשכר ובחיוב. שורה אחת; לחיצה = רשימת הימים, כל יום נפתח ישר
+async function unclosedRows() {
+  if (!['admin', 'ops_manager'].includes(state.profile.role)) return [];
+  const iso = d => d.toISOString().slice(0, 10), t = iso(new Date()), from = iso(new Date(Date.now() - 30 * 864e5));
+  const { data } = await sb.from('work_days').select('id,day,status,kind,projects(name),lead:profiles!work_days_crew_lead_id_fkey(full_name)')
+    .lt('day', t).gte('day', from).not('status', 'in', '(done,cancelled)').order('day', { ascending: false }).limit(60);
+  const D = data || []; if (!D.length) return [];
+  const dm = d => `${+d.slice(8)}.${+d.slice(5, 7)}`, ST = { planned: 'לא התחיל', en_route: 'נשאר בדרך', on_site: 'באתר', working: 'בעבודה', issue: 'תקלה' };
+  const s = d => [dm(d.day), (d.lead?.full_name || '').split(' ')[0], d.kind === 'report' ? 'טיוטה' : ST[d.status]].filter(Boolean).join(' · ');
+  const old = D.some(d => (Date.parse(t) - Date.parse(d.day)) / 864e5 > 3);
+  return D.length === 1 ? [{ k: 'unclosed', tone: 'warn', ic: icon('report', 18), title: `יום שטח בלי דוח סגור · ${D[0].projects?.name || ''}`, sub: s(D[0]), href: `#/day/${D[0].id}` }]
+    : [{ k: 'unclosed', tone: old ? 'bad' : 'warn', ic: icon('report', 18), title: `${D.length} ימי שטח בלי דוח סגור`, sub: [...new Set(D.map(d => d.projects?.name).filter(Boolean))].join(' · '),
+        list: D.map(d => ({ href: `#/day/${d.id}`, t: d.projects?.name || 'יום שטח', s: s(d) })) }];
+}
 async function tourRows() {
   if (state.profile.role !== 'ops_manager') return [];
   const { data: it } = await sb.from('kb_items').select('id').eq('video_url', '#/tour/ops').maybeSingle(); if (!it) return [];
@@ -107,7 +121,7 @@ async function pushRows() {
 
 // כל מה שמחכה למשתמש עצמו (הודעות, הדרכות, קליטה, התראות, שיבוץ שחסר)
 export async function attentionItems() {
-  const parts = await Promise.all([noPushRows(), tourRows(), schedRows(), certRows(), equipRows(), import('./repairs.js').then(m => m.repairRows()), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));   // תיקונים: ממתינים לאישור / הוחזרו (db/112)
+  const parts = await Promise.all([noPushRows(), tourRows(), unclosedRows(), schedRows(), certRows(), equipRows(), import('./repairs.js').then(m => m.repairRows()), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));   // תיקונים: ממתינים לאישור / הוחזרו (db/112)
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   return items;
@@ -137,9 +151,9 @@ export function bindNeeds(root, items, redraw) {
     else if (x.act) a.onclick = async e => { e.preventDefault(); if (a.disabled) return; a.disabled = true; try { await x.act(); } catch (err) { toast(errText(err)); } finally { a.disabled = false; } };
   });
 }
-export async function attention(box) {
+export async function attention(box, { limit = 5 } = {}) {
   if (!box) return;
   const items = sortNeeds(await attentionItems());
-  box.innerHTML = needsList(items, { title: 'מחכה לך' });
-  bindNeeds(box, items, () => attention(box));
+  box.innerHTML = needsList(items, { title: 'מחכה לך', limit });
+  bindNeeds(box, items, () => attention(box, { limit }));
 }

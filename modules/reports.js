@@ -8,7 +8,7 @@ const rating = n => `<span class="rating" aria-label="${n} מתוך 5">${icon('s
 const thumb = (url, ic, cls = '') => url ? `<span class="mic"><img src="${esc(url)}" alt=""></span>` : `<span class="mic ${cls}">${icon(ic, 20)}</span>`;
 export const TYPES = [
   { k: 'spec', ic: 'clipboard', t: 'אפיון', s: 'סיור אפיון לליד או לאתר', ok: () => can('specs'), noProject: true },
-  { k: 'daily', ic: 'report', t: 'דוח ביצוע יומי', s: 'מה בוצע, שעות, צוות, חומר ותמונות', ok: () => true },
+  { k: 'daily', ic: 'report', t: 'דוח ביצוע יומי', s: 'מה בוצע, שעות, צוות, חומר ותמונות', ok: () => state.profile.role !== 'crew' },   // הדוח היומי = ראש הצוות ומעלה
   { k: 'issue', ic: 'alert', t: 'תקלה / אירוע בטיחות', s: 'רחפן, ציוד, אתר, כמעט תאונה', ok: () => true },
   { k: 'expense', ic: 'report', t: 'הוצאה', s: 'דלק, חניה, אגרה, אוכל, לינה — עם צילום קבלה', ok: () => true },
   { k: 'signoff', ic: 'clipboard', t: 'החתמת לקוח — אישור ביצוע', s: 'הלקוח מאשר וחותם באצבע', ok: ROLE_CAN_SIGN },

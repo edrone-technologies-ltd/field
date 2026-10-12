@@ -13,7 +13,7 @@ export async function renderDispatch(el, start, o = {}) {
   if (!isManager()) { el.innerHTML = '<div class="empty-line">למנהלים בלבד</div>'; return; }
   start = sunday(start || isoDay());
   const days = [0, 1, 2, 3, 4, 5].map(i => addDays(start, i)), end = days.at(-1);
-  el.innerHTML = `<header class="phead"><a class="back" href="#/schedule" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">${o.title || 'לוח שיבוץ'}</h1></header>
+  el.innerHTML = `<header class="phead"><a class="back" href="#/schedule" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">${o.title || 'לוח שיבוץ'}</h1><a class="btn primary sm wzbtn" href="#/wizard/${start}">${icon('star', 16)} הקוסם</a></header>
     <div class="monthbar"><button id="wp" aria-label="שבוע קודם">${icon('back', 18)}</button><b>${dm(start)} – ${dm(end)}</b><button id="wn" aria-label="שבוע הבא">${icon('chev', 18)}</button></div>
     <div id="db"><div class="skel tall"></div></div>`;
   $('#wp').onclick = () => replaceHash('#/dispatch/' + addDays(start, -7));

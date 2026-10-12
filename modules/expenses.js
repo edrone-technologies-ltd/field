@@ -16,7 +16,7 @@ export async function renderExpenses(el) {
   const mine = (rows || []).filter(r => r.user_id === state.user.id), pend = M ? (rows || []).filter(r => r.status === 'pending' && r.user_id !== state.user.id) : [];
   const urls = await signedUrls('field', (rows || []).map(r => r.receipt_path).filter(Boolean)).catch(() => ({}));
   const row = (r, decide) => { const [t, c] = ST[r.status];
-    return `<div class="lrow xrow">${r.receipt_path && urls[r.receipt_path] ? `<img src="${esc(urls[r.receipt_path])}" alt="קבלה" data-z="${esc(urls[r.receipt_path])}">` : `<span class="rep-ph">${icon('report', 20)}</span>`}
+    return `<div class="lrow xrow"${decide ? ` data-bk="${r.id}"` : ''}>${r.receipt_path && urls[r.receipt_path] ? `<img src="${esc(urls[r.receipt_path])}" alt="קבלה" data-z="${esc(urls[r.receipt_path])}">` : `<span class="rep-ph">${icon('report', 20)}</span>`}
       <span class="grow"><b>${nis(r.amount)} · ${CATS[r.category]}</b><small>${dm(r.day)}${r.vendor ? ' · ' + esc(r.vendor) : ''}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}${decide ? ' · ' + esc(r.profiles?.full_name || '') : ''}</small>
       ${r.note ? `<small>${esc(r.note)}</small>` : ''}${r.manager_reply ? `<small class="mreply">תגובה: ${esc(r.manager_reply)}</small>` : ''}${M && r.morning_status === 'sent' ? `<small class="ok">במורנינג ${icon('check', 12)}</small>` : M && r.morning_error && r.morning_tries >= 5 ? '<small class="err">לא נשלח למורנינג</small>' : ''}</span>
       ${decide ? `<span class="stack tight"><button class="chip" data-ok="${r.id}">אישור</button><button class="chip" data-no="${r.id}">דחייה</button></span>` : `<span class="pill ${c}">${t}</span>`}</div>`; };
@@ -31,6 +31,14 @@ export async function renderExpenses(el) {
   const oa = $('#okall'); if (oa) oa.onclick = async () => { if (oa.disabled) return; oa.disabled = true;
     const { error } = await sb.from('expenses').update({ status: 'approved', manager_id: state.user.id, decided_at: new Date().toISOString() }).in('id', pend.map(r => r.id));
     if (error) { oa.disabled = false; return toast(errText(error)); } toast(`אושרו ${pend.length}`); reload(); };
+  // מסך רחב (כספים): בחירה מרובה ו"אישור N · ₪" — אותו עדכון כמו "אישור הכל", רק על הנבחרות
+  if (pend.length > 1 && matchMedia('(min-width:1100px)').matches) import('../lib/bulk.js').then(B => {
+    const sum = ids => nis(pend.filter(r => ids.includes(r.id)).reduce((t, r) => t + Number(r.amount), 0));
+    const b = B.bulk($('#xb'), { items: '[data-bk]', label: n => `אישור ${n}`, run: async ids => { const { error } = await sb.from('expenses').update({ status: 'approved', manager_id: state.user.id, decided_at: new Date().toISOString() }).in('id', ids).eq('status', 'pending'); return error ? [error] : []; }, after: reload });
+    if (!b) return; oa?.setAttribute('hidden', '');
+    const go = b.bar.querySelector('.bk-go'), upd = () => { const ids = b.chosen().map(e => e.dataset.bk); if (ids.length && !go.disabled) go.textContent = `אישור ${ids.length} · ${sum(ids)}`; };
+    b.bar.parentElement.addEventListener('change', () => setTimeout(upd, 0));
+  }).catch(() => {});
   if (/^#\/expenses\/new/.test(location.hash)) { replaceHash('#/expenses', false); newExpense(null, reload); }   // מה"+" — בלי כפתור במסך
   $$('[data-z]', el).forEach(i => i.onclick = async () => (await import('../lib/core.js')).zoom(i.dataset.z, 'קבלה'));
   // אישור/דחייה: נועלים את שני הכפתורים של השורה עד תשובת השרת

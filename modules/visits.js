@@ -3,6 +3,7 @@
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, backBtn, signedUrls, zoom, isoDay, dm, goUp, confirmBox } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { errText } from '../lib/audit.js';
+import { shareIcon, sharePrint } from '../lib/share.js';
 
 export const KIND = { crew_check: 'ביקורת צוות בשטח', client_tour: 'סיור עם לקוח', quality: 'בקרת איכות', other: 'ביקור אחר' };
 const FIELD = ['ops_manager', 'crew_lead', 'crew', 'surveyor', 'admin'];
@@ -212,7 +213,7 @@ export async function renderVisitReport(el, id) {
     return aft.length ? strip(PH(x), 'לפני') + strip(aft, 'אחרי') : strip(PH(x)); };
   const done = x => { const t = TK.get(x.task_id); return t?.status === 'done' ? `<div class="vdone">טופל · ${dm(isoDay(new Date(t.done_at)))}${t.done_note ? ' — ' + esc(t.done_note) : ''}</div>` : ''; };
   const SC = { ok: 'ok', note: 'warn', fix: 'bad' };
-  el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/visit/${id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ${esc(KIND[v.kind] || 'ביקור')}</b><button class="btn primary sm" id="print">הדפסה / PDF</button></div>
+  el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/visit/${id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ${esc(KIND[v.kind] || 'ביקור')}</b><button class="btn ghost sm" id="print">הדפסה</button><button class="btn primary sm" id="vsh">${shareIcon(16)} PDF</button></div>
     <div class="creport vrep"><div class="pg flow"><div class="pad">
       <div class="vhead"><img src="logo.png" alt="E-Drone"></div>
       <div class="rsec">SITE VISIT REPORT</div><h2>${esc(KIND[v.kind] || 'דוח ביקור')}</h2><div class="rule"></div>
@@ -230,6 +231,7 @@ export async function renderVisitReport(el, id) {
   document.body.classList.add('printing-report');
   addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });
   $('#print').onclick = () => window.print();
+  $('#vsh').onclick = e => sharePrint(e.currentTarget, $('.creport', el), `${KIND[v.kind] || 'דוח ביקור'} - ${v.projects?.name || ''} - ${dm(v.visit_date)}`, `${KIND[v.kind] || 'דוח ביקור'} · ${v.projects?.name || ''}`);
 }
 
 // ----- פרוטוקול תיקונים: מסמך אחד לכל פריטי התיקון מהביקור — לפני, מטפל, סטטוס, ואחרי כשנסגר.
@@ -249,7 +251,7 @@ export async function renderRepairProtocol(el, id) {
   const strip = (list, tag) => list.length ? `<div class="vpics">${list.map(ph => urls[ph] ? `<div class="vp"><img src="${esc(urls[ph])}" alt=""><span class="tg ${tag === 'אחרי' ? 'a' : ''}">${tag}</span></div>` : '').join('')}</div>` : '';
   const date = d => new Date(d + 'T12:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' });
   const stat = t => t.status === 'done' ? ['ok', t.review === 'approved' ? 'טופל · אושר' : 'טופל'] : t.review === 'pending' ? ['warn', 'ממתין לאישור'] : t.review === 'returned' ? ['bad', 'הוחזר לתיקון'] : t.status === 'in_progress' ? ['warn', 'בטיפול'] : t.status === 'blocked' ? ['bad', 'נתקע'] : ['bad', 'פתוח'];
-  el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/visit/${id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">פרוטוקול תיקונים</b><button class="btn primary sm" id="print">הדפסה / PDF</button></div>
+  el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/visit/${id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">פרוטוקול תיקונים</b><button class="btn ghost sm" id="print">הדפסה</button><button class="btn primary sm" id="vsh">${shareIcon(16)} PDF</button></div>
     <div class="creport vrep"><div class="pg flow"><div class="pad">
       <div class="vhead"><img src="logo.png" alt="E-Drone"></div>
       <div class="rsec">REPAIR PROTOCOL</div><h2>פרוטוקול תיקונים</h2><div class="rule"></div>
@@ -267,4 +269,5 @@ export async function renderRepairProtocol(el, id) {
   document.body.classList.add('printing-report');
   addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });
   $('#print').onclick = () => window.print();
+  $('#vsh').onclick = e => sharePrint(e.currentTarget, $('.creport', el), `פרוטוקול תיקונים - ${v.projects?.name || ''}`, `פרוטוקול תיקונים · ${v.projects?.name || ''}`);
 }

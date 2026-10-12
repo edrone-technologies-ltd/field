@@ -368,7 +368,7 @@ export async function renderAttendance(el, month) {
   const { data: pShifts } = (pend || []).some(r => r.shift_id) ? await sb.from('shifts').select('*').in('id', pend.filter(r => r.shift_id).map(r => r.shift_id)) : { data: [] };
   box.innerHTML = `
     ${pendAll ? `<section><div class="sh-row"><h3 class="sh">בקשות לאישור</h3>${pendAll > 1 ? `<button class="more" type="button" id="okall">${icon('check', 16)} אישור הכל (${pendAll})</button>` : `<span class="count">1</span>`}</div>
-      <div class="list">${(pabs || []).map(a => `<div class="card stack reqcard"><b>${esc(people.find(x => x.id === a.user_id)?.full_name || '')}</b>${absLine(a)}${absBtns(a)}</div>`).join('')}${(pend || []).map(r => `<div class="card stack reqcard"><b>${esc(people.find(x => x.id === r.user_id)?.full_name || '')} · ${new Date(r.req_start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}</b>${reqLine(r, (pShifts || []).find(x => x.id === r.shift_id))}${decideBtns(r)}</div>`).join('')}</div></section>` : ''}
+      <div class="list" id="reqs">${(pabs || []).map(a => `<div class="card stack reqcard" data-bk="a:${a.id}"><b>${esc(people.find(x => x.id === a.user_id)?.full_name || '')}</b>${absLine(a)}${absBtns(a)}</div>`).join('')}${(pend || []).map(r => `<div class="card stack reqcard" data-bk="r:${r.id}"><b>${esc(people.find(x => x.id === r.user_id)?.full_name || '')} · ${new Date(r.req_start).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric' })}</b>${reqLine(r, (pShifts || []).find(x => x.id === r.shift_id))}${decideBtns(r)}</div>`).join('')}</div></section>` : ''}
     ${month !== ymd(new Date()).slice(0, 7) ? '' : `<section><div class="sh-row"><h3 class="sh">במשמרת עכשיו</h3><span class="count">${nowOn.length}</span></div>
       ${nowOn.length ? `<div class="list">${nowOn.map(s => { const p = people.find(x => x.id === s.user_id); return `<a class="lrow" href="#/attendance/${s.user_id}"><span class="cl-dot"></span><span class="grow"><b>${esc(p?.full_name || '')}</b><small>מ-${tm(s.start_at)} · ${hhmm((Date.now() - new Date(s.start_at)) / 36e5)} שעות${s.start_lat != null ? ` · <span class="maplink" data-ll="${s.start_lat},${s.start_lng}">מיקום כניסה</span>` : ' · בלי מיקום'}</small></span></a>`; }).join('')}</div>` : '<div class="empty-line">אף אחד לא במשמרת כרגע</div>'}</section>`}
     ${fin ? `<div class="kpis"><div class="kpi"><b>${nis(payTotal)}</b><span>${month === ymd(new Date()).slice(0, 7) ? 'שכר עד עכשיו' : 'שכר החודש'}</span></div><div class="kpi"><b>${hhmm(rows.reduce((a, r) => a + r.R.totals.net, 0))}</b><span>שעות</span></div><div class="kpi"><b>${hhmm(rows.reduce((a, r) => a + r.R.totals.ot125 + r.R.totals.ot150, 0))}</b><span>נוספות</span></div></div>` : ''}
@@ -383,6 +383,12 @@ export async function renderAttendance(el, month) {
   $$('.maplink', box).forEach(m => m.onclick = e => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.google.com/maps?q=${m.dataset.ll}`, '_blank'); });
   const xb = $('#exp'); if (xb) xb.onclick = () => exportXlsx(month, rows, mabs || [], rates || [], S);
   const again = () => renderAttendance(el, month);
+  // מסך רחב: בחירה מרובה של תיקוני שעות והיעדרויות ו"אישור N" — אותן פעולות כמו אישור בודד, ברצף
+  if (pendAll > 1 && matchMedia('(min-width:1100px)').matches) import('../lib/bulk.js').then(B => {
+    const r = B.bulk($('#reqs', box), { label: n => `אישור ${n}`, run: (ids, prog) => B.seq(ids, prog, k => { const [t, id] = k.split(':');
+      return t === 'r' ? sb.rpc('decide_shift_request', { rid: id, ok: true, reply: '' }) : sb.from('absences').update({ status: 'approved', manager_id: state.user.id, decided_at: new Date().toISOString() }).eq('id', id); }), after: again });
+    if (r) $('#okall')?.setAttribute('hidden', '');
+  }).catch(() => {});
   $('#okall')?.addEventListener('click', async e => {
     const b = e.currentTarget; if (b.disabled) return;
     if (!(await confirmBox(`לאשר ${pendAll} בקשות?`, { ok: 'אישור הכל' }))) return; lock(b, true);

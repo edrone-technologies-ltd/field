@@ -26,6 +26,16 @@ export async function reviewSheet(items) {
   const urls = await signedUrls('field', L.flatMap(t => [...(t.photos?.before || []), ...(t.photos?.after || [])])).catch(() => ({}));
   const pic = (ph, tag) => urls[ph] ? `<button type="button" class="rvph" data-z="${esc(urls[ph])}"><img src="${esc(urls[ph])}" alt=""><span class="q">${tag}</span></button>` : '';
   const finish = () => { if (changed) dispatchEvent(new HashChangeEvent('hashchange')); };
+  // מסך רחב, כמה תיקונים: כולם ברשת אחת (לפני/אחרי), בחירה ו"אישור N"; "פתיחה" = אישור/החזרה אחד-אחד כמו בטלפון
+  const grid = () => sheet(`<div class="row"><h3 class="grow">תיקונים לאישור</h3><span class="count">${L.length}</span></div>
+    <div class="rvgrid" id="rvg">${L.map((t, k) => `<div class="rvcard" data-bk="${t.id}"><div class="rvpair">${pic((t.photos?.before || [])[0], 'לפני')}${pic((t.photos?.after || []).at(-1), 'אחרי')}</div>
+      <div class="rvmeta"><b>${esc(t.title)}</b><small>${esc([t.project, t.who && 'טיפל: ' + first(t.who), t.returns ? `הוחזר ${t.returns}×` : ''].filter(Boolean).join(' · '))}</small>${t.done_note ? `<small class="note">${esc(t.done_note)}</small>` : ''}</div>
+      <button type="button" class="btn ghost sm" data-one="${k}">פתיחה</button></div>`).join('')}</div>`, (s, close) => {
+    $$('[data-z]', s).forEach(b => b.onclick = e => { e.stopPropagation(); zoom(b.dataset.z, ''); });
+    $$('[data-one]', s).forEach(b => b.onclick = () => { i = +b.dataset.one; show(); });
+    import('../lib/bulk.js').then(B => B.bulk($('#rvg', s), { label: n => `אישור ${n}`, run: (ids, prog) => B.seq(ids, prog, id => sb.rpc('review_repair', { t: id, ok: true, note: null })),
+      after: () => { changed = true; close(); finish(); } }));
+  });
   const show = () => {
     const t = L[i]; if (!t) { finish(); return; }
     sheet(`<div class="row"><h3 class="grow">${esc(t.title)}</h3>${L.length > 1 ? `<span class="count">${i + 1}/${L.length}</span>` : ''}</div>
@@ -52,5 +62,5 @@ export async function reviewSheet(items) {
       };
     });
   };
-  show();
+  if (L.length > 1 && matchMedia('(min-width:1100px)').matches) grid(); else show();
 }

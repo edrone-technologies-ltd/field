@@ -1,12 +1,16 @@
 // תיק אישי: מסמכים (רישיונות, ת"ז, תעודות, חוזה, 101) ותלושי שכר. עובד — צפייה בשלו. מנהלים — העלאה ומחיקה; תלושים — מנהלי מערכת בלבד.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, confirmBox, uid, initials, ROLE_HE, isoDay } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
+import { shareIcon, shareFile } from '../lib/share.js';
 
 export const KINDS = { payslip: 'תלוש שכר', license: 'רישיון', id: 'תעודה מזהה', certificate: 'תעודה / הסמכה', contract: 'חוזה העסקה', form101: 'טופס 101', other: 'אחר' };
 const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
 const mName = m => m ? `${MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}` : '';
 const isAdmin = () => state.profile.role === 'admin';
 const daysTo = d => Math.round((new Date(d) - new Date()) / 864e5);
+// שיתוף הקובץ עצמו (לא קישור חתום). תלוש — רק של עצמי או מנהל מערכת
+const canShare = d => d.kind !== 'payslip' || d.user_id === state.user.id || isAdmin();
+const docName = d => `${d.kind === 'payslip' ? 'תלוש ' + mName(d.month) : d.title}.${(d.storage_path.split('.').pop() || 'pdf').toLowerCase()}`;
 const expPill = d => { if (!d) return ''; const n = daysTo(d); return `<span class="pill ${n < 0 ? 'bad' : n <= 45 ? 'warn' : 'ok'}">${n < 0 ? 'פג' : 'בתוקף עד'} ${new Date(d).toLocaleDateString('he-IL')}</span>`; };
 
 async function openDoc(d) {
@@ -20,11 +24,12 @@ function docList(docs, { manage, reload }) {
   const other = docs.filter(d => d.kind !== 'payslip');
   const row = d => `<div class="lrow"><span class="mic">${icon(d.kind === 'payslip' ? 'report' : 'clipboard', 19)}</span>
     <button class="grow linkish" data-open="${d.id}"><b>${esc(d.kind === 'payslip' ? 'תלוש ' + mName(d.month) : d.title)}</b>${d.kind === 'payslip' ? '' : `<small>${esc(KINDS[d.kind])}</small>`}</button>
-    ${d.user_id === state.user.id && !d.seen_at ? '<span class="newdot" title="חדש" aria-label="חדש"></span>' : ''}${expPill(d.expires_on)}${manage && (d.kind !== 'payslip' || isAdmin()) ? `<button class="chip" data-del="${d.id}" aria-label="מחיקה">מחיקה</button>` : ''}</div>`;
+    ${d.user_id === state.user.id && !d.seen_at ? '<span class="newdot" title="חדש" aria-label="חדש"></span>' : ''}${expPill(d.expires_on)}${canShare(d) ? `<button class="hbtn sm" data-sh="${d.id}" aria-label="שיתוף">${shareIcon(18)}</button>` : ''}${manage && (d.kind !== 'payslip' || isAdmin()) ? `<button class="chip" data-del="${d.id}" aria-label="מחיקה">מחיקה</button>` : ''}</div>`;
   const html = `${pays.length || (manage && isAdmin()) ? `<section><h3 class="sh">תלושי שכר</h3><div class="list">${pays.map(row).join('') || '<div class="empty-line">אין תלושים</div>'}</div></section>` : ''}
     <section><h3 class="sh">מסמכים</h3><div class="list">${other.map(row).join('') || '<div class="empty-line">אין מסמכים</div>'}</div></section>`;
   return { html, bind: root => {
     $$('[data-open]', root).forEach(b => b.onclick = () => openDoc(docs.find(x => x.id === b.dataset.open)));
+    $$('[data-sh]', root).forEach(b => b.onclick = () => { const d = docs.find(x => x.id === b.dataset.sh); shareFile({ bucket: 'hr', path: d.storage_path }, docName(d), d.kind === 'payslip' ? 'תלוש ' + mName(d.month) : d.title, '', { btn: b }); });
     $$('[data-del]', root).forEach(b => b.onclick = async () => {
       const d = docs.find(x => x.id === b.dataset.del);
       if (!(await confirmBox('למחוק את המסמך?', { body: d.kind === 'payslip' ? 'תלוש ' + mName(d.month) : d.title, ok: 'מחיקה', danger: true })) || b.disabled) return;

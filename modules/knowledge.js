@@ -3,6 +3,7 @@
 // "צפיתי והבנתי" = מעקב הדרכה; פריט "חובה" מופיע בבית לכל מי שעוד לא אישר.
 import { sb, state, isManager, can, sheet, icon, $, $$, esc, toast, confirmBox, signedUrls, backBtn, initials, replaceHash, goUp, zoom } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
+import { shareIcon, shareLink, shareFile, appUrl } from '../lib/share.js';
 
 // קהלי יעד: ריק = כולם. מנהלים רואים הכל תמיד
 const AUD = [['pilot', 'מטיסים'], ['operator', 'מפעילי מערכות'], ['crew_lead', 'ראשי צוות'], ['crew', 'כל צוות השטח'], ['surveyor', 'סוקר'], ['ops_manager', 'הנהלה ותפעול']];
@@ -111,7 +112,7 @@ export async function renderKbItem(el, id) {
   if (!v) sb.from('kb_views').insert({ item_id: id, user_id: state.user.id }).then(() => {});
   const files = x.files || [], urls = files.length ? await signedUrls('kb', files.map(f => f.path)) : {};
   const emb = embedUrl(x.video_url), M = isManager();
-  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">${esc(x.title)}</h1></header>
+  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">${esc(x.title)}</h1><button class="hbtn" id="kbsh" aria-label="שיתוף">${shareIcon(20)}</button></header>
     <div class="stack lg">
       <div class="row"><span class="pill">${esc(x.category)}</span>${x.required ? '<span class="pill warn">חובה</span>' : ''}${M && x.roles?.length ? `<span class="pill">${esc(audTxt(x.roles))}</span>` : ''}<span class="grow"></span>${M ? `<button class="chip" id="kbed">עריכה</button>` : ''}</div>
       ${emb ? `<div class="kbvid"><iframe src="${esc(emb)}" allow="autoplay; encrypted-media; fullscreen" allowfullscreen loading="lazy" title="${esc(x.title)}"></iframe></div>`
@@ -120,11 +121,11 @@ export async function renderKbItem(el, id) {
       ${x.auto_done === 'push' && !PUSH_ON ? `<button class="btn primary block big" id="kbsetup">${icon('chat', 18)} הפעלה עכשיו</button>` : ''}
       ${x.body ? `<div class="card kbbody">${esc(x.body).replace(/\n/g, '<br>')}</div>` : ''}
       ${files.some(isImg) ? `<div class="kbshots">${files.filter(isImg).map((f, i) => `<figure><img src="${esc(urls[f.path] || '')}" alt="${esc(f.name.replace(/\.\w+$/, ''))}" loading="lazy"><figcaption>${i + 1}. ${esc(f.name.replace(/^\d+[-_ ]*/, '').replace(/\.\w+$/, ''))}</figcaption></figure>`).join('')}</div>` : ''}
-      ${files.some(f => !isImg(f)) ? `<section><h3 class="sh">מסמכים</h3><div class="list">${files.filter(f => !isImg(f)).map(f => urls[f.path] ? `<a class="lrow" href="${esc(urls[f.path])}" target="_blank" rel="noopener"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b></span><span class="chev">${icon('chev', 18)}</span></a>` : `<div class="lrow"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b><small>לא זמין כרגע</small></span></div>`).join('')}</div></section>` : ''}
+      ${files.some(f => !isImg(f)) ? `<section><h3 class="sh">מסמכים</h3><div class="list">${files.filter(f => !isImg(f)).map(f => urls[f.path] ? `<div class="lrow shrow"><a class="grow shrow-a" href="${esc(urls[f.path])}" target="_blank" rel="noopener"><span class="mic">${icon('file', 19)}</span><b>${esc(f.name)}</b></a><button class="hbtn sm" data-fsh="${esc(f.path)}" aria-label="שיתוף ${esc(f.name)}">${shareIcon(18)}</button></div>` : `<div class="lrow"><span class="mic">${icon('file', 19)}</span><span class="grow"><b>${esc(f.name)}</b><small>לא זמין כרגע</small></span></div>`).join('')}</div></section>` : ''}
       ${x.quiz?.length ? `<section class="card stack" id="kbquiz"></section>` : ''}
       ${x.sign_required ? `<section class="card stack" id="kbsign"></section>` : ''}
       ${!x.quiz?.length && !x.sign_required ? (v?.confirmed_at && kbDone(x, v) ? `<div class="acked center">${icon('check', 16)} צפית ואישרת</div>` : `<button class="btn primary block big" id="kbok">צפיתי והבנתי</button>`) : ''}
-      ${M ? '<div id="kbwho"></div>' : ''}
+      ${M ? `<button class="btn ghost block" id="kbteam">${icon('users', 18)} שיתוף לצוות בצ׳אט</button><div id="kbwho"></div>` : ''}
     </div>`;
   $$('.kbshots img', el).forEach(i => i.onclick = () => zoom(i.src, i.alt));
   const ok = $('#kbok'); if (ok) ok.onclick = async () => {
@@ -135,6 +136,10 @@ export async function renderKbItem(el, id) {
   };
   const su = $('#kbsetup'); if (su) su.onclick = async () => (await import('./welcome.js')).playSetup();
   const ed = $('#kbed'); if (ed) ed.onclick = async () => editKb(x, await cats());
+  // שיתוף: סרטון חיצוני — הקישור הציבורי; הדרכה באפליקציה — קישור למסך (לעובדים מחוברים)
+  $('#kbsh').onclick = () => kbShare(x);
+  $$('[data-fsh]', el).forEach(b => b.onclick = () => { const f = files.find(y => y.path === b.dataset.fsh); shareFile({ bucket: 'kb', path: f.path }, f.name, x.title, '', { btn: b }); });
+  const tm = $('#kbteam'); if (tm) tm.onclick = () => teamShare(x);
   if (x.quiz?.length) drawQuiz(x, v, el, id);
   if (x.sign_required) drawSign(x, v, el, id);
   if (M) {
@@ -325,12 +330,65 @@ async function renderGuide(el, id) {
   const g = GUIDES.find(x => x.id === id);
   if (!g) { el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">מרכז ידע</h1></header><div class="empty-line">ההדרכה לא נמצאה</div>`; return; }
   const M = isManager(), links = g.links.filter(([, , ok]) => ok());
-  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">${esc(g.t)}</h1></header>
+  el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">${esc(g.t)}</h1><button class="hbtn" id="kbsh" aria-label="שיתוף">${shareIcon(20)}</button></header>
     <div class="stack lg">
       <div class="kbg-hero"><span>${icon(g.ic, 34)}</span><div><b>${esc(g.cat)}</b><small>נקודת התחלה כללית — הוראות היצרן ונוהלי החברה קודמים</small></div></div>
       <div class="kbg-cards">${g.cards.map((c, i) => `<section class="kbg-c" style="--i:${i}"><div class="kbg-ct"><span>${icon(c.ic, 18)}</span><b>${esc(c.t)}</b></div><ul>${c.items.map(t => `<li>${esc(t)}</li>`).join('')}</ul></section>`).join('')}</div>
       ${links.length ? `<div class="list">${links.map(([h, t]) => `<a class="lrow" href="${h}"><span class="grow"><b>${esc(t)}</b></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
       ${M ? `<button class="btn ghost block" id="kbrep">${icon('play', 18)} החלפה בסרטון / נוהל של החברה</button>` : ''}
     </div>`;
+  $('#kbsh').onclick = () => shareLink(appUrl('#/kb/' + g.id), g.t, `${g.t} — ${g.sub}`);
   const r = $('#kbrep'); if (r) r.onclick = async () => editKb(null, await cats(), { title: g.t, category: g.cat, body: g.cards.map(c => c.t + ':\n' + c.items.map(t => '• ' + t).join('\n')).join('\n\n') });
+}
+
+// ---------- שיתוף ----------
+const isExt = u => /^https?:\/\//i.test(u || '');
+const kbLink = x => isExt(x.video_url) ? x.video_url : appUrl('#/kb/' + x.id);
+function kbShare(x) {
+  const ext = isExt(x.video_url), docs = (x.files || []).filter(f => !isImg(f));
+  // מסמך יחיד בלי סרטון — משתפים את הקובץ עצמו
+  if (!ext && !x.video_url && !x.body && docs.length === 1) return shareFile({ bucket: 'kb', path: docs[0].path }, docs[0].name, x.title, '', { btn: $('#kbsh') });
+  shareLink(kbLink(x), x.title, ext ? `${x.title} · E-Drone` : `הדרכה באפליקציה: ${x.title}`);
+}
+
+// שיתוף לצוות (מנהלים): בוחרים אנשים / תפקיד / קבוצה קיימת → הודעה בצ׳אט הפנימי עם הקישור. ההתראה הרגילה של הודעה נשלחת
+async function teamShare(x) {
+  const [{ data: ppl }, { data: inbox }] = await Promise.all([
+    sb.from('profiles').select('id,full_name,role,field_role').eq('is_active', true).neq('role', 'partner').neq('id', state.user.id).order('full_name'),
+    sb.rpc('my_inbox').then(r => r, () => ({ data: [] }))]);
+  const P = ppl || [], G = (inbox || []).filter(c => c.kind === 'group');
+  const hasRole = (u, r) => u.role === r || u.field_role === r || (r === 'crew' && ['crew', 'crew_lead'].includes(u.role)) || (r === 'ops_manager' && ['ops_manager', 'admin'].includes(u.role));
+  const R = AUD.filter(([k]) => P.some(u => hasRole(u, k)));
+  const sel = new Set(), gsel = new Set();
+  // ברירת מחדל: קהל היעד של ההדרכה
+  if (x.roles?.length) P.filter(u => x.roles.some(r => hasRole(u, r))).forEach(u => sel.add(u.id));
+  sheet(`<h3>שיתוף לצוות</h3><div class="small muted">${esc(x.title)}</div>
+    ${G.length ? `<div class="field">קבוצה<div class="chips">${G.map(c => `<button type="button" class="chip" data-g="${c.id}" aria-pressed="false">${icon('users', 15)} ${esc(c.title)}</button>`).join('')}</div></div>` : ''}
+    ${R.length ? `<div class="field">לפי תפקיד<div class="chips">${R.map(([k, l]) => `<button type="button" class="chip" data-r="${k}">${l}</button>`).join('')}</div></div>` : ''}
+    <div class="field"><span class="row"><span class="grow">אנשים</span><button type="button" class="chip sm" id="tsall">כולם</button></span><div class="list tspl">${P.map(u => `<label class="lrow tsp"><span class="avatar sm">${esc(initials(u.full_name))}</span><b class="grow">${esc(u.full_name)}</b><input type="checkbox" data-u="${u.id}" ${sel.has(u.id) ? 'checked' : ''}></label>`).join('')}</div></div>
+    <label class="tog"><span>חשוב — עם אישור קריאה</span><span class="sw"><input type="checkbox" id="tsimp" ${x.required ? 'checked' : ''}><i></i></span></label>
+    <button class="btn primary block big" id="tsgo"></button><button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
+    const go = $('#tsgo', s);
+    const cnt = () => { const n = sel.size + gsel.size; go.disabled = !n; go.textContent = n ? `שליחה${gsel.size ? ` · ${gsel.size} קבוצות` : ''}${sel.size ? ` · ${sel.size} אנשים` : ''}` : 'בחרו למי'; };
+    const sync = () => { $$('[data-u]', s).forEach(c => c.checked = sel.has(c.dataset.u)); $$('[data-r]', s).forEach(b => { const ids = P.filter(u => hasRole(u, b.dataset.r)).map(u => u.id); b.setAttribute('aria-pressed', ids.length && ids.every(i => sel.has(i))); }); cnt(); };
+    $$('[data-u]', s).forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.u) : sel.delete(c.dataset.u); sync(); });
+    $$('[data-r]', s).forEach(b => b.onclick = () => { const ids = P.filter(u => hasRole(u, b.dataset.r)).map(u => u.id), on = ids.every(i => sel.has(i)); ids.forEach(i => on ? sel.delete(i) : sel.add(i)); sync(); });
+    $$('[data-g]', s).forEach(b => b.onclick = () => { const g = b.dataset.g; gsel.has(g) ? gsel.delete(g) : gsel.add(g); b.setAttribute('aria-pressed', gsel.has(g)); cnt(); });
+    $('#tsall', s).onclick = () => { const all = P.every(u => sel.has(u.id)); P.forEach(u => all ? sel.delete(u.id) : sel.add(u.id)); sync(); };
+    sync();
+    go.onclick = async () => {
+      if (go.disabled) return; go.disabled = true; go.textContent = 'שולח…';
+      const body = `${x.video_url && !isExt(x.video_url) ? 'הדרכה' : x.video_url ? 'סרטון הדרכה' : 'הדרכה'}: ${x.title}\n${appUrl('#/kb/' + x.id)}`;
+      const imp = $('#tsimp', s).checked;
+      // קבוצה שכל חבריה כבר נבחרו כאנשים — לא שולחים להם גם בנפרד
+      const inG = new Set(G.filter(c => gsel.has(c.id)).flatMap(c => (c.members || []).map(m => m.id)));
+      const convs = [...gsel];
+      let fail = 0;
+      for (const u of [...sel].filter(u => !inG.has(u))) { const { data, error } = await sb.rpc('open_dm', { other: u }); if (error || !data) fail++; else convs.push(data); }
+      const rows = convs.map(c => ({ id: crypto.randomUUID(), conversation_id: c, author_id: state.user.id, body, important: imp }));
+      const { error } = rows.length ? await sb.from('messages').insert(rows) : { error: null };
+      if (error) { go.disabled = false; cnt(); return toast(errText(error, 'לא נשלח — נסו שוב')); }
+      close(); toast(`נשלח ל-${rows.length} שיחות${fail ? ` · ${fail} לא נשלחו` : ''}`);
+    };
+  });
 }

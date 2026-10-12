@@ -1,13 +1,23 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir, skeleton, freshReads } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir, skeleton, freshReads, replaceHash } from './lib/core.js';
 import { errText } from './lib/audit.js';
 
 const app = $('#app');
+// מחשב (מסך ≥1100, מנהל תפעול ומעלה): סרגל צד במקום הבר התחתון, חיפוש מהיר, רשימה + פירוט — lib/ws.js. בטלפון לא נטען
+const WIDE = matchMedia('(min-width:1100px)');
+const wsOn = () => WIDE.matches && !!state.profile && isManager() && !document.body.classList.contains('client-mode');
+const isWs = () => !!WS && document.body.classList.contains('ws');
+let WS = null;
+async function wsSync() {
+  const on = wsOn();
+  if (on) { WS ||= await import('./lib/ws.js'); document.body.classList.add('ws'); WS.mount({ quickAdd, setTheme }); }
+  else { document.body.classList.remove('ws'); WS?.unmount(); }
+}
 // לשוניות תחתונות — מוצגות לפי ההרשאות
 const TABS = [
   { k: '', t: 'בית', ic: 'home', ok: () => true },
   { k: 'schedule', t: 'לו״ז', ic: 'calendar', ok: () => can('today') || isManager() },   // מנהל: לוח השיבוץ · עובד: הימים שלו
-  { k: 'projects', t: 'פרויקטים', ic: 'folder', ok: () => can('projects') },
+  { k: 'projects', t: 'פרויקטים', ic: 'folder', ok: () => can('projects') && state.profile?.role !== 'crew' },   // עובד שטח: היום שלו מגיע מהבית
   { k: 'inbox', t: 'הודעות', ic: 'chat', ok: () => true },
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
@@ -16,7 +26,7 @@ const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops'
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
-  nav(false); import('./modules/login.js').then(m => m.renderLogin(app, msg, () => boot('login')));
+  nav(false); document.body.classList.remove('ws'); WS?.unmount(); import('./modules/login.js').then(m => m.renderLogin(app, msg, () => boot('login')));
 }
 
 // ---------- ניווט תחתון ----------
@@ -72,7 +82,7 @@ function renderMenu() {
       !isManager() && ['#/requests', 'send', 'בקשה למשרד', 'שכר, ציוד, מסמכים'],
     ]],
     ['שטח', [
-      ['#/weather', 'sun', 'מזג אוויר וטיסה', 'לכל אתר ולכל מקום — רוח, משבים, גשם, Kp'],
+      state.profile.role !== 'crew' && ['#/weather', 'sun', 'מזג אוויר וטיסה', 'לכל אתר ולכל מקום — רוח, משבים, גשם, Kp'],   // עובד שטח: התחזית בכרטיס היום
       ['#/kb', 'book', 'מרכז ידע', 'הדרכות וסרטוני תפעול'],
       can('specs') && ['#/specs', 'clipboard', 'אפיונים', 'סיורים לפי אתר ומבנה'],
       isManager() && ['#/reports', 'photo', 'דוחות שטח', 'כל הדוחות והתמונות'],
@@ -230,6 +240,12 @@ function slotSave() {
 addEventListener('pagehide', slotSave);
 document.addEventListener('visibilitychange', () => { if (document.hidden) slotSave(); });
 async function route(ev) {
+  // מחשב: יום שטח מלוח השיבוץ נפתח במגירה ליד הלוח; מעבר בין פריטים ברשימה+פירוט — רק הפאנל מתחלף
+  if (isWs()) {
+    const peek = WS.dayPeek(lastHash, location.hash); if (peek) replaceHash(peek, false);
+    const c = location.hash || '#/'; WS.active(c); WS.badges(); if (/^#\/?(ops)?$/.test(c)) WS.syncNeeds();
+    if (ev !== REFRESH && WS.paneOnly(lastHash, c)) { ++navSeq; lastHash = c; return WS.paneUpdate(c); }
+  }
   const my = ++navSeq;
   const cur = location.hash || '#/', d = navDir(), prev = lastHash;
   snapSave(prev); slotSave(); slotWatch(cur.replace(/\/[0-9a-f-]{36}/g, '/:id') + '|' + (state.profile?.role || ''));
@@ -290,6 +306,7 @@ async function routeInner() {
     case 'ops': return (await import('./modules/ops.js')).renderOps(app);
     case 'live': if (!isManager()) return deny(); return (await import('./modules/live.js')).renderLive(app);
     case 'desk': if (!isManager()) return deny(); return (await import('./modules/desk.js')).renderDesk(app, h.slice(1).join('/'));   // שולחן ניהול (מחשב)
+    case 'wizard': if (!isManager()) return deny(); return (await import('./modules/wizard.js')).renderWizard(app, h[1]);   // הקוסם — הצעת שיבוץ לשבוע
     case 'compliance': if (!isManager()) return deny(); return (await import('./modules/compliance.js')).renderCompliance(app);
     case 'schedule': case 'today': return (await home()).renderSchedule(app);
     case 'alerts': return (await home()).renderAlerts(app);
@@ -300,7 +317,7 @@ async function routeInner() {
     case 'hours': return (await import('./modules/attendance.js')).renderHours(app, null, h[1]);
     case 'attendance': { const m = await import('./modules/attendance.js'); if (h[1] === 'm' || !h[1]) return m.renderAttendance(app, h[2]); return m.renderHours(app, h[1], h[2]); }
     case 'purchase': if (guard('purchase')) { await (await import('./modules/purchase.js')).renderPurchase(app); } return;
-    case 'dispatch': return (await import('./modules/dispatch.js')).renderDispatch(app, h[1]);
+    case 'dispatch': { await (await import('./modules/dispatch.js')).renderDispatch(app, h[1]); if (isWs() && h[2] === 'd' && /^[0-9a-f-]{36}$/.test(h[3] || '')) WS.drawerDay(h[3], h[1] || ''); return; }
     case 'client-report': return (await import('./modules/clientreport.js')).renderClientReport(app, h[1]);
     case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
@@ -325,7 +342,7 @@ async function routeInner() {
     case 'signoff': return (await import('./modules/signoff.js')).renderSignoff(app, h[1], h[2] || null);   // #/signoff/<project>[/<work_day>]
     case 'summary': return (await import('./modules/reports.js')).renderSummary(app, h[1]);
     case 'day': return (await import('./modules/today.js')).renderDay(app, h[1]);
-    case 'projects': if (guard('projects')) return (await import('./modules/projects.js')).renderProjects(app); return;
+    case 'projects': if (guard('projects')) return isWs() ? WS.projectsMD(app, h[1] || null, h[2] || null) : (await import('./modules/projects.js')).renderProjects(app); return;   // מחשב: רשימה + פרויקט בפאנל
     case 'p': if (guard('projects')) return (await import('./modules/projects.js')).renderProject(app, h[1], h[2] || 'o'); return;
     case 'equipment': if (guard('equipment')) return (await import('./modules/equipment.js')).renderEquipment(app); return;
     case 'specs': if (guard('specs')) return (await import('./modules/specs.js')).renderSites(app); return;
@@ -356,6 +373,8 @@ async function boot(how = 'open') {
   try { const t = localStorage.getItem('edrone-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
   if (!(await loadMe())) return renderLogin();
   if (!state.profile.is_active) { await sb.auth.signOut(); return renderLogin('הגישה שלך הושבתה. פנו למשרד.'); }
+  await wsSync().catch(e => console.error(e));
+  WIDE.addEventListener('change', () => wsSync().then(() => route(NOANIM)).catch(() => {}));
   addEventListener('hashchange', route);
   updateNet(); flush(); route(); themeColor();
   import('./modules/welcome.js').then(m => m.maybeWelcome()).catch(() => {});

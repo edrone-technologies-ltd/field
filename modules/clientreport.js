@@ -1,6 +1,7 @@
 // דוח ללקוח — נבנה לבד מהחתימה האחרונה (מה שהחותם בחר: ימים, זוגות לפני/אחרי מאותו יום, משימות, כמויות, תקלות שטופלו, דירוג, חתימה). לא נשלח במייל — PDF/קישור/קולאז׳ מהמנהל.
 // כללים: אחריות על משימות = "E-Drone" (לא שמות עובדים); איש קשר בפוטר = החברה; זוג לפני/אחרי רק מאותו יום עבודה (לא זוגות מזויפים).
 import { sb, state, isManager, signedUrls, icon, $, $$, esc, toast, dm, coverArt, cache, isoDay } from '../lib/core.js';
+import { shareIcon, shareFile, sharePrint } from '../lib/share.js';
 
 const bdi = t => esc(t).replace(/([+−~≤≥]?[0-9A-Za-z][0-9A-Za-z.,%°~+−≤≥–—/ -]*[0-9A-Za-z%°])/g, '<bdi dir="ltr">$1</bdi>');
 const fmt = d => d ? new Date(d + 'T12:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
@@ -74,7 +75,7 @@ export async function renderClientReport(el, pid) {
   const shot = (x, tag, cls = '') => `<div class="shot ${cls}"><img src="${esc(url(x))}" alt="">${tag ? `<span class="tag ${tag === 'אחרי' ? 'a' : ''}">${tag}</span>` : ''}</div>`;
   let pn = 1;
   el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/p/${pid}/s" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ללקוח${so || legacy ? '' : ' <span class="pill warn">לפני חתימה</span>'}</b>
-      ${M ? `<button class="btn ghost sm" id="shr">${icon('send', 16)} שיתוף</button>` : ''}<button class="btn ghost sm" id="collage">קולאז׳</button><button class="btn primary sm" id="print">PDF</button></div>
+      ${M ? `<button class="btn ghost sm" id="shr">${icon('send', 16)}<span class="rt-l"> קישור</span></button>` : ''}<button class="btn ghost sm" id="collage">קולאז׳</button><button class="btn ghost sm" id="print">הדפסה</button><button class="btn primary sm" id="crsh" aria-label="שיתוף PDF">${shareIcon(16)} PDF</button></div>
     <div class="creport" id="cr">
       <div class="pg"><div class="hero"><img src="${esc(hero)}" alt=""><div class="hero-top"><div class="wordmark"><div class="w">E-DRONE</div><div class="t">TECHNOLOGIES</div></div><div class="kicker">PROJECT REPORT</div></div>
         <div class="hero-txt"><div class="lbl">דוח סיכום פרויקט</div><h1 contenteditable="true">${bdi(place)}</h1><div class="sub" contenteditable="true">${bdi(p.client_name || '')}</div></div></div>
@@ -113,7 +114,8 @@ export async function renderClientReport(el, pid) {
   addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });
   $('#print').onclick = () => { const t = document.title; document.title = `E-Drone · ${place}`; window.print(); setTimeout(() => document.title = t, 500); };
   const allB = PH.filter(x => x.k === 'before').map(url), allA = afterAll.map(url);
-  $('#collage').onclick = () => collage(allB, allA, place);
+  $('#collage').onclick = e => collage(allB, allA, place, e.currentTarget);
+  $('#crsh').onclick = e => sharePrint(e.currentTarget, $('#cr'), `דוח E-Drone - ${place}`, `דוח סיכום · ${place}`);
   const sh = $('#shr'); if (sh) sh.onclick = () => shareLink(p, pid);
 }
 
@@ -128,7 +130,7 @@ async function shareLink(p, pid) {
 }
 
 // קולאז׳ לפני/אחרי לשיווק (1080×1080) — עם לוגו, בלי שם לקוח בתמונה
-async function collage(before, after, name) {
+async function collage(before, after, name, btn) {
   if (!before.length || !after.length) return toast('צריך לפחות תמונת לפני ותמונת אחרי');
   const load = src => new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = src; });
   try {
@@ -140,7 +142,8 @@ async function collage(before, after, name) {
     x.font = 'bold 44px Heebo, Arial'; x.textAlign = 'center';
     [['לפני', 810, 'rgba(14,16,19,.85)', '#fff'], ['אחרי', 270, '#C6EA5E', '#16181C']].forEach(([t, cx, bg, fg]) => { x.fillStyle = bg; x.fillRect(cx - 90, 40, 180, 70); x.fillStyle = fg; x.fillText(t, cx, 92); });
     if (logo) { const h = 70, w = logo.width * h / logo.height; x.fillStyle = 'rgba(255,255,255,.9)'; x.fillRect(1080 - w - 60, 960, w + 40, h + 30); x.drawImage(logo, 1080 - w - 40, 975, w, h); }
-    const a2 = document.createElement('a'); a2.href = c.toDataURL('image/jpeg', 0.9); a2.download = `לפני-אחרי-${name}.jpg`; a2.click();
-    toast('הקולאז׳ נשמר — בלי שם הלקוח בתמונה');
+    // שיתוף הקובץ (וואטסאפ / שמירה); במחשב — הורדה או וואטסאפ Web
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+    await shareFile(blob, `לפני-אחרי-${name}.jpg`, 'לפני / אחרי · E-Drone', '', { btn });
   } catch { toast('התמונות לא נטענו — נסו שוב'); }
 }

@@ -26,6 +26,17 @@ function parse(qs) { const u = new URLSearchParams(qs || ''), S = { ...DEF }; fo
 function push() {
   const u = new URLSearchParams(); for (const k in DEF) if (D.S[k] && D.S[k] !== DEF[k] && !(k === 'w' && D.S.w === sunday(isoDay()))) u.set(k, D.S[k]);
   const s = u.toString(); replaceHash('#/desk' + (s ? '/' + s : ''), false);
+  D.vb?.refresh();
+}
+// תצוגה שמורה: מחילים במקום (בלי לטעון מחדש), השבוע הנוכחי נשאר
+const VK = ['tab', 'svc', 'lead', 'st', 'q', 'sort', 'dir', 'closed'];
+function applyView(v) {
+  for (const k of VK) D.S[k] = v[k] || DEF[k];
+  D.S.sel = ''; D.cur = -1;
+  const q = $('#dkq', D.el); if (q) q.value = D.S.q;
+  $$('[data-tab]', D.el).forEach(x => x.setAttribute('aria-pressed', x.dataset.tab === D.S.tab));
+  $('#dkcl', D.el)?.setAttribute('aria-pressed', !!D.S.closed);
+  push(); if (D.data) { prep(); draw(); }
 }
 
 export async function renderDesk(el, qs = '') {
@@ -35,15 +46,17 @@ export async function renderDesk(el, qs = '') {
   el.innerHTML = `<div class="dk" id="dk">
     <header class="dkh">${backBtn('#/')}<h1 class="grow">שולחן ניהול</h1>
       <div class="dkwk" role="group" aria-label="שבוע"><button type="button" class="dkic" id="dkprev" aria-label="שבוע קודם">‹</button><button type="button" class="dkwl" id="dkthis"></button><button type="button" class="dkic" id="dknext" aria-label="שבוע הבא">›</button></div>
-      <span class="seg dktab">${[['t', 'שבוע'], ['m', 'התקדמות לפי חזית']].map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${S.tab === k}">${l}</button>`).join('')}</span></header>
+      <span class="seg dktab">${[['t', 'שבוע'], ['m', 'התקדמות לפי חזית']].map(([k, l]) => `<button type="button" data-tab="${k}" aria-pressed="${S.tab === k}">${l}</button>`).join('')}</span>
+      <button type="button" class="btn primary sm wzbtn" id="dkwz">${icon('star', 16)} הקוסם</button></header>
     <div class="dkbar"><label class="dkq">${icon('clipboard', 16)}<input type="search" id="dkq" placeholder="חיפוש" value="${esc(S.q)}" autocomplete="off"><kbd>/</kbd></label>
       <select id="dksvc" aria-label="שירות"></select><select id="dklead" aria-label="ראש צוות"></select><select id="dkst" aria-label="סטטוס"></select>
-      <button type="button" class="chip dkcl" id="dkcl" aria-pressed="${!!S.closed}">כולל סגורים</button></div>
+      <button type="button" class="chip dkcl" id="dkcl" aria-pressed="${!!S.closed}">כולל סגורים</button><div id="dkv" hidden></div></div>
     <div class="dkk" id="dkk"></div>
     <div class="dkw" id="dkw">${skeleton()}</div>
     <aside class="dkp" id="dkp" hidden aria-label="פירוט"></aside>
   </div>`;
   const go = n => { D.S.w = addDays(D.S.w, n * 7); D.S.sel = ''; push(); load(); };
+  $('#dkwz', el).onclick = () => { location.hash = '#/wizard/' + D.S.w; };
   $('#dkprev', el).onclick = () => go(-1); $('#dknext', el).onclick = () => go(1);
   $('#dkthis', el).onclick = () => { if (D.S.w !== sunday(isoDay())) { D.S.w = sunday(isoDay()); push(); load(); } };
   $$('[data-tab]', el).forEach(b => b.onclick = () => { D.S.tab = b.dataset.tab; $$('[data-tab]', el).forEach(x => x.setAttribute('aria-pressed', x === b)); D.cur = -1; push(); draw(); });
@@ -51,6 +64,8 @@ export async function renderDesk(el, qs = '') {
   [['#dksvc', 'svc'], ['#dklead', 'lead'], ['#dkst', 'st']].forEach(([id, k]) => $(id, el).onchange = e => { D.S[k] = e.target.value; push(); draw(); });
   $('#dkcl', el).onclick = e => { D.S.closed = D.S.closed ? '' : '1'; e.currentTarget.setAttribute('aria-pressed', !!D.S.closed); push(); draw(); };
   D.el = $('#dk', el); D.el.addEventListener('click', onClick);
+  // תצוגות שמורות: סינון + מיון + לשונית, בשם, לכל משתמש. Alt+1…9 מעבר מהיר
+  import('../lib/views.js').then(V => { if (D?.el.isConnected) D.vb = V.viewsBar($('#dkv', D.el), 'desk', { get: () => Object.fromEntries(VK.map(k => [k, D.S[k] === DEF[k] ? '' : D.S[k]])), apply: applyView }); }).catch(() => {});
   await load();
 }
 function skeleton() { return `<div class="dksk">${'<i></i>'.repeat(7)}</div>`; }
@@ -203,8 +218,10 @@ function close() { if (!D.S.sel) return; D.S.sel = ''; push(); panel(); }
 function panel() {
   const p = $('#dkp', D.el); if (!p) return;
   $$('.dkc.sel,.dkname.sel,.dkz.sel,.dkkp.sel', D.el).forEach(x => x.classList.remove('sel'));
-  if (!D.S.sel) { if (!p.hidden) { p.classList.add('out'); setTimeout(() => { if (!D.S.sel) { p.hidden = true; p.classList.remove('out'); } }, 160); } document.body.classList.remove('dk-open'); return; }
+  if (!D.S.sel) { if (!p.hidden) { p.classList.add('out'); setTimeout(() => { if (!D.S.sel) { p.hidden = true; p.classList.remove('out'); delete p.dataset.proj; D.el.classList.remove('dkwide'); } }, 160); } document.body.classList.remove('dk-open'); return; }
   const [pid, k, b, zk] = D.S.sel.split('~');
+  if (k === 'proj') return projPanel(p, pid);
+  delete p.dataset.proj; D.el.classList.remove('dkwide');
   const R = pid === '*' ? D.view : D.rows.filter(r => r.id === pid);
   if (!R.length) { D.S.sel = ''; push(); p.hidden = true; return; }
   { const c = $(`[data-c="${CSS.escape(D.S.sel)}"]`, D.el); if (c) { c.classList.add('sel'); if (p.hidden) requestAnimationFrame(() => c.scrollIntoView({ block: 'nearest', inline: 'nearest' })); } }
@@ -213,11 +230,33 @@ function panel() {
   const body = pid === '*' ? R.map(x => { const h = sec(k, x); return h ? `<section class="dkps"><h4><button type="button" class="dkpl" data-c="${x.id}~all">${esc(x.short)}</button></h4>${h}</section>` : ''; }).join('') || none(k)
     : k === 'all' ? all(r) : k === 'z' ? zoneSec(r, zone) : sec(k, r) || none(k);
   p.innerHTML = `<header class="dkph"><div class="grow"><h3>${esc(title)}</h3><small>${esc(sub)}</small></div>
-      ${pid !== '*' ? `<a class="btn ghost sm" href="#/p/${r.id}">לפרויקט</a>` : ''}<button type="button" class="dkic" id="dkx" aria-label="סגירה">${icon('x', 18)}</button></header>
+      ${pid !== '*' ? `<button type="button" class="btn ghost sm" data-c="${r.id}~proj">לפרויקט</button>` : ''}<button type="button" class="dkic" id="dkx" aria-label="סגירה">${icon('x', 18)}</button></header>
     <div class="dkpb">${body}</div>`;
   const was = p.hidden; p.hidden = false; p.classList.remove('out'); if (was) { p.classList.add('in'); setTimeout(() => p.classList.remove('in'), 220); }
   document.body.classList.add('dk-open');
   $('#dkx', p).onclick = close;
+  // חוסרים: סימון כמה בבת אחת ו"סופק N" (מסך רחב) — אותו עדכון כמו לחיצה על "סופק"
+  if (k === 'iss' && $('[data-bk]', p)) import('../lib/bulk.js').then(B => B.bulk($('.dkpb', p), { label: n => `סופק ${n}`, busy: 'מסמן', min: 2,
+    run: async ids => { const { error } = await sb.from('missing_items').update({ status: 'handled' }).in('id', ids); return error ? [error] : []; }, after: reload })).catch(() => {});
+}
+// הפרויקט עצמו בפאנל רחב, ליד הטבלה (sel=<id>~proj בכתובת) — בלי לעזוב את השולחן
+async function projPanel(p, pid) {
+  const r = D.rows.find(x => x.id === pid);
+  D.el.classList.add('dkwide'); document.body.classList.add('dk-open');
+  $$('.dkname.sel', D.el).forEach(x => x.classList.remove('sel'));
+  $(`[data-c="${CSS.escape(pid + '~all')}"]`, D.el)?.classList.add('sel');
+  const was = p.hidden; p.hidden = false; p.classList.remove('out'); if (was) { p.classList.add('in'); setTimeout(() => p.classList.remove('in'), 220); }
+  if (p.dataset.proj === pid) return;
+  p.dataset.proj = pid;
+  p.innerHTML = `<header class="dkph"><button type="button" class="btn ghost sm" data-c="${pid}~all">סיכום</button><div class="grow"><h3>${esc(r?.short || 'פרויקט')}</h3>${r ? `<small>${esc([r.service, r.st].filter(Boolean).join(' · '))}</small>` : ''}</div>
+      <a class="btn ghost sm" href="#/p/${pid}">מסך מלא</a><button type="button" class="dkic" id="dkx" aria-label="סגירה">${icon('x', 18)}</button></header>
+    <div class="dkpb dkpp" id="dkpp"></div>`;
+  $('#dkx', p).onclick = close;
+  const box = $('#dkpp', p);
+  // לשונית בתוך הפרויקט כותבת #/p/… — מחזירים את כתובת השולחן
+  box.addEventListener('click', e => { if (e.target.closest('#pt button')) setTimeout(() => { if (D?.S.sel === pid + '~proj') push(); }, 0); }, true);
+  try { await (await import('./projects.js')).renderProject(box, pid, 'o'); } catch { box.innerHTML = `<div class="empty-line">הפרויקט לא נטען</div>`; }
+  if (D?.el.isConnected && D.S.sel === pid + '~proj' && !/^#\/desk/.test(location.hash)) push();
 }
 const none = k => `<div class="dkok">${icon('check', 18)}<span>${{ iss: 'אין תקלות או חוסרים פתוחים', rep: 'אין תיקונים שממתינים לאישור', unc: 'כל הימים נסגרו', ready: 'אין ימים מתוכננים קדימה', next: 'אין יום שטח מתוכנן', wx: 'אין ימים מתוכננים בתחזית', days: 'אין ימי שטח בשבוע', crew: 'אין ימי שטח בשבוע', m2: 'עוד לא סומנו חזיתות השבוע', prog: 'אין חזיתות מהאפיון' }[k] || 'אין פריטים'}</span></div>`;
 function all(r) {
@@ -225,7 +264,7 @@ function all(r) {
   return order.map(k => { const h = sec(k, r); return h ? `<section class="dkps"><h4>${CT[k]}</h4>${h}</section>` : ''; }).join('') || none('');
 }
 const dayBtn = (id, label = 'ניהול') => `<button type="button" class="btn ghost sm" data-da="${id}">${label}</button>`;
-const row = (main, small, act = '', tone = '') => `<div class="dkr ${tone}"><span class="grow"><b>${main}</b>${small ? `<small>${small}</small>` : ''}</span>${act}</div>`;
+const row = (main, small, act = '', tone = '', attr = '') => `<div class="dkr ${tone}"${attr}><span class="grow"><b>${main}</b>${small ? `<small>${small}</small>` : ''}</span>${act}</div>`;
 function sec(k, r) {
   const C = !!D.S.closed, t = D.data.today;
   switch (k) {
@@ -255,7 +294,7 @@ function sec(k, r) {
       return I.map(i => row(`${i.sev === 'critical' ? '<span class="pill bad">קריטי</span> ' : ''}${esc(i.body)}`, esc([KIND[i.kind] || 'תקלה', first(i.by), timeAgo(i.at), i.status !== 'open' ? 'נסגר' + (i.res ? ' · ' + i.res : '') : ''].filter(Boolean).join(' · ')),
           i.status === 'open' ? `<button type="button" class="btn primary sm" data-iss="${i.id}" data-p="${r.id}">טופל</button>` : '', i.status === 'open' ? (i.sev === 'critical' ? 'bad' : 'warn') : 'ok')).join('')
         + M.map(m => row(`חסר: ${esc(m.item)}${m.qty > 1 ? ' ×' + m.qty : ''}`, esc([m.day ? sd(m.day) : '', first(m.by), timeAgo(m.at), m.status !== 'open' ? 'סופק' : ''].filter(Boolean).join(' · ')),
-          m.status === 'open' ? `<button type="button" class="btn primary sm" data-mi="${m.id}">סופק</button>` : '', m.status === 'open' ? 'warn' : 'ok')).join('');
+          m.status === 'open' ? `<button type="button" class="btn primary sm" data-mi="${m.id}">סופק</button>` : '', m.status === 'open' ? 'warn' : 'ok', m.status === 'open' ? ` data-bk="${m.id}"` : '')).join('');
     }
     case 'rep': {
       const P = r.pend, O = r.ropen.filter(x => !P.includes(x)), A = C ? (r.repairs || []).filter(x => x.status === 'done') : [];
@@ -293,7 +332,7 @@ function zoneSec(r, z) {
 
 // ---------- לחיצות ----------
 async function onClick(e) {
-  const t = e.target.closest('button,a'); if (!t || !D.el.contains(t)) return;
+  const t = e.target.closest('button,a'); if (!t || !D.el.contains(t) || t.closest('#dkpp')) return;   // בתוך הפרויקט שבפאנל — הלחיצות שלו
   if (t.dataset.sort) { const k = t.dataset.sort; D.S.dir = D.S.sort === k && D.S.dir === '1' ? '-1' : '1'; D.S.sort = k; push(); draw(); return; }
   if (t.dataset.c) { if (D.S.sel === t.dataset.c && !t.closest('#dkp')) close(); else { const tr = t.closest('tr[data-i]'); if (tr) { D.cur = +tr.dataset.i; mark(); } open(t.dataset.c); } return; }
   if (t.dataset.da) { const m = await import('./dayadmin.js'); m.openDayAdmin(t.dataset.da, reload); return; }

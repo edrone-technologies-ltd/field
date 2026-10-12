@@ -3,6 +3,7 @@
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, signedUrls, zoom, dm, dayLabel, isoDay, confirmBox } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { errText } from '../lib/audit.js';
+import { shareIcon, sharePrint } from '../lib/share.js';
 
 const KIND = { facade: 'אפיון', site: 'אפיון', obstacle: 'מכשול', before: 'לפני', after: 'אחרי', general: 'שטח', report: 'דוח קודם' };
 
@@ -154,7 +155,7 @@ async function loadout(p, ndays, days) {
 async function printView(el, p, nums, dayCard, brief) {
   const { data: co } = await sb.from('app_settings').select('value').eq('key', 'company').maybeSingle();
   const c = co?.value || {}, coLine = [c.phone, c.email, c.web].filter(Boolean).map(x => `<bdi dir="ltr">${esc(x)}</bdi>`).join(' · ');
-  el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/plan/${p.id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">תכנית עבודה</b><button class="btn primary sm" id="print">הדפסה / PDF</button></div>
+  el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/plan/${p.id}" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">תכנית עבודה</b><button class="btn ghost sm" id="print">הדפסה</button><button class="btn primary sm" id="plsh">${shareIcon(16)} PDF</button></div>
     <div class="creport vrep"><div class="pg flow"><div class="pad">
       <div class="vhead"><img src="logo.png" alt="E-Drone"></div>
       <div class="rsec">WORK PLAN</div><h2>${esc(p.name)}</h2><div class="rule"></div>
@@ -164,6 +165,7 @@ async function printView(el, p, nums, dayCard, brief) {
   document.body.classList.add('printing-report');
   addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });
   $('#print').onclick = () => window.print();
+  $('#plsh').onclick = e => sharePrint(e.currentTarget, $('.creport', el), `תכנית עבודה - ${p.name}`, `תכנית עבודה · ${p.name}`);
 }
 
 // תכנית היום של יום שטח (נשמר במטמון של היום — עובד גם בלי קליטה). null = אין תכנית
