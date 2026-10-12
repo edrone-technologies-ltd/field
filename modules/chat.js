@@ -1,6 +1,32 @@
 // שיחה חיה: לאתר (אפיון), לפרויקט (צוות) או שיחה פנימית (אישי/קבוצה). טקסט, תמונה, סימון "חשוב". בזמן אמת.
 import { sb, state, enqueue, signedUrls, isManager, sheet, $, $$, esc, toast, zoom, initials, icon, HE_DOW, thumbUrls } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
+import { ogIndex, kbOgImg, kbIdFromUrl, appUrl } from '../lib/share.js';
+
+// קישור להדרכה (דף שיתוף s/kb-<id>.html או #/kb/<id>) → כרטיס: תמונה + שם + "פתיחה", בלי כתובת גולמית
+const SITE = 'https://edrone-technologies-ltd.github.io/field/';
+const KB_RE = /https?:\/\/[^\s<]+/g;
+const kbOf = u => (u.startsWith(SITE) || u.startsWith(location.origin + location.pathname.replace(/[^/]*$/, ''))) ? kbIdFromUrl(u) : null;
+const kbMeta = new Map();
+async function loadKbMeta(msgs) {
+  const ids = [...new Set(msgs.flatMap(m => (m.body || '').match(KB_RE) || []).map(kbOf).filter(Boolean))].filter(i => !kbMeta.has(i));
+  if (!ids.length) return false;
+  const ix = await ogIndex();
+  ids.forEach(i => ix[i] && kbMeta.set(i, ix[i]));
+  const rest = ids.filter(i => !kbMeta.has(i) && /^[0-9a-f-]{36}$/.test(i));
+  if (rest.length) try { const { data } = await sb.from('kb_items').select('id,title,category').in('id', rest); (data || []).forEach(x => kbMeta.set(x.id, { t: x.title, c: x.category })); } catch { /* */ }
+  return true;
+}
+function kbParts(body) {
+  const ids = []; const lead = body.replace(KB_RE, u => { const id = kbOf(u); if (!id) return u; ids.push(id); return ''; }).trim();
+  if (!ids.length) return null;
+  let kick = '', text = lead;
+  const t = kbMeta.get(ids[0])?.t, m = /^(?:([^:\n]{1,24}):\s*)?([\s\S]+)$/.exec(lead);
+  if (t && m && m[2].trim() === t) { kick = m[1] || ''; text = ''; }
+  return { text, cards: [...new Set(ids)].map(id => { const x = kbMeta.get(id) || {};
+    return `<a class="kbc" href="#/kb/${esc(id)}"><span class="kbc-i"><img src="${esc(kbOgImg(id, x.v))}" alt="" loading="lazy" onerror="this.onerror=null;this.src='${esc(appUrl('og/app.jpg'))}'"></span>
+      <span class="kbc-b"><span class="grow"><b>${esc(x.t || 'הדרכה')}</b><small>${esc(kick || x.c || 'מרכז ידע')}</small></span><span class="kbc-go">פתיחה</span></span></a>`; }).join('') };
+}
 
 let channel;
 const dkey = iso => new Date(iso).toLocaleDateString('he-IL');
@@ -45,7 +71,7 @@ export async function renderChat(el, { site, project, conversation }) {
   const retick = () => $$('[data-tk]').forEach(e => { const m = rows.find(r => r.id === e.dataset.tk); if (m) e.innerHTML = tick(m); });
   async function load() {
     try { const { data } = await sb.from('messages').select('*').eq(key.col, key.id).order('created_at').limit(300); rows = data || []; } catch {}
-    await Promise.all([loadAcks(), loadReads()]); draw();
+    await Promise.all([loadAcks(), loadReads(), loadKbMeta(rows).catch(() => {})]); draw();
   }
   async function loadAcks() {
     const imp = rows.filter(r => r.important).map(r => r.id); if (!imp.length) return;
@@ -76,7 +102,7 @@ export async function renderChat(el, { site, project, conversation }) {
         ${showWho ? `<div class="who">${esc(m.author_label || names.get(m.author_id) || '')}${m.source === 'monday' ? ' · מהמשרד' : ''}</div>` : ''}
         ${m.important ? '<div class="impl">חשוב</div>' : ''}
         ${m.photo_path ? `<img src="${esc(urls[m.photo_path]?.t || '')}" alt="" data-full="${esc(urls[m.photo_path]?.f || '')}" data-z="${esc(urls[m.photo_path]?.f || '')}">` : ''}
-        ${m.body ? `<div class="tx">${tagHtml(m)}</div>` : ''}
+        ${m.body ? (k => k ? `${k.text ? `<div class="tx">${tagHtml({ ...m, body: k.text })}</div>` : ''}${k.cards}` : `<div class="tx">${tagHtml(m)}</div>`)(kbParts(m.body)) : ''}
         ${ackLine(m, me)}<div class="when">${new Date(m.created_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}${me ? `<span data-tk="${m.id}">${tick(m)}</span>` : ''}</div></div>`;
     }).join('') : `<div class="empty-line">אין הודעות עדיין</div>`;
     $$('[data-z]', box).forEach(i => i.onclick = () => i.dataset.z && zoom(i.dataset.z, ''));
@@ -90,7 +116,7 @@ export async function renderChat(el, { site, project, conversation }) {
   channel = sb.channel('msg-' + key.id).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `${key.col}=eq.${key.id}` },
     p => { const had = rows.find(r => r.id === p.new.id);
       if (had) { if (had._local) { had._local = false; had.created_at = p.new.created_at; retick(); } return; }
-      rows.push(p.new); draw(); if (conversation) markRead(); }).subscribe();
+      rows.push(p.new); draw(); loadKbMeta([p.new]).then(n => n && draw(), () => {}); if (conversation) markRead(); }).subscribe();
   // קריאה של האחרים מתעדכנת כל 15 שניות כל עוד השיחה פתוחה (רק הסימונים, בלי לצייר מחדש)
   const rt = conversation ? setInterval(async () => { if (document.hidden) return; await loadReads(); retick(); }, 15000) : 0;
   addEventListener('hashchange', () => { clearInterval(rt); if (channel) { sb.removeChannel(channel); channel = null; } }, { once: true });
@@ -120,7 +146,7 @@ export async function renderChat(el, { site, project, conversation }) {
     const mentions = taggable.filter(id => body.includes('@' + names.get(id)));
     const row = { id: crypto.randomUUID(), [key.col]: key.id, author_id: state.user.id, body: body || '', photo_path: photoPath || null,
       important: imp?.getAttribute('aria-pressed') === 'true', mentions: mentions.length ? mentions : null, created_at: new Date().toISOString() };
-    rows.push({ ...row, _local: true }); draw();
+    rows.push({ ...row, _local: true }); draw(); loadKbMeta([row]).then(n => n && draw(), () => {});
     ta.value = ''; ta.oninput(); imp?.setAttribute('aria-pressed', 'false');
     const { created_at, ...dbRow } = row;
     await enqueue({ kind: 'insert', table: 'messages', row: dbRow });

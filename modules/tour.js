@@ -3,7 +3,7 @@ import { sb, state, isManager, signedUrls, icon } from '../lib/core.js';
 
 // לכל הדרכה — רשימת המסכים שלה (tours/<name>/<shot>.jpg) ומי רשאי לפתוח. mgmt כולל מסכי שכר — הנהלה בלבד (גם באחסון: db/120)
 const TOURS = {
-  ops: { ok: isManager, shots: ['01_home', '02_sched', '03_proj', '04_sheet', '05_sheet_wx', '06_pick', '07_pick_sel', '08_plan', '09_visit_form', '11_crew_home', '12_crew_done', '13_visit_done', '14_tasks', '16_purchase', '17_attendance', '19_visit_pdf', '20_visit_new'] },
+  ops: { ok: isManager, shots: ['o01_home', 'o03_sched', 'o04_proj', 'o05_sheet', 'o06_wx', 'o07_dayadmin', 'o08_plan', 'o09_pick', 'o10_pick_sel', 'o11_crew_home', 'o11b_site', 'o12_close', 'o12b_preview', 'o13_visit_new', 'o14_repair', 'o15_progress', 'o16_comp', 'o17_live', 'o18_purchase', 'o20_plus', 'o21_request', 'd01_ws', 'd02_cmdk', 'd03_projmd', 'd04_desk', 'd05_deskpane', 'd06_dispatch', 'd07_wizard', 'd08_live', 'd09_comp', 'd10_repairs', 'd11_deskzones'] },
   mgmt: { ok: () => state.profile?.role === 'admin', shots: ['m01_home', 'm02_needs', 'm03_projects', 'm04_notready', 'm05_proj', 'm06_ready', 'm07_sched', 'm08_sheet', 'board', 'c01_home', 'c02_tomorrow', 'c04_load', 'c05_site', 'c06_work', 'c07_close', 'm32_psum', 'm14_signoff', 'm16_crep', 'm17_att', 'm18_emp', 'm19_equip', 'm20_drone', 'm21_service', 'm23_purch', 'm24_purch_new', 'm25_specs', 'm26_logi', 'm27_plan', 'm28_launch', 'm29_person', 'm31_sync'] },
 };
 

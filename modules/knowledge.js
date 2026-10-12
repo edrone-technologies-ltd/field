@@ -3,7 +3,7 @@
 // "צפיתי והבנתי" = מעקב הדרכה; פריט "חובה" מופיע בבית לכל מי שעוד לא אישר.
 import { sb, state, isManager, can, sheet, icon, $, $$, esc, toast, confirmBox, signedUrls, backBtn, initials, replaceHash, goUp, zoom } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
-import { shareIcon, shareLink, shareFile, appUrl } from '../lib/share.js';
+import { shareIcon, shareLink, shareFile, kbShareUrl, ogIndex } from '../lib/share.js';
 
 // קהלי יעד: ריק = כולם. מנהלים רואים הכל תמיד
 const AUD = [['pilot', 'מטיסים'], ['operator', 'מפעילי מערכות'], ['crew_lead', 'ראשי צוות'], ['crew', 'כל צוות השטח'], ['surveyor', 'סוקר'], ['ops_manager', 'הנהלה ותפעול']];
@@ -137,7 +137,7 @@ export async function renderKbItem(el, id) {
   const su = $('#kbsetup'); if (su) su.onclick = async () => (await import('./welcome.js')).playSetup();
   const ed = $('#kbed'); if (ed) ed.onclick = async () => editKb(x, await cats());
   // שיתוף: סרטון חיצוני — הקישור הציבורי; הדרכה באפליקציה — קישור למסך (לעובדים מחוברים)
-  $('#kbsh').onclick = () => kbShare(x);
+  ogIndex(); $('#kbsh').onclick = () => kbShare(x);
   $$('[data-fsh]', el).forEach(b => b.onclick = () => { const f = files.find(y => y.path === b.dataset.fsh); shareFile({ bucket: 'kb', path: f.path }, f.name, x.title, '', { btn: b }); });
   const tm = $('#kbteam'); if (tm) tm.onclick = () => teamShare(x);
   if (x.quiz?.length) drawQuiz(x, v, el, id);
@@ -337,18 +337,18 @@ async function renderGuide(el, id) {
       ${links.length ? `<div class="list">${links.map(([h, t]) => `<a class="lrow" href="${h}"><span class="grow"><b>${esc(t)}</b></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
       ${M ? `<button class="btn ghost block" id="kbrep">${icon('play', 18)} החלפה בסרטון / נוהל של החברה</button>` : ''}
     </div>`;
-  $('#kbsh').onclick = () => shareLink(appUrl('#/kb/' + g.id), g.t, `${g.t} — ${g.sub}`);
+  ogIndex(); $('#kbsh').onclick = async () => shareLink(await kbShareUrl(g.id), g.t, g.t);
   const r = $('#kbrep'); if (r) r.onclick = async () => editKb(null, await cats(), { title: g.t, category: g.cat, body: g.cards.map(c => c.t + ':\n' + c.items.map(t => '• ' + t).join('\n')).join('\n\n') });
 }
 
 // ---------- שיתוף ----------
 const isExt = u => /^https?:\/\//i.test(u || '');
-const kbLink = x => isExt(x.video_url) ? x.video_url : appUrl('#/kb/' + x.id);
-function kbShare(x) {
+// דף שיתוף (שם + תמונה בוואטסאפ) — גם לסרטון: הכרטיס עם תמונת הסרטון, והצפייה נשארת במעקב באפליקציה
+async function kbShare(x) {
   const ext = isExt(x.video_url), docs = (x.files || []).filter(f => !isImg(f));
   // מסמך יחיד בלי סרטון — משתפים את הקובץ עצמו
   if (!ext && !x.video_url && !x.body && docs.length === 1) return shareFile({ bucket: 'kb', path: docs[0].path }, docs[0].name, x.title, '', { btn: $('#kbsh') });
-  shareLink(kbLink(x), x.title, ext ? `${x.title} · E-Drone` : `הדרכה באפליקציה: ${x.title}`);
+  shareLink(await kbShareUrl(x.id), x.title, x.title);
 }
 
 // שיתוף לצוות (מנהלים): בוחרים אנשים / תפקיד / קבוצה קיימת → הודעה בצ׳אט הפנימי עם הקישור. ההתראה הרגילה של הודעה נשלחת
@@ -378,7 +378,7 @@ async function teamShare(x) {
     sync();
     go.onclick = async () => {
       if (go.disabled) return; go.disabled = true; go.textContent = 'שולח…';
-      const body = `${x.video_url && !isExt(x.video_url) ? 'הדרכה' : x.video_url ? 'סרטון הדרכה' : 'הדרכה'}: ${x.title}\n${appUrl('#/kb/' + x.id)}`;
+      const body = `${x.video_url && !isExt(x.video_url) ? 'הדרכה' : x.video_url ? 'סרטון הדרכה' : 'הדרכה'}: ${x.title}\n${await kbShareUrl(x.id)}`;
       const imp = $('#tsimp', s).checked;
       // קבוצה שכל חבריה כבר נבחרו כאנשים — לא שולחים להם גם בנפרד
       const inG = new Set(G.filter(c => gsel.has(c.id)).flatMap(c => (c.members || []).map(m => m.id)));
