@@ -13,6 +13,8 @@ export async function myTasks(box) {
   if (!box) return;
   const me = state.user.id;
   let mine = [], others = [], names = new Map();
+  // מה שסימנתי "בוצע" ועוד בתור (בלי קליטה / באמצע שליחה) — לא חוזר כפתוח, גם כשהשרת עוד לא קיבל
+  let doneQ = new Set(); try { const { outbox } = await import('../lib/store.js'); doneQ = new Set((await outbox.all()).filter(x => x.kind === 'update' && x.table === 'tasks' && ['done', 'dropped'].includes(x.patch?.status)).map(x => x.rowId)); } catch { /* */ }
   try {
     const [{ data: a }, { data: b }, { data: p }] = await Promise.all([
       sb.from('tasks').select(SEL).eq('assignee_id', me).eq('phase', 'מעקב').not('status', 'in', '(done,dropped)').order('due', { nullsFirst: false }),
@@ -22,12 +24,13 @@ export async function myTasks(box) {
     if (!a) throw new Error('offline');
     mine = a || []; others = b || []; (p || []).forEach(x => names.set(x.id, x.full_name));
     await cache.set('my-tasks', { mine, others, names: [...names] }).catch(() => {});
+    mine = mine.filter(t => !doneQ.has(t.id)); others = others.filter(t => !doneQ.has(t.id));
   } catch {   // בלי קליטה: המשימות מהפעם האחרונה (פחות מה שכבר סומן בתור)
     const c = await cache.get('my-tasks').catch(() => null); if (!c) return;
-    let doneQ = new Set(); try { const { outbox } = await import('../lib/store.js'); doneQ = new Set((await outbox.all()).filter(x => x.table === 'tasks' && x.patch?.status === 'done').map(x => x.rowId)); } catch { /* */ }
-    mine = c.mine.filter(t => !doneQ.has(t.id)); others = c.others; names = new Map(c.names);
+    mine = c.mine.filter(t => !doneQ.has(t.id)); others = c.others.filter(t => !doneQ.has(t.id)); names = new Map(c.names);
   }
-  if (!mine.length && !others.length) { box.innerHTML = ''; return; }
+  if (!mine.length && !others.length) {   // במסך המשימות המלא — סיום עם "הכל טופל" (בבית — פשוט נעלם)
+    box.innerHTML = box.id === 'tk' ? `<div class="empty-card ok"><span class="ei">${icon('check', 26)}</span><span><b>אין משימות פתוחות</b><small>הכל טופל</small></span></div>` : ''; return; }
   const urls = await signedUrls('field', mine.flatMap(t => t.photos?.before || [])).catch(() => ({}));
   const row = (t, mineRow) => {
     const s = t.sites, ph = s?.contact_phone, em = emailIn(t.instructions);

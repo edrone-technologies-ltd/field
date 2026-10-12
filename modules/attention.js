@@ -38,7 +38,7 @@ async function kbRows() {
 async function schedRows() {
   if (!['admin', 'ops_manager'].includes(state.profile.role)) return [];
   const t = new Date(), iso = d => d.toISOString().slice(0, 10), today = iso(t), lim = iso(new Date(Date.now() + 10 * 864e5));
-  const { data } = await sb.from('projects').select('id,name,status_label,monday_group,closed_summary,planned_from,planned_to,work_days(day,status)').neq('monday_group', 'group_mm5052gw')
+  const { data } = await sb.from('projects').select('id,name,status_label,monday_group,closed_summary,planned_from,planned_to,work_days(day,status)').or('monday_group.is.null,monday_group.neq.group_mm5052gw')
     .not('planned_from', 'is', null).lte('planned_from', lim).gte('planned_to', today);
   const need = (data || []).filter(isOpenProject).filter(p => !(p.work_days || []).some(d => d.day >= today && d.status !== 'done'))
     .sort((a, b) => a.planned_from < b.planned_from ? -1 : 1);

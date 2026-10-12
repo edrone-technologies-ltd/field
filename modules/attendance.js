@@ -1,5 +1,5 @@
 // נוכחות: כניסה/יציאה בלחיצה (מיקום רק ברגע ההחתמה), השעות שלי, ונוכחות צוות למנהלים (תיקון עם יומן, אישור ונעילה, ייצוא לחשבת השכר).
-import { sb, state, isManager, can, cache, enqueue, sheet, uid, icon, $, $$, esc, toast, confirmBox, ask, HE_DOW, HE_D1, dm, replaceHash } from '../lib/core.js';
+import { sb, state, isManager, can, cache, enqueue, sheet, uid, icon, $, $$, esc, toast, confirmBox, ask, HE_DOW, HE_D1, dm, replaceHash, haptic } from '../lib/core.js';
 import { computeMonth, inShabbat, CATS, hhmm, ymd, DEFAULTS } from '../lib/labor.js';
 import { estimatePay, PAY_TYPES } from '../lib/pay.js';
 import { errText } from '../lib/audit.js';
@@ -123,7 +123,8 @@ export async function clockOut(open, after) {
 
 // ---------- כרטיס שעון בבית ----------
 let tick;
-export async function clockCard(box, onChange) {
+// hint = {label, project_id}: הצוות כבר יצא לדרך ואני עוד לא במשמרת → הכרטיס שואל "להיכנס למשמרת?" ונכנס בלחיצה אחת לפרויקט של היום
+export async function clockCard(box, onChange, hint = null) {
   if (!box) return;
   const draw0 = async () => {
     const open = await myOpenShift();
@@ -138,9 +139,10 @@ export async function clockCard(box, onChange) {
       el.insertAdjacentHTML('beforeend', `<div class="cl-warn">משמרת פתוחה ${elapsed()} שעות — שכחת להחתים יציאה? <button class="linkbtn" id="cl-fix">יצאתי בשעה אחרת</button></div>`);
       $('#cl-fix', el).onclick = () => requestSheet(open, ymd(new Date(open.start_at)).slice(0, 7), draw);
     }
-    if (!open) suggestIn(el);
+    if (!open && hint) { el.classList.add('hint', 'go'); el.querySelector('.grow').innerHTML = `<b>להיכנס למשמרת?</b><small>${esc(hint.label || 'הצוות יצא לדרך')}</small>`; const ci = $('#cl-in', el); if (ci) ci.textContent = 'כניסה ✓'; haptic('warn'); }
+    else if (!open) suggestIn(el);
     if (open) { tick = setInterval(() => { const t = $('#cl-t'); if (t) t.textContent = elapsed() + ' שעות'; else clearInterval(tick); }, 30000); $('#cl-out').onclick = () => clockOut(open, draw); }
-    else { const ci = $('#cl-in'); ci.onclick = async () => { if (ci.disabled) return; ci.disabled = true; try { await clockIn(draw); } finally { if (ci.isConnected) ci.disabled = false; } }; }
+    else { const ci = $('#cl-in'); ci.onclick = async () => { if (ci.disabled) return; ci.disabled = true; try { await clockIn(draw, { project_id: hint?.project_id || null }); } finally { if (ci.isConnected) ci.disabled = false; } }; }
   };
   // אחרי כניסה/יציאה/בקשה: המסך שמכיל את הכרטיס מתעדכן (למשל השעות שלי), אחרת רק הכרטיס
   const draw = () => onChange ? onChange() : draw0();

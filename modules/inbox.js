@@ -2,6 +2,8 @@
 import { sb, state, isManager, cache, sheet, $, $$, esc, initials, icon, timeAgo, toast, ROLE_HE } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
+// פעמון / פעמון מושתק (בלי התראות מהשיחה הזאת — חוץ מתיוג אישי והודעה חשובה)
+const bell = (off, n = 20) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>${off ? '<path d="M3 3l18 18"/>' : ''}</svg>`;
 const av = c => `<span class="avatar ${c.kind === 'group' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 20) : esc(initials(c.title))}</span>`;
 
 export async function renderInbox(el) {
@@ -11,10 +13,10 @@ export async function renderInbox(el) {
   try { const { data, error } = await sb.rpc('my_inbox'); if (error) throw error; rows = data || []; await cache.set('inbox', rows); }
   catch { rows = (await cache.get('inbox')) || []; }
   const groups = rows.filter(c => c.kind === 'group'), dms = rows.filter(c => c.kind === 'dm');
-  const row = c => `<a class="lrow msgrow ${c.unread ? 'unread' : ''}" href="#/c/${c.id}">${av(c)}<span class="grow"><span class="r1"><b>${esc(c.title || '')}</b><small>${c.last_message_at ? timeAgo(c.last_message_at) : ''}</small></span>
+  const row = c => `<a class="lrow msgrow ${c.unread ? 'unread' : ''}" href="#/c/${c.id}">${av(c)}<span class="grow"><span class="r1"><b>${esc(c.title || '')}</b><small>${c.muted ? `<span class="mutei" aria-label="מושתק">${bell(true, 13)}</span>` : ''}${c.last_message_at ? timeAgo(c.last_message_at) : ''}</small></span>
     <small class="r2">${esc(c.last_message || (c.kind === 'group' ? `${(c.members || []).length} חברים` : 'אין הודעות עדיין'))}</small></span>${c.unread ? `<span class="badge">${c.unread}</span>` : ''}</a>`;
   // רשימה אחת לפי ההודעה האחרונה (כמו בוואטסאפ): שלא נקראו למעלה, אחר כך החדשות
-  const all = [...dms, ...groups].sort((a, b) => (b.unread ? 1 : 0) - (a.unread ? 1 : 0) || String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
+  const all = [...dms, ...groups].sort((a, b) => (b.unread && !b.muted ? 1 : 0) - (a.unread && !a.muted ? 1 : 0) || String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
   $('#ib').innerHTML = all.map(row).join('') + (dms.length ? '' : `<button class="lrow msgrow newdm" id="new2"><span class="avatar grp">${icon('plus', 20)}</span><span class="grow"><b>הודעה אישית</b></span></button>`);
   $('#new').onclick = newMessage; const n2 = $('#new2'); if (n2) n2.onclick = newMessage;
 }
@@ -56,7 +58,17 @@ export async function renderConversation(el, id) {
   conv ||= ((await cache.get('inbox')) || []).find(c => c.id === id) || { id, kind: 'dm', title: '' };
   const members = (conv.members || []).filter(m => m.id !== state.user.id);
   el.innerHTML = `<header class="phead sticky"><a class="back" href="#/inbox" aria-label="חזרה">${icon('back', 20)}</a>${av(conv)}<div class="grow"><b class="ttl">${esc(conv.title || '')}</b>
-    <small class="muted">${conv.kind === 'group' ? esc(members.map(m => m.name.split(' ')[0]).join(', ')) : ''}</small></div></header><div id="cv"></div>`;
+    <small class="muted">${conv.kind === 'group' ? esc(members.map(m => m.name.split(' ')[0]).join(', ')) : ''}</small></div>
+    ${conv.kind === 'group' ? `<button class="hbtn mutebtn" id="mute" aria-pressed="${!!conv.muted}" aria-label="${conv.muted ? 'ביטול השתקה' : 'השתקת הקבוצה'}">${bell(conv.muted)}</button>` : ''}</header><div id="cv"></div>`;
+  const mb = $('#mute');
+  if (mb) mb.onclick = async () => {
+    if (mb.disabled) return; mb.disabled = true; const on = !conv.muted;
+    const { error } = await sb.from('conversation_members').update({ muted: on }).eq('conversation_id', id).eq('user_id', state.user.id);
+    mb.disabled = false; if (error) return toast(errText(error, 'לא עודכן — נסו שוב'));
+    conv.muted = on; mb.setAttribute('aria-pressed', on); mb.setAttribute('aria-label', on ? 'ביטול השתקה' : 'השתקת הקבוצה'); mb.innerHTML = bell(on);
+    const c = (await cache.get('inbox').catch(() => null)) || []; const x = c.find(r => r.id === id); if (x) { x.muted = on; cache.set('inbox', c).catch(() => {}); }
+    toast(on ? 'הקבוצה מושתקת · תיוג אישי עדיין מגיע' : 'ההתראות חזרו');
+  };
   (await import('./chat.js')).renderChat($('#cv'), { conversation: conv });
   sb.from('conversation_members').update({ last_read_at: new Date().toISOString() }).eq('conversation_id', id).eq('user_id', state.user.id).then(() => {});
 }

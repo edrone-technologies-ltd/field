@@ -2,7 +2,6 @@
 // שלב 1 "מה נכלל" (ימים · תמונות · משימות · מקטעים) → שלב 2 חתימה. הבחירה נשמרת עם החתימה (include + snapshot), החתימה סוגרת את הפרויקט (db/081).
 import { sb, state, enqueue, uid, $, $$, esc, icon, toast, dm, isoDay, thumbUrls, signedUrls, zoom, backBtn, goUp, cache } from '../lib/core.js';
 
-const isMgr = () => ['admin', 'ops_manager'].includes(state.profile?.role);
 const HE_D1 = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 const dow = d => HE_D1[new Date(d + 'T12:00').getDay()];
 
@@ -169,7 +168,7 @@ export async function renderSignoff(el, pid, dayId = null) {
         <div class="soc-rate" aria-label="${row.rating} כוכבים">${'★'.repeat(row.rating)}<i>${'★'.repeat(5 - row.rating)}</i></div>
         <div class="soc-brand"><b>E-DRONE</b><small>TECHNOLOGIES</small></div>
         <div class="soc-acts">
-          ${isMgr() ? `<a class="btn primary block" href="#/client-report/${pid}">${icon('report', 20)} הדוח ללקוח מוכן</a>` : ''}
+          <a class="btn primary block" href="#/client-report/${pid}">${icon('report', 20)} הדוח ללקוח מוכן</a>
           <a class="btn ghost block" href="#/p/${pid}/s">${navigator.onLine ? 'סיום' : 'סיום · יישלח כשתחזור קליטה'}</a>
         </div>
       </div>`;

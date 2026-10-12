@@ -6,8 +6,11 @@ const bdi = t => esc(t).replace(/([+−~≤≥]?[0-9A-Za-z][0-9A-Za-z.,%°~+−�
 const fmt = d => d ? new Date(d + 'T12:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 
 export async function renderClientReport(el, pid) {
-  if (!isManager()) { el.innerHTML = '<div class="empty">למנהלים בלבד.</div>'; return; }
   el.innerHTML = '<div class="skel tall"></div>';
+  // מנהלים · ראש צוות (תפקיד, או ראש צוות של יום בפרויקט — כמו מי שמותר לו להחתים). קישור ללקוח — מנהלים בלבד (RLS project_shares)
+  const M = isManager();
+  if (!M) { const lead = state.profile?.role === 'crew_lead' || (await sb.from('work_days').select('id').eq('project_id', pid).eq('crew_lead_id', state.user.id).limit(1).then(r => r.data?.length, () => 0));
+    if (!lead) { el.innerHTML = `<header class="phead"><a class="back" href="#/p/${pid}" aria-label="חזרה">${icon('back', 20)}</a></header><div class="empty-card"><span class="ei">${icon('shield', 26)}</span><span><b>הדוח ללקוח — לראש הצוות ולמנהלים</b></span></div>`; return; } }
   const q = x => x.then(r => r.data || []).catch(() => []);
   const [{ data: p }, days, tasks, reps0, ph, sos, { data: me }, local] = await Promise.all([
     sb.from('projects').select('*, sites(name,address,contact_name)').eq('id', pid).single(),
@@ -24,6 +27,9 @@ export async function renderClientReport(el, pid) {
   let so = sos[0] || null;
   if (local && (!so || so.id === local.id || new Date(local.created_at) > new Date(so.created_at))) so = { ...(so || {}), ...local };
   if (so?.id && sos[0]?.id === so.id && local) cache.set('signoff-last:' + pid, null).catch(() => {});
+  // נציג E-Drone בחתימה = מי שהחתים את הלקוח
+  const repBy = so?.created_by || null;
+  const repName = repBy ? (repBy === state.user.id ? state.profile.full_name : await sb.from('profiles').select('full_name').eq('id', repBy).maybeSingle().then(r => r.data?.full_name || '', () => '')) : '';
   const legacy = !so && [...days].reverse().find(d => d.signoff)?.signoff;
   const inc = so?.include || null, snap = so?.snapshot || null, sec = { works: true, photos: true, qty: false, issues: false, ...(inc?.sections || {}) };
   const reps = reps0.filter(r => r.report_date && !/^⚠/.test(r.notes || ''));
@@ -68,7 +74,7 @@ export async function renderClientReport(el, pid) {
   const shot = (x, tag, cls = '') => `<div class="shot ${cls}"><img src="${esc(url(x))}" alt="">${tag ? `<span class="tag ${tag === 'אחרי' ? 'a' : ''}">${tag}</span>` : ''}</div>`;
   let pn = 1;
   el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/p/${pid}/s" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ללקוח${so || legacy ? '' : ' <span class="pill warn">לפני חתימה</span>'}</b>
-      <button class="btn ghost sm" id="shr">${icon('send', 16)} שיתוף</button><button class="btn ghost sm" id="collage">קולאז׳</button><button class="btn primary sm" id="print">PDF</button></div>
+      ${M ? `<button class="btn ghost sm" id="shr">${icon('send', 16)} שיתוף</button>` : ''}<button class="btn ghost sm" id="collage">קולאז׳</button><button class="btn primary sm" id="print">PDF</button></div>
     <div class="creport" id="cr">
       <div class="pg"><div class="hero"><img src="${esc(hero)}" alt=""><div class="hero-top"><div class="wordmark"><div class="w">E-DRONE</div><div class="t">TECHNOLOGIES</div></div><div class="kicker">PROJECT REPORT</div></div>
         <div class="hero-txt"><div class="lbl">דוח סיכום פרויקט</div><h1 contenteditable="true">${bdi(place)}</h1><div class="sub" contenteditable="true">${bdi(p.client_name || '')}</div></div></div>
@@ -95,6 +101,8 @@ export async function renderClientReport(el, pid) {
             <div class="k">תאריך</div><div class="v">${signedAt ? fmt(signedAt) : ''}</div>
             ${rating ? `<div class="k">שביעות רצון</div><div class="v">${stars(rating)}</div>` : ''}</div>
           <div class="cr-sig">${sigUrl ? `<img src="${esc(sigUrl)}" alt="חתימה">` : ''}<span>חתימת הלקוח</span></div></div>
+          <div class="cr-sign cr-rep"><div class="cr-sv"><div class="k">נציג E-Drone</div><div class="v" contenteditable="true">${repName ? bdi(repName) : '&nbsp;'}</div><div class="k">חברה</div><div class="v"><bdi dir="ltr">E-Drone Technologies</bdi></div></div>
+            <div class="cr-sig"><span>חתימת נציג E-Drone</span></div></div>
           <div class="note"><p><b>${ok === false ? 'העבודה אושרה עם הערות.' : 'העבודה בוצעה במלואה ולשביעות רצון הלקוח.'}</b>${so?.notes || legacy?.notes ? ` ${bdi(so?.notes || legacy?.notes)}` : ''}</p></div>`
         : '<div class="note"><p>טרם נחתם על ידי הלקוח.</p></div>'}
         <div class="rsec" style="margin-top:12mm">SUMMARY</div><h2>סיכום</h2><div class="rule"></div>
@@ -106,11 +114,12 @@ export async function renderClientReport(el, pid) {
   $('#print').onclick = () => { const t = document.title; document.title = `E-Drone · ${place}`; window.print(); setTimeout(() => document.title = t, 500); };
   const allB = PH.filter(x => x.k === 'before').map(url), allA = afterAll.map(url);
   $('#collage').onclick = () => collage(allB, allA, place);
-  $('#shr').onclick = () => shareLink(p, pid);
+  const sh = $('#shr'); if (sh) sh.onclick = () => shareLink(p, pid);
 }
 
 // קישור ללקוח (share.html): מתקדם לבד מ"התקדמות" ל"דוח סיום" ברגע שנחתם. משתמשים בקישור הפעיל אם יש
 async function shareLink(p, pid) {
+  if (!isManager()) return;
   let { data: s } = await sb.from('project_shares').select('token,expires_at').eq('project_id', pid).eq('revoked', false).gt('expires_at', new Date().toISOString()).order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (!s) ({ data: s } = await sb.from('project_shares').insert({ project_id: pid, created_by: state.user.id }).select('token').single());
   if (!s) return toast('הקישור לא נוצר — נסו שוב');

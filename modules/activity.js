@@ -6,7 +6,10 @@ const ROUTE = { 'בית': 'בית', schedule: 'לו״ז', today: 'יום השט�
   expenses: 'הוצאות', purchase: 'רכש', requests: 'בקשות', staff: 'עובדים', 'staff/:id': 'עובד', dispatch: 'לוח שיבוץ', equipment: 'ציוד', 'plan/:id': 'תכנית עבודה',
   'visit/:id': 'דוח ביקור', 'visit/new': 'דוח ביקור חדש', 'tour/ops': 'הדרכה', news: 'עדכוני הנהלה', myfile: 'התיק שלי', admin: 'הרשאות', activity: 'פעילות', onboarding: 'לפני שמתחילים' };
 const TBL = { photos: 'תמונות', specs: 'אפיונים', tasks: 'משימות', project_visits: 'דוחות ביקור', work_days: 'ימי שטח', projects: 'פרויקטים', field_reports: 'דוחות',
-  issues: 'תקלות', expenses: 'הוצאות', shifts: 'משמרות', buildings: 'מבנים', sites: 'אתרים', purchase_requests: 'רכש', messages: 'הודעות צ׳אט', plan_days: 'תכניות עבודה' };
+  issues: 'תקלות', expenses: 'הוצאות', shifts: 'משמרות', buildings: 'מבנים', sites: 'אתרים', purchase_requests: 'רכש', messages: 'הודעות צ׳אט', plan_days: 'תכניות עבודה',
+  missing_items: 'פריטים חסרים', project_signoffs: 'החתמות לקוח', project_shares: 'קישורים ללקוח', employee_docs: 'מסמכי עובדים', kb_items: 'הדרכות', absences: 'חופשות', shift_requests: 'בקשות תיקון שעות',
+  equipment: 'ציוד', clients: 'לקוחות', contacts: 'אנשי קשר', news: 'עדכוני הנהלה', requests: 'בקשות למשרד', flight_logs: 'טיסות' };
+const QA = n => /^zz|(^|\s)QA$/i.test(n || '');   // משתמשי בדיקה זמניים — לא חלק מהצוות
 const ACT = { insert: 'הוסיף', update: 'עדכן', delete: 'מחק' };
 const rname = r => ROUTE[r] || ROUTE[(r || '').split('/')[0]] || r || '';
 const hm = iso => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
@@ -21,7 +24,7 @@ export async function renderActivity(el, who = '') {
     sb.from('app_events').select('user_id,at,kind,route,device').gte('at', since).order('at', { ascending: false }).limit(300),
     sb.from('audit_log').select('user_id,at,tbl,action').gte('at', since).order('at', { ascending: false }).limit(200)]);
   if (error) { el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">פעילות</h1></header><div class="empty-line">הנתונים לא נטענו — נסו שוב</div>`; return; }
-  const U = S.users || [], N = new Map(U.map(u => [u.id, u.name])), now = Date.now();
+  const U = (S.users || []).filter(u => !QA(u.name)), N = new Map(U.map(u => [u.id, u.name])), now = Date.now();
   const on = u => u.seen && now - new Date(u.seen) < 2.5 * 6e4, today = u => u.seen && new Date(u.seen).toDateString() === new Date().toDateString();
   const latestVer = U.map(u => u.ver).filter(Boolean).sort((a, b) => parseInt(b.slice(1)) - parseInt(a.slice(1)))[0];
   const D = S.daily || [], tdy = D.find(d => d.d === new Date().toLocaleDateString('en-CA')) || { users: 0, views: 0 };
@@ -31,7 +34,7 @@ export async function renderActivity(el, who = '') {
   const feed = [
     ...(ev || []).filter(e => e.kind !== 'view' || who).map(e => ({ at: e.at, u: e.user_id, t: e.kind === 'login' ? `נכנס עם קוד · ${esc(e.device || '')}` : e.kind === 'open' ? `פתח את האפליקציה · ${esc(e.device || '')}` : `צפה ב${esc(rname(e.route))}`, k: e.kind })),
     ...(au || []).map(a => ({ at: a.at, u: a.user_id, t: `${ACT[a.action] || a.action} ${TBL[a.tbl] || a.tbl}`, k: 'act' }))]
-    .filter(x => !who || x.u === who).sort((a, b) => a.at < b.at ? 1 : -1);
+    .filter(x => (!who || x.u === who) && !(x.u && !N.has(x.u))).sort((a, b) => a.at < b.at ? 1 : -1);
   // פעולות רצופות מאותו סוג — שורה אחת עם מונה
   const rows = []; for (const x of feed) { const p = rows.at(-1); if (p && p.u === x.u && p.t === x.t && new Date(p.at) - new Date(x.at) < 30 * 6e4) p.n++; else rows.push({ ...x, n: 1 }); }
 
@@ -45,7 +48,8 @@ export async function renderActivity(el, who = '') {
       <div class="kpis"><div class="kpi"><b>${U.filter(on).length}</b><span>מחוברים עכשיו</span></div><div class="kpi"><b>${U.filter(today).length}</b><span>היו היום</span></div><div class="kpi"><b>${tdy.views}</b><span>מסכים היום</span></div></div>
       <section class="stack"><div class="sh-row"><h3 class="sh">הצוות</h3><span class="small muted">14 ימים אחרונים</span></div><div class="list">${U.map(urow).join('')}</div></section>
       <section class="stack"><h3 class="sh">${who ? `מה ${esc((N.get(who) || '').split(' ')[0])} עשה` : 'מה קורה עכשיו'}${who ? ' · <a href="#/activity" class="small">כולם</a>' : ''}</h3>
-        <div class="list feed">${rows.slice(0, 60).map(x => `<div class="lrow fr ${x.k}"><span class="fh">${hm(x.at)}</span><span class="grow">${who ? '' : `<b>${esc((N.get(x.u) || '').split(' ')[0])}</b> `}${x.t}${x.n > 1 ? ` <span class="pill">×${x.n}</span>` : ''}${new Date(x.at).toDateString() !== new Date().toDateString() ? ` <small class="muted">${day(x.at)}</small>` : ''}</span></div>`).join('') || '<div class="empty-line">אין פעילות ביומיים האחרונים</div>'}</div></section>
+        <div class="list feed">${rows.slice(0, 60).map((x, i, a) => { const dd = new Date(x.at).toDateString(), sep = dd !== (i ? new Date(a[i - 1].at) : new Date()).toDateString() ? `<div class="fr-day">${day(x.at)}</div>` : '';
+          return `${sep}<div class="lrow fr ${x.k}${x.u ? '' : ' sys'}"><span class="fh">${hm(x.at)}</span><span class="grow">${who ? '' : x.u ? `<b>${esc((N.get(x.u) || '').split(' ')[0])}</b> ` : '<b class="muted">אוטומטי</b> '}${x.t}${x.n > 1 ? ` <span class="pill">×${x.n}</span>` : ''}</span></div>`; }).join('') || '<div class="empty-line">אין פעילות ביומיים האחרונים</div>'}</div></section>
       <section class="stack"><h3 class="sh">משתמשים פעילים ביום</h3>
         <div class="dbars">${D.map(d => `<div class="db"><span class="n">${d.users}</span><i style="height:${Math.round(d.users / max * 100)}%"></i><small>${new Date(d.d + 'T12:00').getDate()}.${new Date(d.d + 'T12:00').getMonth() + 1}</small></div>`).join('') || '<div class="empty-line">אין נתונים</div>'}</div></section>
       <div class="grid2">

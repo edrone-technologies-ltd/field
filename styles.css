@@ -1776,3 +1776,26 @@ body.client-mode .tabbar,body.client-mode #net,body.client-mode .topbar{display:
 .kpis.qk { margin: 4px 0 2px; }
 .lrow:has(.qth) { flex-shrink: 0; }
 .chip.islead{border-color:var(--lime);font-weight:700}.chip.islead::before{content:'★';color:var(--lime);margin-inline-end:4px}
+/* p3: שורת חתימת נציג E-Drone בדוח ללקוח */
+.creport .cr-rep{margin-top:10mm}.creport .cr-rep .cr-sig{min-height:22mm}
+
+/* p2 · שבוע ראשון בשטח */
+.card[data-id] > .row > .grow > b,.card[data-id] > .row > .grow > small{display:block}
+.card[data-id] > .row > .grow > small{color:var(--muted);font-size:var(--t-meta);margin-top:2px}
+.clock.hint.go{background:color-mix(in srgb,var(--lime) 22%,var(--card))} .clock.hint.go #cl-in{min-height:48px;padding-inline:20px;font-size:1rem}
+.mutei{display:inline-flex;vertical-align:-2px;margin-inline-end:4px;color:var(--muted)}
+.mutebtn[aria-pressed="true"]{color:var(--muted);background:var(--bg)}
+/* p3: פעילות — מפריד יום בפיד, פעולות אוטומטיות מעומעמות */
+.feed .fr-day{padding:10px 14px 4px;font-size:.78rem;font-weight:800;color:var(--muted);letter-spacing:.02em}
+.feed .fr.sys{opacity:.62}
+/* p3: תצוגה מקדימה לקישור סרטון בהדרכה חדשה */
+.kvp:empty{display:none}.kvp{display:flex;align-items:center;gap:10px;margin:-4px 0 10px}
+.kvp-th{flex:none;width:112px;aspect-ratio:16/9;border-radius:10px;background:#000 center/cover;display:grid;place-items:center;color:#fff}
+.kvp-th svg{filter:drop-shadow(0 1px 3px #0009)}.kvp small.ok{color:var(--ok, #2E7D32);font-weight:700}
+/* p3: KPI שהוא קישור — בלי קו תחתון */
+a.kpi{text-decoration:none;color:inherit}a.kpi:active{transform:scale(.98)}
+/* לוח שיבוץ (מחשב): גרירת יום/אדם — יעד מסומן */
+.dragging .dgrid td{transition:background .12s}
+.dgrid td.dropok{background:var(--limebg);outline:2px dashed var(--lime);outline-offset:-3px}
+.dchip[draggable="true"],.dpday[draggable="true"]{cursor:grab}
+.da-mv .chips{gap:6px}

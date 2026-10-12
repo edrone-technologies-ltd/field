@@ -144,8 +144,11 @@ export function play(slides, { onDone, onSkip, label = 'קבלת פנים' } = {
 
 // ---------- הזרימה ----------
 async function enableAndCheck(el, b) {
+  // ניסיון שני אחרי כישלון / חסום בדפדפן — ממשיכים (לא נתקעים על כפתור שלא עובד; ההגדרה נשארת בתפריט)
+  if (el.dataset.failed) { ls('edrone-wl-push', '1'); return; }
   try { await enablePush(); } catch {
     const d = device(); const st = await pst();
+    if (st === 'denied') { el.dataset.failed = '1'; setTimeout(() => { b.textContent = 'המשך'; }, 0); }
     const msg = st === 'denied' ? (d.ios ? 'חסום: הגדרות ← E-Drone ← עדכונים' : 'חסום: נעילה שליד הכתובת ← הרשאות ← התראות') : 'לא הופעל — נסו שוב';
     let h = $('.wl-err', el); if (!h) { h = document.createElement('div'); h.className = 'wl-err'; $('.wl-txt', el).appendChild(h); } h.textContent = msg;
     return 'stay';

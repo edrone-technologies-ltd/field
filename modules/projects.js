@@ -142,15 +142,8 @@ export async function renderProject(el, id, tab = 'o') {
         close(); toast(n ? `התאריכים עודכנו · ${n} ימי שטח הוזזו` : 'התאריכים עודכנו'); reload('o'); };
     });
     const sm = $('#schm', box); if (sm) sm.onclick = () => openSched();
-    $$('[data-mv]', box).forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation();
-      sheet(`<h3 class="sh">העברת יום שטח</h3><label class="field">לתאריך<input type="date" id="md" value="${b.dataset.day}"></label>
-        <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="mgo">העברת היום</button></div>`, (s2, close) => {
-        $('#mgo', s2).onclick = async e2 => { const d = $('#md', s2).value; if (!d || d === b.dataset.day) return close();
-          const dow = new Date(d + 'T12:00').getDay(); if (dow === 6 && !(await confirmBox('שבת — להעביר בכל זאת?', { ok: 'העברה' }))) return;
-          e2.target.disabled = true; const { error } = await sb.rpc('move_day', { w: b.dataset.mv, d });
-          if (error) { e2.target.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); }
-          close(); toast(`הועבר ל${dayLabel(d)} · הצוות קיבל עדכון`); reload('o'); };
-      }); });
+    // העברה = ניהול היום: יום קדימה לכל הפרויקט, יום פנוי בלחיצה, או תאריך אחר
+    $$('[data-mv]', box).forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); import('./dayadmin.js').then(m => m.openDayAdmin(b.dataset.mv, () => reload('o'))); });
   }
   // ----- מוכנות לביצוע: כל מה שצריך כדי לצאת לשטח, ברשימה אחת. אוטומטי מהנתונים; מה שאין לו מקור (מרחב אווירי, כניסה, מים) — סימון בלחיצה -----
   // סימון ידני תקף לימי השטח שתוכננו כשסומן; שינוי תאריכים = מתאמים מחדש
@@ -411,7 +404,9 @@ export async function renderProject(el, id, tab = 'o') {
         markLead();
         const dr = $('#sdr', s); [...dr.options].forEach(o => { if (!o.value) return; const why = av.drone(o.value); o.disabled = !!why; o.textContent = o.dataset.n + (why ? ' — ' + why : o.dataset.w); });
         if (dr.selectedOptions[0]?.disabled) dr.value = '';
+        if (!dr.value && !drTouched) { const ok = [...dr.options].find(o => o.value && !o.disabled); if (ok) dr.value = ok.value; }   // ברירת מחדל: הרחפן הראשון שפנוי בכל הטווח
       };
+      let drTouched = false; $('#sdr', s).addEventListener('change', () => { drTouched = true; });
       // תחזית: open-meteo עד 16 יום קדימה, בשעות העבודה 06-17. מעבר לטווח — אין נתון ולא מדלגים
       const lat = p.sites?.lat || p.lat, lng = p.sites?.lng || p.lng; const H = {}; const manual = new Map();  // date → true=דילוג / false=לא לדלג
       const hr = id => { const v = $(id, s).value; return v ? +v.slice(0, 2) + +v.slice(3) / 60 : null; };

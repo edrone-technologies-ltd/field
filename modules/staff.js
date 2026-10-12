@@ -15,7 +15,15 @@ async function monthData(userIds, month) {
     sb.from('app_settings').select('value').eq('key', 'attendance').maybeSingle(),
   ]);
   const S = { ...DEFAULTS, ...(st?.value || {}) };
-  return Object.fromEntries(userIds.map(u => [u, computeMonth((shifts || []).filter(s => s.user_id === u), month, S)]).concat([['__open', (shifts || []).filter(s => s.status === 'open')]]));
+  // משמרת פתוחה נספרת עד עכשיו — "עד עכשיו" אמיתי
+  const now = new Date().toISOString(), live = (shifts || []).map(x => x.end_at ? x : { ...x, end_at: now });
+  return Object.fromEntries(userIds.map(u => [u, computeMonth(live.filter(s => s.user_id === u), month, S)]).concat([['__open', (shifts || []).filter(s => s.status === 'open')]]));
+}
+// שכר מצטבר עד היום (הנהלה בלבד): משכורת חודשית — לפי חלק החודש שעבר
+function payToDate(T, rate) {
+  const E = estimatePay(T, rate); if (!E) return null;
+  if (E.type !== 'hourly') { const d = new Date(), frac = d.getDate() / new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate(); E.total -= E.base * (1 - frac); }
+  return E.total;
 }
 
 // ---------- רשימת עובדים ----------
@@ -32,11 +40,14 @@ export async function renderStaff(el) {
   const M = await monthData(active.map(p => p.id), thisMonth());
   const open = new Set((M.__open || []).map(s => s.user_id));
   const soon = (docs || []).filter(d => (new Date(d.expires_on) - new Date()) / 864e5 <= 45);
-  $('#sl').innerHTML = `${soon.length ? `<div class="alist">${soon.map(d => `<a class="arow warn" href="#/staff/${d.user_id}/docs"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(active.find(p => p.id === d.user_id)?.full_name || '')} · ${esc(d.title)}</b><small>בתוקף עד ${new Date(d.expires_on).toLocaleDateString('he-IL')}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
+  const PAY = Object.fromEntries(isAdmin() ? active.map(p => [p.id, payToDate(M[p.id].totals, (rates || []).find(x => x.user_id === p.id))]) : []);
+  const payTot = Object.values(PAY).reduce((t, v) => t + (v || 0), 0), hrsTot = active.reduce((t, p) => t + (M[p.id]?.totals.net || 0), 0);
+  $('#sl').innerHTML = `<div class="kpis">${isAdmin() ? `<a class="kpi" href="#/attendance"><b>${nis(payTot)}</b><span>שכר עד היום</span></a>` : ''}<a class="kpi" href="#/attendance"><b>${hhmm(hrsTot)}</b><span>שעות החודש</span></a><div class="kpi"><b>${open.size}</b><span>במשמרת עכשיו</span></div></div>
+    ${soon.length ? `<div class="alist">${soon.map(d => `<a class="arow warn" href="#/staff/${d.user_id}/docs"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(active.find(p => p.id === d.user_id)?.full_name || '')} · ${esc(d.title)}</b><small>בתוקף עד ${new Date(d.expires_on).toLocaleDateString('he-IL')}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>` : ''}
     <div class="list">${active.map(p => { const pr = (prof || []).find(x => x.user_id === p.id), R = M[p.id], r = (rates || []).find(x => x.user_id === p.id);
       return `<a class="lrow" href="#/staff/${p.id}"><span class="avatar sm">${esc(initials(p.full_name))}</span><span class="grow"><b>${esc(p.full_name)}${open.has(p.id) ? ' <span class="cl-dot inline"></span>' : ''}</b>
         <small>${esc(pr?.job_title || ROLE_HE[p.role] || '')}${pr?.employment_type && pr.employment_type !== 'עובד' ? ' · ' + esc(pr.employment_type) : ''}${R?.totals.net ? ` · ${hhmm(R.totals.net)} שעות החודש` : ''}</small></span>
-        ${r ? `<span class="pill">${PAY_TYPES[r.pay_type] || ''}</span>` : ''}<span class="chev">${icon('chev', 18)}</span></a>`; }).join('')}</div>`;
+        ${PAY[p.id] ? `<span class="pill" title="${esc(PAY_TYPES[r?.pay_type] || '')}">${nis(PAY[p.id])}</span>` : r ? `<span class="pill">${PAY_TYPES[r.pay_type] || ''}</span>` : ''}<span class="chev">${icon('chev', 18)}</span></a>`; }).join('')}</div>`;
   import('./onboarding.js').then(m => active.forEach(async p => { const it = await m.status(p.id).catch(() => []); const d = it.filter(x => x.done).length;   // במקביל, לא אחד-אחד
     const row = $(`#sl a[href="#/staff/${p.id}"] .chev`); if (row && it.length && d < it.length) row.insertAdjacentHTML('beforebegin', `<span class="pill">קליטה ${d}/${it.length}</span>`); }));
   const b = $('#bulk'); if (b) b.onclick = async () => (await import('./files.js')).bulkUpload(active, () => renderStaff(el));

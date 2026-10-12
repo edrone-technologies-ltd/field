@@ -42,7 +42,7 @@ export async function loadDay(id) {
     day.kind === 'report' ? null : import('./plan.js').then(m => m.dayPlan(day)).catch(() => undefined),
     // שטח ולוגיסטיקה מהאפיון (מים, חשמל, גישה, המראה, תיאומים, סיכונים, מרחב אווירי) + משימות ההכנה הפתוחות של הפרויקט
     day.projects?.site_id ? q(sb.from('buildings').select('name,specs(site_ops,hydrants,power)').eq('site_id', day.projects.site_id)) : [],
-    q(sb.from('tasks').select('id,title,status,work_day_id').eq('project_id', day.project_id).eq('phase', 'הכנה').not('status', 'in', '(done,dropped)').order('seq')),
+    q(sb.from('tasks').select('id,title,status,work_day_id').eq('project_id', day.project_id).eq('phase', 'הכנה').not('status', 'in', '(done,dropped)').or(`work_day_id.is.null,work_day_id.eq.${id}`).order('seq')),   // הכנות של היום + כלליות (של יום אחר — ביום ההוא)
   ]);
   const allTasks = (tasks || []).concat(open.filter(t => !(tasks || []).some(x => x.id === t.id)));
   const D = { ops: siteOps(ops), prep, at: Date.now(), clockH: ch ? Object.fromEntries(ch.map(r => [r.user_id, Number(r.hours)])) : null, specPh: sp, fixes, plan, day, tasks: allTasks, checks: checks || [], photos: photos || [], issues: issues || [], missing: missing || [], S: Object.fromEntries((settings || []).map(s => [s.key, s.value])), team: team || [] };
@@ -161,7 +161,7 @@ export async function renderDay(el, id) {
       ${site.map_path ? '<div class="card sitemap compact" id="daymap"></div>' : ''}`;
   }
   // משימות היום בסקירה — בלי ההכנות שכבר מופיעות לסימון ב"לפני היציאה"
-  function dayList() { const P = new Set((D.prep || []).map(t => t.id)); return D.tasks.filter(t => !P.has(t.id)); }
+  function dayList() { const P = new Set((D.prep || []).map(t => t.id)); return D.tasks.filter(t => !P.has(t.id) && t.phase !== 'הכנה'); }
   // שורות לוגיסטיקה מהשיבוץ (work_days.logistics) — בלי מה שכבר מופיע מהאפיון (מים/חשמל), כדי שלא יופיע פעמיים
   function logi(o = D.ops || {}) {
     return (D.day.logistics || []).filter(l => !(o.water && /מים|הידרנט/.test(l)) && !(o.power && /חשמל|גנרטור/.test(l)));
@@ -235,14 +235,14 @@ export async function renderDay(el, id) {
       ${contactCard(site.contact_name, site.contact_phone)}`;
   }
   function sWork() {
-    const done = D.tasks.filter(t => t.status === 'done').length, tot = D.tasks.filter(t => t.status !== 'dropped').length;
+    const L = dayList(), done = L.filter(t => t.status === 'done').length, tot = L.filter(t => t.status !== 'dropped').length;
     // סדר החזיתות לפי השמש — בשורה אחת מעל המשימות, כי בזמן העבודה זה מה שקובע מאיפה מתחילים
     const fac = [...new Set(D.tasks.filter(t => t.phase === 'ביצוע' && t.status !== 'done').flatMap(t => t.facades || []))];
     const a0 = D.day.site_arrival ? +D.day.site_arrival.slice(0, 2) : 7, night = a0 >= 18 || a0 < 5;
     const ord = fac.length > 1 && !night ? facadeOrder(D.day.day, site.lat || P.lat, site.lng || P.lng, fac) : [];
     return `${ord.length ? `<div class="lrow">${icon('sun', 20)}<span class="grow"><b>סדר לפי השמש</b><small>${ord.map(o => `${esc(o.name)} ${esc(o.when)}`).join(' · ')}</small></span></div>` : ''}
       <div class="row"><h3 class="grow">משימות היום</h3><span class="pill ${done === tot && tot ? 'ok' : 'lime'}">${done}/${tot}</span></div>
-      <div class="list">${D.tasks.map(t => `<div class="row"><button class="task ${t.status}" data-t="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : t.status === 'blocked' ? icon('alert', 14) : ''}</span>
+      <div class="list">${L.map(t => `<div class="row"><button class="task ${t.status}" data-t="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : t.status === 'blocked' ? icon('alert', 14) : ''}</span>
         <span class="t"><b>${esc(t.title)}</b><small>${esc(T_STATUS[t.status]?.[0] || '')}${t.status === 'done' && t.done_by ? ' · ' + esc((D.team.find(u => u.id === t.done_by)?.full_name || '').split(' ')[0]) + (t.done_at ? ' ' + new Date(t.done_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }) : '') : ''}${t.status_note ? ' · ' + esc(t.status_note) : ''}${t.risk && t.status !== 'done' ? ' · ' + esc(t.risk) : ''}</small></span></button>${t.status !== 'done' ? `<button class="hbtn" type="button" data-stuck="${t.id}" aria-label="נתקע">${icon('alert', 18)}</button>` : ''}</div>`).join('') || '<div class="empty-line">אין משימות להיום</div>'}</div>
       <button class="btn ghost block" id="addtask">${icon('plus', 18)} משימה שהלקוח ביקש</button>
       ${(D.fixes || []).length ? `<section><div class="sh-row"><h3 class="sh">תיקונים מדוח ביקור</h3><span class="count">${D.fixes.length}</span></div><div class="list">${D.fixes.map(f => `<button class="lrow" type="button" data-fix="${f.id}"><span class="grow"><b>${esc(f.title)}</b>${f.photos?.before?.length ? `<small>${f.photos.before.length} תמונות לפני</small>` : ''}</span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}</div></section>` : ''}
@@ -287,7 +287,7 @@ export async function renderDay(el, id) {
   }
   function sClose() {
     closeVals();
-    const done = D.tasks.filter(t => t.status === 'done').length, tot = D.tasks.filter(t => t.status !== 'dropped').length;
+    const done = dayList().filter(t => t.status === 'done').length, tot = dayList().filter(t => t.status !== 'dropped').length;
     const chips = (key, list, multi) => `<div class="chips">${list.map(x => `<button class="chip" data-c="${key}" data-v="${esc(x)}" data-m="${multi ? 1 : ''}" aria-pressed="${multi ? C[key].includes(x) : C[key] === x}">${esc(x)}</button>`).join('')}</div>`;
     const dh = defHours();
     const reportTop = !REPORT ? '' : `<div class="sec"><h3>מתי ומי</h3>
@@ -303,7 +303,7 @@ export async function renderDay(el, id) {
       ${REPORT ? '' : baBlock()}
       <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => { const v = C.hours[c.user_id], clk = D.clockH?.[c.user_id];
         return `<div class="row hrow"><span class="grow"><b>${esc(c.profiles?.full_name || '')}</b>${clk != null ? `<small class="muted">מהשעון ${nf(clk)}</small>` : ''}</span>
-        ${clk == null && !REPORT ? `<button type="button" class="chip sm" data-h0="${c.user_id}" aria-pressed="${v === 0}">לא הגיע</button>${dh && v == null ? `<button type="button" class="chip sm" data-hd="${c.user_id}">${nf(dh)}</button>` : ''}` : ''}
+        ${clk == null && !REPORT ? `<button type="button" class="chip sm" data-h0="${c.user_id}" aria-pressed="${v === 0}">לא הגיע</button>${dh && v == null ? `<button type="button" class="chip sm" data-hd="${c.user_id}">${nf(dh)} ש׳</button>` : ''}` : ''}
         <input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${v ?? ''}"></div>`; }).join('')}</div>
       <div class="sec">
         <label class="tog"><span>הציוד חזר תקין</span><span class="sw"><input type="checkbox" id="eqok" ${C.equipment_ok ? 'checked' : ''}><i></i></span></label>
@@ -330,7 +330,7 @@ export async function renderDay(el, id) {
   function sDone() {
     const d = D.day, hrs = d.work_day_crew.reduce((s, c) => s + Number(c.hours || 0), 0);
     const onSite = d.arrived_at && d.finished_at ? Math.max(0, (new Date(d.finished_at) - new Date(d.arrived_at)) / 36e5) : null;
-    const nPh = D.photos.length, nT = D.tasks.filter(t => t.status !== 'dropped').length, nD = D.tasks.filter(t => t.status === 'done').length;
+    const nPh = D.photos.length, nT = dayList().filter(t => t.status !== 'dropped').length, nD = dayList().filter(t => t.status === 'done').length;
     return `<div class="card stack center dayfin"><div class="big-ok pop">${icon('check', 32)}</div><h2>${REPORT ? 'הדוח נשלח' : nT && nD === nT ? 'יום מושלם — הכל בוצע' : 'היום נסגר'}</h2>
         <div class="muted" id="dsent">${d.monday_item_id ? 'הדוח התקבל במשרד' : ''}</div>
         ${d.arrived_at && d.finished_at ? `<div class="small muted"><bdi dir="ltr">${hm(d.arrived_at)}–${hm(d.finished_at)}</bdi> באתר${onSite >= 0.5 ? ` · ${nf(Math.round(onSite * 2) / 2)} ש׳` : ''}</div>` : ''}</div>
@@ -411,6 +411,19 @@ export async function renderDay(el, id) {
     if (s === 5) doneState();
     if (s < 5) document.body.appendChild(bar);
     if (s >= 2 && s <= 3) fabs(bar);   // תקלה / חסר — בתוך הפס התחתון (לא מרחפים מעל מתגים ותוכן)
+    if (s >= 2 && s <= 4 && !REPORT) clockNudge();
+  }
+  // הצוות יצא לדרך (ראש הצוות לחץ "יוצאים") ואני עוד לא במשמרת → "להיכנס למשמרת?" בראש המסך, כניסה בלחיצה אחת לפרויקט של היום
+  let nudged = null;
+  async function clockNudge() {
+    if (!D.day.work_day_crew.some(c => c.user_id === state.user.id) || nudged === false) return;
+    const A = await import('./attendance.js');
+    if (await A.myOpenShift().catch(() => true)) { nudged = false; return; }
+    if (nudged == null && navigator.onLine) try {   // כבר נכנס ויצא היום (למשל עזב מוקדם) — לא שואלים שוב
+      const { data } = await sb.from('shifts').select('id').eq('user_id', state.user.id).gte('start_at', new Date(D.day.day + 'T00:00:00').toISOString()).limit(1);
+      if (data?.length) { nudged = false; return; } } catch { /* */ }
+    nudged = true; const st = $('#dstage', el); if (!st || $('#clockcard', st)) return;
+    A.clockCard(st, () => { nudged = false; $('#clockcard', el)?.remove(); }, { label: D.day.status === 'en_route' ? 'הצוות בדרך לאתר' : 'הצוות באתר', project_id: D.day.project_id });
   }
   function futureBar(bar) {
     const me = D.day.work_day_crew.find(c => c.user_id === state.user.id);
@@ -439,9 +452,10 @@ export async function renderDay(el, id) {
       await save('work_days', { departed_at: now, status: 'en_route', equip_loaded: D.local.loaded, drone_ack: !!D.day.drone_ack });
       for (const c of D.day.work_day_crew) if (!c.clock_in) c.clock_in = now;
       await enqueue({ kind: 'rpc', fn: 'crew_depart', args: { d: D.day.id, t: now } });
-      toast('נסיעה טובה'); draw();
+      nudged = false; toast('נסיעה טובה'); draw();
       // יציאה לאתר = גם כניסה למשמרת (אם עוד לא נכנס) — פעולה אחת במקום שתיים
       try { const A = await import('./attendance.js'); if (!(await A.myOpenShift())) await A.clockIn(null, { project_id: D.day.project_id }); } catch { /* */ }
+      nudged = null; if (here()) clockNudge();   // ויתר על ההסכמה ("לא עכשיו") — יקבל את ההצעה בלחיצה
     };
   }
   function bindSite(bar) {
@@ -511,9 +525,12 @@ export async function renderDay(el, id) {
     // עובד: בפס התחתון — צילום מהעבודה בלחיצה (ראש הצוות סוגר את היום)
     if (!canClose()) { bar.innerHTML = `<label class="btn primary">${icon('photo', 18)} צילום מהעבודה<input type="file" accept="image/*" capture="environment" multiple data-kind="general" hidden></label>`; bindPhotos(bar);
       return; }
-    const left = D.tasks.filter(t => !['done', 'dropped'].includes(t.status)).length;
+    const left = dayList().filter(t => !['done', 'dropped'].includes(t.status)).length;
     bar.innerHTML = `<button class="btn primary" id="fin">סיום יום${left ? ` · ${left} פתוחות` : ' ✓'}</button>`;
-    bar.querySelector('#fin').onclick = () => { D.local.stage = 4; keep(); draw(); };
+    bar.querySelector('#fin').onclick = async e => { if (e.currentTarget.disabled) return; e.currentTarget.disabled = true;
+      // שעות מהשעון עכשיו (המשמרות נפתחו אחרי שהיום נטען) — כדי ששעות הצוות יתמלאו לבד
+      if (navigator.onLine) try { const { data, error } = await sb.rpc('day_shift_hours', { d: D.day.id }); if (!error && data) D.clockH = Object.fromEntries(data.map(r => [r.user_id, Number(r.hours)])); } catch { /* */ }
+      D.local.stage = 4; keep(); draw(); };
   }
   function bindClose(bar) {
     const body = $('#body', el);
@@ -578,6 +595,7 @@ export async function renderDay(el, id) {
       await enqueue({ kind: 'rpc', fn: 'set_day_hours', args: { d: D.day.id, rows: D.day.work_day_crew.map(c => ({ user_id: c.user_id, role: c.role, hours: c.hours })) } });
       await save('work_days', { status: 'done', finished_at: now, ...extra, closed_at: now, material_used: C.material, gallons: C.gallons, work_types: C.work, equipment_ok: C.equipment_ok,
         weather_stop: !!C.weather, quality: C.quality || null, flights: C.flights ?? null, air_minutes: C.air ?? null, notes: C.notes || null, tomorrow: C.tomorrow || null, signoff });
+      (D.prep || []).forEach(t => { if (!t.work_day_id || t.work_day_id === D.day.id) t.status = 'done'; });   // השרת סוגר את ההכנות עם היום (db/109) — גם כאן, שלא יופיעו מחר
       D.local = { stage: null, checks: {}, loaded: null }; D.tried = false; await keep();
       haptic('success'); celebrate(); draw();
     };

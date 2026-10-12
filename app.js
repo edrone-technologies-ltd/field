@@ -206,7 +206,7 @@ async function routeInner() {
   // מסך בלי הרשאה — מסך אחד אחיד (כותרת, חזרה, הסבר קצר), בלי לטעון את המודול
   const deny = () => { app.innerHTML = `<header class="phead">${backBtn('#/')}</header><div class="empty-card"><span class="ei">${icon('shield', 26)}</span><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; };
   const guard = m => can(m) || deny();
-  const MGR = { attendance: 1, dispatch: 1, clients: 1, client: 1, staff: 1, files: 1, 'client-report': 1 };
+  const MGR = { attendance: 1, dispatch: 1, clients: 1, client: 1, staff: 1, files: 1 };   // client-report: הבדיקה במודול (מנהל או ראש צוות)
   if (MGR[h[0]] && !isManager()) return deny();
   if (h[0] === 'activity' && state.profile.role !== 'admin') return deny();
   const home = () => import('./modules/home.js');

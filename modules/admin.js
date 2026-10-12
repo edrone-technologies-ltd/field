@@ -1,5 +1,5 @@
 // ניהול מערכת: צוות, תפקידים, ומי רואה איזה מודול. admin בלבד (נאכף גם בשרת).
-import { sb, state, $, $$, esc, toast, ROLE_HE, FIELD_HE, initials, sheet, icon, leadMark, confirmBox, replaceHash } from '../lib/core.js';
+import { sb, state, $, $$, esc, toast, ROLE_HE, FIELD_HE, initials, sheet, icon, leadMark, confirmBox, replaceHash, timeAgo } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
 const ROLES = ['admin', 'ops_manager', 'surveyor', 'crew_lead', 'crew', 'partner'];
@@ -37,7 +37,14 @@ export async function renderAdmin(el) {
     </tbody></table></div>
 
     <h3 class="sh" id="sync">סנכרון מאנדי</h3>
-    ${logs.length ? `<div class="scroll-x card"><table class="t"><tr><th>מתי</th><th>כיוון</th><th>מה</th><th>מצב</th></tr>${logs.map(l => `<tr><td>${new Date(l.created_at).toLocaleString('he-IL')}</td><td>${l.direction === 'to_monday' ? 'למאנדי' : 'ממאנדי'}</td><td>${esc(l.entity)}${l.status === 'error' && l.error ? `<small class="muted">${esc(String(l.error).slice(0, 120))}</small>` : ''}</td><td><span class="pill ${l.status === 'ok' ? 'ok' : l.status === 'error' ? 'bad' : 'warn'}">${l.status}</span></td></tr>`).join('')}</table></div>` : `<div class="empty-line">אין פעולות סנכרון</div>`}
+    ${(() => { // מצב במבט אחד: משיכה אחרונה ממאנדי, דחיפה אחרונה, שגיאות. הטבלה המלאה — בקיפול
+      const L = logs || [], last = d => L.find(l => l.direction === d && l.status === 'ok'), err = L.filter(l => l.status === 'error');
+      const pull = last('from_monday') || L.find(l => l.direction !== 'to_monday' && l.status === 'ok'), push = last('to_monday');
+      const stale = !pull || Date.now() - new Date(pull.created_at) > 30 * 6e4;
+      return `<div class="arow ${err.length || stale ? 'bad' : 'ok'} card-like"><span class="aic">${icon(err.length || stale ? 'alert' : 'check', 18)}</span><span class="grow"><b>${err.length ? `${err.length} שגיאות סנכרון אחרונות` : stale ? 'המשיכה ממאנדי לא רצה מעל חצי שעה' : 'הסנכרון תקין'}</b>
+        <small>${[pull ? 'ממאנדי ' + timeAgo(pull.created_at) : '', push ? 'למאנדי ' + timeAgo(push.created_at) : ''].filter(Boolean).join(' · ')}</small></span></div>
+        ${err.length ? `<div class="list">${err.slice(0, 5).map(l => `<div class="lrow"><span class="grow"><b>${esc(l.entity)} · ${l.direction === 'to_monday' ? 'למאנדי' : 'ממאנדי'}</b><small class="muted">${esc(String(l.error || '').slice(0, 140))} · ${timeAgo(l.created_at)}</small></span></div>`).join('')}</div>` : ''}`; })()}
+    ${logs.length ? `<details class="fold"><summary><span class="sh">יומן מלא</span><span class="count">${logs.length}</span></summary><div class="scroll-x card"><table class="t"><tr><th>מתי</th><th>כיוון</th><th>מה</th><th>מצב</th></tr>${logs.map(l => `<tr><td>${new Date(l.created_at).toLocaleString('he-IL')}</td><td>${l.direction === 'to_monday' ? 'למאנדי' : 'ממאנדי'}</td><td>${esc(l.entity)}${l.status === 'error' && l.error ? `<small class="muted">${esc(String(l.error).slice(0, 120))}</small>` : ''}</td><td><span class="pill ${l.status === 'ok' ? 'ok' : l.status === 'error' ? 'bad' : 'warn'}">${l.status}</span></td></tr>`).join('')}</table></div></details>` : `<div class="empty-line">אין פעולות סנכרון</div>`}
     </div>`;
   $$('[data-role]').forEach(s => { let prev = s.value; s.onchange = async () => { s.disabled = true; const { error } = await sb.from('profiles').update({ role: s.value }).eq('id', s.dataset.role); s.disabled = false;
     if (error) { s.value = prev; return toast(errText(error, 'התפקיד לא עודכן — נסו שוב')); } prev = s.value; toast('התפקיד עודכן'); }; });

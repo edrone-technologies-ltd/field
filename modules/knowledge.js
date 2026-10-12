@@ -36,7 +36,7 @@ export async function renderKb(el, cat = '') {
       <input class="search" id="kbq" type="search" placeholder="חיפוש: משאבה, סוללות, דוח יומי…">
       ${used.length > 1 ? `<div class="chips scroll">${['', ...used].map(c => `<button class="chip" data-c="${esc(c)}" aria-pressed="${c === cat}">${c || 'הכל'}</button>`).join('')}</div>` : ''}
       ${todo.length ? `<section><div class="sh-row"><h3 class="sh">לצפייה — חובה</h3><span class="count">${todo.length}</span></div><div class="list">${todo.map(row).join('')}</div></section>` : ''}
-      <div id="kbl"></div>
+      <div id="kbl" class="stack lg"></div>
     </div>`;
   function row(x) {
     const v = seen.get(x.id), kind = x.video_url ? 'play' : (x.files || []).length ? 'file' : 'report';
@@ -203,11 +203,11 @@ async function editKb(x, C, pre = {}) {
   const Q = (x?.quiz || []).map((q, i) => ({ q: q.q, options: [...q.options, '', '', '', ''].slice(0, 4), a: keys[i] ?? 0 }));
   const f = { title: x?.title || pre.title || '', category: x?.category || pre.category || C[0] || 'כללי', body: x?.body || pre.body || '', video_url: x?.video_url || '', required: !!x?.required, files: [...(x?.files || [])], roles: [...(x?.roles || [])] };
   sheet(`<h3>${x ? 'עריכת הדרכה' : 'הדרכה חדשה'}</h3>
+    <label class="field">קישור לסרטון<input id="kv" type="url" inputmode="url" dir="ltr" value="${esc(f.video_url)}" placeholder="יוטיוב או דרייב"></label>
+    <div id="kvp" class="kvp"></div>
     <label class="field">כותרת<input id="kt" value="${esc(f.title)}" placeholder="למשל: הפעלת משאבת הלחץ בבוקר"></label>
     <div class="field">קטגוריה<div class="chips">${[...new Set([...C, f.category])].map(c => `<button type="button" class="chip" data-kc="${esc(c)}" aria-pressed="${c === f.category}">${esc(c)}</button>`).join('')}</div></div>
     <div class="field">למי ההדרכה<div class="chips">${AUD.map(([k, l]) => `<button type="button" class="chip" data-ka="${k}" aria-pressed="${f.roles.includes(k)}">${l}</button>`).join('')}</div></div>
-    <label class="field">קישור לסרטון<input id="kv" type="url" dir="ltr" value="${esc(f.video_url)}" placeholder="https://drive.google.com/file/d/…"></label>
-    <div id="kvp" class="small muted"></div>
     <label class="field">הסבר<textarea id="kb" rows="6" placeholder="שלבים, דגשים, מה לא לעשות">${esc(f.body)}</textarea></label>
     <div class="field">מסמכים (PDF / תמונות, עד 10MB)<div id="kf" class="list"></div><label class="btn ghost block">${icon('plus', 18)} הוספת מסמך<input type="file" accept="application/pdf,image/*" multiple id="kfi" hidden></label></div>
     <details class="fold" ${Q.length || x?.sign_required ? 'open' : ''}><summary><span class="sh">מבחן, הסמכה וחתימה</span></summary>
@@ -230,7 +230,11 @@ async function editKb(x, C, pre = {}) {
       $$('[data-qa]', s).forEach(e => e.onchange = () => Q[+e.dataset.qa].a = +e.value);
       $$('[data-qrm]', s).forEach(e => e.onclick = () => { Q.splice(+e.dataset.qrm, 1); drawQ(); }); };
     drawQ(); $('#qadd', s).onclick = () => { Q.push({ q: '', options: ['', '', '', ''], a: 0 }); drawQ(); };
-    const prev = () => { const u = $('#kv', s).value.trim(); $('#kvp', s).textContent = !u ? '' : embedUrl(u) ? 'יתנגן בתוך האפליקציה' : 'ייפתח בלשונית חדשה'; };
+    // תצוגה מקדימה מיידית: תמונת הסרטון מיוטיוב / אישור דרייב, ואזהרה אם הקישור לא יתנגן בפנים
+    const prev = () => { const u = $('#kv', s).value.trim(), th = ytThumb(u), ok = embedUrl(u);
+      $('#kvp', s).innerHTML = !u ? '' : th ? `<span class="kvp-th" style="background-image:url('${esc(th)}')">${icon('play', 22)}</span><small class="ok">יתנגן בתוך האפליקציה</small>`
+        : ok ? `<small class="ok">${icon('check', 14)} סרטון דרייב — יתנגן בתוך האפליקציה</small>` : `<small class="muted">ייפתח בלשונית חדשה</small>`;
+      if (th && !$('#kt', s).value.trim()) $('#kt', s).focus(); };
     $('#kv', s).oninput = prev; prev();
     $$('[data-ka]', s).forEach(c => c.onclick = () => { const k = c.dataset.ka; f.roles = f.roles.includes(k) ? f.roles.filter(r => r !== k) : [...f.roles, k]; c.setAttribute('aria-pressed', f.roles.includes(k)); });
     $$('[data-kc]', s).forEach(c => c.onclick = () => { f.category = c.dataset.kc; $$('[data-kc]', s).forEach(y => y.setAttribute('aria-pressed', y === c)); });

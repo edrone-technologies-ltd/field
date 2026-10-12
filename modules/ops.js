@@ -25,7 +25,7 @@ export async function renderOps(el) {
   const t = isoDay(), tm = addDays(t, 1), y = addDays(t, -1), wk = addDays(t, 6);
   const q = async p => { try { const { data } = await p; return data || []; } catch { return []; } };
   const admin = state.profile.role === 'admin';
-  const [days, people, shifts, abs, sreq, oreq, preq, exq, drones, ended, pulls, rdy] = await Promise.all([
+  const [days, people, shifts, abs, sreq, oreq, preq, exq, drones, ended, pulls, rdy, crit, miss, lowStock] = await Promise.all([
     q(sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,site_id,planned_from,planned_to,readiness),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', t).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
     q(sb.from('profiles').select('id,full_name,role,is_active,is_pilot').eq('is_active', true)),
     q(sb.from('shifts').select('id,user_id,start_at,end_at,status,start_dist_m,start_place,note').or(`status.eq.open,start_at.gte.${new Date(y + 'T00:00:00').toISOString()}`).order('start_at', { ascending: false }).limit(80)),
@@ -38,6 +38,10 @@ export async function renderOps(el) {
     q(sb.from('work_days').select('id,day,signoff,project_id,projects!inner(id,name,closed_summary,monday_group)').eq('is_last_day', true).eq('status', 'done').is('projects.closed_summary', null).gte('day', addDays(t, -30))),
     q(sb.from('sync_log').select('created_at,status').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(6)),
     q(sb.rpc('readiness_list')),
+    // מהשטח: תקלה קריטית פתוחה · חסר בשטח שעוד לא סופק · מלאי מתחת למינימום — לטפל מכאן בלחיצה, לא לחפש בפרויקט
+    q(sb.from('issues').select('id,body,kind,project_id,work_day_id,opened_by,created_at,projects(name)').eq('status', 'open').eq('severity', 'critical').gte('created_at', new Date(Date.now() - 14 * 864e5).toISOString()).order('created_at', { ascending: false })),
+    q(sb.from('missing_items').select('id,item,qty,created_at,work_day_id,work_days(day,project_id,projects(name))').eq('status', 'open').gte('created_at', new Date(Date.now() - 14 * 864e5).toISOString()).order('created_at')),
+    q(sb.from('catalog_items').select('name,stock,min_qty').eq('in_app', true).not('min_qty', 'is', null)).then(r => r.filter(c => c.stock != null && Number(c.stock) <= Number(c.min_qty))),
   ]);
   const P = new Map(people.map(p => [p.id, p])), name = id => first(P.get(id)?.full_name) || '—';
   const open = shifts.filter(s => s.status === 'open' && !s.end_at), openBy = new Map(open.map(s => [s.user_id, s]));
@@ -90,6 +94,24 @@ export async function renderOps(el) {
         const { error } = await sb.rpc('set_readiness', { p: r.project_id, k: 'airspace', on_: true, days: [...new Set([...(w?.projects?.readiness?.airspace?.days || []), ...pd])] });
         if (error) return toast(errText(error)); toast('סומן — מרחב אווירי תואם', 1800, 'success'); renderOps(el); } } : { href: `#/p/${r.project_id}` }) });
   }
+  // תקלה קריטית מהשטח: הקשה = גיליון עם "טופל" (ומה נעשה) או מעבר ליום עצמו
+  const KIND = { equipment: 'ציוד', site: 'אתר', safety: 'בטיחות', near_miss: 'כמעט תאונה', other: 'תקלה' };
+  crit.forEach(i => issues.push({ tone: 'bad', ic: 'alert', t: `תקלה קריטית · ${shortName(i.projects?.name || '') || 'שטח'}`, s: `${i.body} · ${name(i.opened_by)} · ${timeAgo(i.created_at)}`, act: () => sheet(`<div class="stack tight"><h3 class="sh">${esc(i.body)}</h3><small class="muted">${esc([shortName(i.projects?.name || ''), KIND[i.kind], name(i.opened_by), timeAgo(i.created_at)].filter(Boolean).join(' · '))}</small></div>
+      <label class="field">איך טופל<textarea id="isr" rows="2" placeholder="לא חובה"></textarea></label>
+      <div class="row-btns"><a class="btn ghost" href="${i.work_day_id ? '#/day/' + i.work_day_id : '#/p/' + i.project_id}" data-close>${i.work_day_id ? 'יום השטח' : 'הפרויקט'}</a><button class="btn primary" id="isok">טופל</button></div>`, (s2, close) => {
+      $('#isok', s2).onclick = async e => { e.target.disabled = true;
+        const { error } = await sb.from('issues').update({ status: 'closed', resolution: $('#isr', s2).value.trim() || 'טופל', closed_by: state.user.id, closed_at: new Date().toISOString() }).eq('id', i.id);
+        if (error) { e.target.disabled = false; return toast(errText(error)); } close(); toast('התקלה נסגרה', 1800, 'success'); renderOps(el); }; }) }));
+  // חסר בשטח: קבוצה לכל יום שטח. "סופק" לכל פריט, או הכל בלחיצה
+  [...new Map(miss.map(m => [m.work_day_id, miss.filter(x => x.work_day_id === m.work_day_id)])).values()].forEach(ms => { const wd = ms[0].work_days, it = m => m.item + (m.qty > 1 ? ' ×' + m.qty : '');
+    const mark = async ids => { const { error } = await sb.from('missing_items').update({ status: 'handled' }).in('id', ids); if (error) { toast(errText(error)); return false; } return true; };
+    issues.push({ tone: 'warn', ic: 'cart', d: wd?.day, t: `חסר בשטח · ${shortName(wd?.projects?.name || '')}`, s: ms.map(it).join(' · '), act: () => sheet(`<h3>חסר בשטח · ${esc(shortName(wd?.projects?.name || ''))}</h3>
+      <div class="list">${ms.map(m => `<div class="lrow"><span class="grow"><b>${esc(it(m))}</b><small>${timeAgo(m.created_at)}</small></span><button class="chip" data-mi="${m.id}">סופק</button></div>`).join('')}</div>
+      <div class="row-btns"><a class="btn ghost" href="#/day/${ms[0].work_day_id}" data-close>יום השטח</a><button class="btn primary" id="miall">${ms.length > 1 ? 'הכל סופק' : 'סופק'}</button></div>`, (s2, close) => {
+      let left = ms.length;
+      $$('[data-mi]', s2).forEach(b => b.onclick = async () => { b.disabled = true; if (!(await mark([b.dataset.mi]))) { b.disabled = false; return; } b.closest('.lrow').remove(); if (!--left) { close(); renderOps(el); } else toast('סומן', 1200, 'success'); });
+      $('#miall', s2).onclick = async e => { e.target.disabled = true; if (!(await mark(ms.map(m => m.id)))) { e.target.disabled = false; return; } close(); toast('סומן שסופק', 1800, 'success'); renderOps(el); }; }) }); });
+  if (lowStock.length) issues.push({ tone: 'warn', ic: 'cart', t: lowStock.length > 1 ? `${lowStock.length} פריטים במלאי מתחת למינימום` : `${lowStock[0].name} מתחת למינימום`, s: lowStock.length > 1 ? lowStock.map(c => c.name).join(' · ') : `במלאי ${lowStock[0].stock} · מינימום ${lowStock[0].min_qty}`, href: '#/purchase' });
   for (const s of open) {
     const h = (Date.now() - new Date(s.start_at)) / 36e5;
     if (isoDay(new Date(s.start_at)) < t) issues.push({ tone: 'bad', ic: 'clock', t: `${name(s.user_id)} לא החתים יציאה מאתמול`, s: `נכנס ${dm(isoDay(new Date(s.start_at)))} ב-${hm(s.start_at)}`, href: `#/attendance/${s.user_id}` });
@@ -105,9 +127,12 @@ export async function renderOps(el) {
   if (pulls.length && (!lastOk || Date.now() - new Date(lastOk.created_at) > 40 * 6e4)) issues.unshift({ tone: 'bad', ic: 'alert', t: 'הסנכרון עם מאנדי נעצר', s: lastOk ? `סבב תקין אחרון ${timeAgo(lastOk.created_at)}` : 'הסבבים האחרונים נכשלו', href: can('admin') ? '#/admin/sync' : '' });
   // רשימה אחת: בעיות שטח (שבוע קדימה) + מה שהמערכת מזהה (צי, פרויקטים, רישיונות, סנכרון) + מה שמחכה לי אישית
   const [sys, mineA] = await extra;
+  // רחפן מקורקע שכבר מופיע כ"מקורקע ומשובץ" (עם תיקון בלחיצה) — לא שורה נוספת
+  const grIds = new Set(days.filter(w => w.status !== 'done' && D.get(w.drone_id)?.health === 'grounded').map(w => w.drone_id));
+  const grDup = a => [...grIds].some(id => a.href === '#/equipment/' + id);
   const N = sortNeeds([
     ...issues.map(i => ({ tone: i.tone, ic: icon(i.ic, 20), title: i.t, sub: i.s, ds: i.ds || (i.d ? [i.d] : []), ...(i.act ? { act: i.act } : { href: i.href }) })),
-    ...sys.filter(a => a.k !== 'shiftreq').map(a => ({ tone: a.tone, ic: icon(a.ic, 20), title: a.title, sub: a.sub, href: a.href, list: a.list, act: a.act })),
+    ...sys.filter(a => a.k !== 'shiftreq' && !grDup(a)).map(a => ({ tone: a.tone, ic: icon(a.ic, 20), title: a.title, sub: a.sub, href: a.href, list: a.list, act: a.act })),
     ...mineA.filter(x => x.k !== 'push')]);
   const pushA = mineA.find(x => x.k === 'push');   // הגדרה אישית — לא חלק מתור הניהול
 
@@ -144,13 +169,18 @@ export async function renderOps(el) {
 
   // ---- לאישורך ----
   const pendAbs = abs.filter(a => a.status === 'pending' && (admin || a.user_id !== state.user.id));   // אין אישור עצמי
+  // בקשת חופש של מי שמשובץ בימים האלה: רואים את זה על הכרטיס, ו"אישור" פותח ישר את היום עם מחליף בלחיצה
+  const absDays = pendAbs.length ? await q(sb.from('work_day_crew').select('user_id,work_days!inner(id,day,status,projects(name))').in('user_id', pendAbs.map(a => a.user_id))
+    .gte('work_days.day', pendAbs.map(a => a.date_from).sort()[0]).lte('work_days.day', pendAbs.map(a => a.date_to).sort().at(-1)).eq('work_days.status', 'planned')) : [];
+  const absHit = a => absDays.filter(c => c.user_id === a.user_id && c.work_days.day >= a.date_from && c.work_days.day <= a.date_to).map(c => c.work_days).sort((x, y) => x.day < y.day ? -1 : 1);
   const approvals = [
     ...sreq.map(r => `<div class="card stack opr"><div class="row"><b class="grow">${esc(name(r.user_id))} · תיקון שעות</b><small class="muted">${timeAgo(r.created_at)}</small></div>
       <small>${r.req_start ? dm(isoDay(new Date(r.req_start))) + ' · <bdi dir="ltr">' + hm(r.req_start) + (r.req_end ? '–' + hm(r.req_end) : '') + '</bdi>' : ''}${r.reason ? ' · ' + esc(r.reason) : ''}</small>
       <div class="row-btns"><button class="btn ghost sm" data-sr="${r.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-sr="${r.id}" data-ok="1">אישור</button></div></div>`),
     ...pendAbs.map(a => `<div class="card stack opr"><div class="row"><b class="grow">${esc(name(a.user_id))} · ${ABS[a.kind] || 'היעדרות'}</b></div>
       <small>${dm(a.date_from)}${a.date_to !== a.date_from ? '–' + dm(a.date_to) : ''}${a.note ? ' · ' + esc(a.note) : ''}</small>
-      <div class="row-btns"><button class="btn ghost sm" data-ab="${a.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-ab="${a.id}" data-ok="1">אישור</button></div></div>`),
+      ${absHit(a).length ? `<small class="bad">משובץ ${absHit(a).map(w => `${HE_D1[new Date(w.day + 'T12:00').getDay()]} ${dm(w.day)} · ${esc(shortName(w.projects?.name || ''))}`).join(' · ')}</small>` : ''}
+      <div class="row-btns"><button class="btn ghost sm" data-ab="${a.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-ab="${a.id}" data-ok="1" ${absHit(a).length ? `data-swapday="${absHit(a)[0].id}"` : ''}>${absHit(a).length ? 'אישור והחלפה' : 'אישור'}</button></div></div>`),
     ...oreq.map(r => `<div class="card stack opr"><div class="row"><b class="grow">${esc(name(r.user_id))} · ${esc(r.category || 'בקשה')}</b><small class="muted">${timeAgo(r.created_at)}</small></div>
       <small>${esc((r.body || '').slice(0, 160))}</small>
       <div class="row-btns"><a class="btn ghost sm" href="#/requests">פתיחה</a><button class="btn primary sm" data-or="${r.id}">סימון כטופל</button></div></div>`),
@@ -208,7 +238,8 @@ export async function renderOps(el) {
     $$('[data-ab]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; const ok = b.dataset.ok === '1';
       const reply = ok ? '' : await ask('סיבת הדחייה', { optional: true, ok: 'דחייה' }); if (reply === null) return; lock(b, true);
       const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, manager_reply: (reply || '').trim() || null, decided_at: new Date().toISOString() }).eq('id', b.dataset.ab);
-      if (error) return fail(b, error); done(b, ok ? 'אושר' : 'נדחה — העובד קיבל הודעה'); });
+      if (error) return fail(b, error); done(b, ok ? 'אושר' : 'נדחה — העובד קיבל הודעה');
+      if (ok && b.dataset.swapday) setTimeout(() => import('./dayadmin.js').then(m => m.openDayAdmin(b.dataset.swapday, () => renderOps(el))), 350); });
     $$('[data-or]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; const r = await ask('מה נעשה?', { optional: true, ok: 'סגירת הבקשה' }); if (r === null) return; lock(b, true);
       const { error } = await sb.from('office_requests').update({ status: 'done', reply: (r || '').trim() || 'טופל', handled_by: state.user.id }).eq('id', b.dataset.or); if (error) return fail(b, error); done(b, 'נסגר — העובד קיבל מענה'); });
   }

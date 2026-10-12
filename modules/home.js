@@ -166,13 +166,17 @@ export async function renderHome(el) {
   const heroDays = openToday.length ? openToday : ahead.slice(0, 1), rest = ahead.filter(w => !heroDays.includes(w)).slice(0, 4);
   const pend = ahead.filter(needsOk);
   const sv = can('specs') ? await surveyVisits(t) : [];   // סוקר: הסיורים הקרובים (מהליד) — ישר לטופס האפיון
-  box.innerHTML = `<div id="qown"></div><div id="attn"></div><div id="pulse">${pulseHtml(await cache.get('pulse').catch(() => null))}</div><div id="mytasks"></div><div id="openpast"></div>
-    ${doneToday.length ? `<div class="list">${doneToday.map(w => dayRow(w, byId)).join('')}</div>` : ''}
-    ${sv.length ? `<section><div class="sh-row"><h3 class="sh">סיורי אפיון</h3><a class="more" href="#/specs">כל האפיונים</a></div><div class="list">${sv.map(x => `<a class="lrow" href="${esc(x.href)}"><span class="grow"><b>${esc(x.name)}</b><small>${esc([x.visit_date === t ? 'היום' : dayWord(x.visit_date).replace('יום ', ''), x.scope_text, x.contact_name].filter(Boolean).join(' · '))}</small></span><span class="pill ${x.st === 'draft' ? 'warn' : ''}">${x.st === 'draft' ? 'בטיוטה' : 'לאפיון'}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
+  // סדר = מה שצריך אותי עכשיו: היום שלי (או השיבוץ הבא) ← משימות ← דוח פתוח ← הסיכום והימים הקרובים
+  box.innerHTML = `<div id="qown"></div><div id="attn"></div>
     ${heroDays.map(w => dayHero(w, byId.get(w.project_id) || {}, cov[w.project_id])).join('') || (sv.length ? '' : empty('calendar', 'אין שיבוץ בשבועיים הקרובים', 'שיבוץ חדש יופיע כאן'))}
+    <div id="mytasks"></div><div id="openpast"></div>
+    ${doneToday.length ? `<div class="list">${doneToday.map(w => dayRow(w, byId)).join('')}</div>` : ''}
+    <div id="pulse">${pulseHtml(await cache.get('pulse').catch(() => null))}</div>
+    ${sv.length ? `<section><div class="sh-row"><h3 class="sh">סיורי אפיון</h3><a class="more" href="#/specs">כל האפיונים</a></div><div class="list">${sv.map(x => `<a class="lrow" href="${esc(x.href)}"><span class="grow"><b>${esc(x.name)}</b><small>${esc([x.visit_date === t ? 'היום' : dayWord(x.visit_date).replace('יום ', ''), x.scope_text, x.contact_name].filter(Boolean).join(' · '))}</small></span><span class="pill ${x.st === 'draft' ? 'warn' : ''}">${x.st === 'draft' ? 'בטיוטה' : 'לאפיון'}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
     ${pend.length > 1 ? `<div class="okall" data-act="all"><span class="grow"><b>${pend.length} ימים מחכים לאישור הגעה</b><small>${pend.map(w => dayWord(w.day).replace('יום ', '')).join(' · ')}</small></span><button class="btn primary" data-confirm-all="${pend.map(x => x.id).join(',')}">אגיע לכולם ✓</button></div>` : ''}
     ${rest.length ? `<section><div class="sh-row"><h3 class="sh">הימים הקרובים</h3><a class="more" href="#/schedule">כל הלו״ז</a></div><div class="list">${rest.map(w => dayRow(w, byId, pend.length > 1)).join('')}</div></section>` : ''}`;
-  bindConfirm(box); extras(); pastOpen($('#openpast'));
+  const gone = openToday.find(w => w.status !== 'planned' && w.crew_lead_id !== state.user.id);
+  bindConfirm(box); extras(gone ? { label: `${(byId.get(gone.project_id)?.name || 'הצוות')} · הצוות ${gone.status === 'en_route' ? 'בדרך' : 'באתר'}`, project_id: gone.project_id } : null); pastOpen($('#openpast'));
   othersPending().then(o => { const b = $('#qown'); if (b && o.length) b.innerHTML = o.map(othersCard).join(''); }).catch(() => {});
   fillGlance(box, P);
   pulse($('#pulse'), ahead.length + mine.filter(w => w.status !== 'done').length);
@@ -215,7 +219,7 @@ async function fillGlance(root, projs) {
     e.className = 'wxg ' + ['ok', 'mid', 'bad'][x.L]; e.innerHTML = `<small>${['טוב לטיסה', 'גבולי', 'לא לטוס'][x.L]}</small><b>${Math.round(x.g)}<i>קמ״ש</i></b>`; e.title = 'משבים'; });
 }
 // הדופק שלי: שעות החודש (מנוע הנוכחות), ימי עבודה, ימי שטח קדימה. נשמר למטמון — מוצג מיד גם בלי קליטה
-const pulseHtml = v => !v || (!v.days && !v.ahead && !v.ot) ? '' :   // עובד חדש בלי שעות ובלי שיבוץ — בלי פס אפסים
+const pulseHtml = v => !v || !v.days ? '' :   // עובד חדש בלי שעות ובלי שיבוץ — בלי פס אפסים
   `<div class="pulse"><a href="#/hours"><b>${v.h}</b><small>שעות החודש</small></a><a href="#/hours"><b>${v.days}</b><small>ימי עבודה</small></a><a href="#/schedule"><b>${v.ahead}</b><small>קדימה</small></a>${v.ot ? `<a href="#/hours"><b>${v.ot}</b><small>נוספות</small></a>` : ''}</div>`;
 async function pulse(box, ahead) {
   if (!box || !navigator.onLine) return;
@@ -249,14 +253,14 @@ async function prefetchDays(ids) {
 // ימים שעברו ועוד לא נסגרו (שלי — בצוות או ראש צוות)
 async function pastOpen(box) {
   if (!box) return;
-  const me = state.user.id, t = today(), from = addDays(t, -21), sel = 'id,day,status,kind,project_id,projects(name)';
+  const me = state.user.id, t = today(), from = addDays(t, -21), sel = 'id,day,status,kind,project_id,crew_lead_id,projects(name)';
   let rows;
   try {
     const [a, b] = await Promise.all([
       sb.from('work_days').select(sel + ',work_day_crew!inner(user_id)').eq('work_day_crew.user_id', me).lt('day', t).gte('day', from).neq('status', 'done'),
       sb.from('work_days').select(sel).eq('crew_lead_id', me).lt('day', t).gte('day', from).neq('status', 'done')]);
     if (a.error || b.error) throw a.error || b.error;
-    rows = [...new Map([...(a.data || []), ...(b.data || [])].map(w => [w.id, w])).values()].sort((x, y) => x.day < y.day ? 1 : -1);
+    rows = [...new Map([...(a.data || []), ...(b.data || [])].map(w => [w.id, w])).values()].filter(w => !w.crew_lead_id || w.crew_lead_id === me).sort((x, y) => x.day < y.day ? 1 : -1);
     await cache.set('home-past', rows);
   } catch { rows = (await cache.get('home-past').catch(() => null)) || []; }
   const open = [];
@@ -388,12 +392,12 @@ export async function renderReports(el) {
 }
 
 // תוספות בראש המסך אחרי שהוא צויר: הודעות לאישור, הפעלת התראות
-export function extras() {
+export function extras(clockHint = null) {
   if (isManager()) yesterday();
   import('./tasks.js').then(m => m.myTasks($('#mytasks'))).then(hideQueuedTasks).catch(() => {});
   import('./attention.js').then(m => m.attention($('#attn')));
   pendingAcks();
-  import('./attendance.js').then(m => m.clockCard($('#hm')));
+  import('./attendance.js').then(m => m.clockCard($('#hm'), null, clockHint));
 }
 // הודעות חשובות שמחכות לאישור שלי — בראש המסך, עד שמאשרים
 async function pendingAcks() {
