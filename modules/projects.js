@@ -212,6 +212,7 @@ export async function renderProject(el, id, tab = 'o') {
         ${M && p.client_id ? `<a class="lrow kv" href="#/client/${p.client_id}"><span class="mic">${icon('users', 19)}</span><span class="grow"><small>לקוח</small><b>${esc(p.client_name || '')}</b></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
         ${p.scope ? kv('report', 'היקף', esc(p.scope)) : ''}
         ${kv('pin', 'אתר', s ? esc(s.name) + (s.address ? ` <span class="muted small">· ${esc(s.address)}</span>` : '') : '<span class="muted">לא משויך</span>', M ? 'site' : '')}
+        ${M && p.site_id ? '<button class="lrow kv" type="button" id="sban" hidden></button>' : ''}
         ${p.work_notes ? kv('clipboard', 'דגשים לצוות', esc(p.work_notes).replace(/\n/g, '<br>'), M ? 'notes' : '') : M ? `<div class="lrow kv" data-act="notes" role="button" tabindex="0"><span class="mic">${icon('plus', 19)}</span><span class="grow"><span class="muted">הוספת דגשים לצוות</span></span></div>` : ''}
         ${p.summary ? kv('chat', 'תמונת ביצוע', esc(p.summary)) : ''}
         ${f ? kv('shield', 'כספים', `${f.price_net ? '₪' + nf(f.price_net) + ' נטו' : '—'}${f.gross_pct ? ` · רווח ${nf(f.gross_pct)}%` : ''}${f.payment_status ? ' · ' + esc(f.payment_status) : ''}`) : ''}
@@ -229,6 +230,7 @@ export async function renderProject(el, id, tab = 'o') {
     bindSched(box); bindReady(box); readyWx(box).catch(() => {});
     if (p.site_id) import('./zones.js').then(m => m.progressCard($('#zprog', box), id, { started: D.days.some(d => ['en_route', 'on_site', 'working', 'issue'].includes(d.status)) }   /* ימים שנסגרו לפני מעקב החזיתות — לא מציגים 0% מטעה */)).catch(() => {});   // התקדמות לפי חזית (db/112)
     const sh = $('#share', box); if (sh) sh.onclick = shareSheet;
+    const sbn = $('#sban', box); if (sbn) import('./compliance.js').then(m => m.banRow(sbn, p.site_id, s?.name || '', D.team)).catch(() => {});   // לא לשבץ באתר הזה (db/122)
   }
   async function shareSheet() {
     const { data: list } = await sb.from('project_shares').select('*').eq('project_id', id).eq('revoked', false).order('created_at', { ascending: false });
@@ -400,11 +402,11 @@ export async function renderProject(el, id, tab = 'o') {
       const applyAv = async () => {
         const a = $('#sd', s).value, b = $('#sde', s).value || a; if (!a) return;
         const my = ++avSeq, av = await availability(a, b, { project: id, drones: D.drones }).catch(() => null); if (!av || my !== avSeq) return;
-        $$('[data-u]', s).forEach(c => { const why = av.person(c.dataset.u); c.disabled = !!why; if (why) c.setAttribute('aria-pressed', 'false'); $('.why', c).textContent = why; });
-        const sl = $('#sl', s); [...sl.options].forEach(o => { const why = av.person(o.value); o.disabled = !!why; o.textContent = o.dataset.n + (why ? ' — ' + why : ''); });
+        $$('[data-u]', s).forEach(c => { const why = av.person(c.dataset.u), wn = av.warn?.(c.dataset.u) || ''; c.disabled = !!why; if (why) c.setAttribute('aria-pressed', 'false'); $('.why', c).textContent = why || wn; c.classList.toggle('cwarn', !why && !!wn); });
+        const sl = $('#sl', s); [...sl.options].forEach(o => { const why = av.person(o.value), wn = av.warn?.(o.value) || ''; o.disabled = !!why; o.textContent = o.dataset.n + (why ? ' — ' + why : wn ? ' · ⚠ ' + wn : ''); });
         if (sl.selectedOptions[0]?.disabled) { const ok = [...sl.options].find(o => !o.disabled); if (ok) sl.value = ok.value; }
         markLead();
-        const dr = $('#sdr', s); [...dr.options].forEach(o => { if (!o.value) return; const why = av.drone(o.value); o.disabled = !!why; o.textContent = o.dataset.n + (why ? ' — ' + why : o.dataset.w); });
+        const dr = $('#sdr', s); [...dr.options].forEach(o => { if (!o.value) return; const why = av.drone(o.value), wn = av.droneWarn?.(o.value) || ''; o.disabled = !!why; o.textContent = o.dataset.n + (why ? ' — ' + why : o.dataset.w + (wn ? ' · ⚠ ' + wn : '')); });
         if (dr.selectedOptions[0]?.disabled) dr.value = '';
         if (!dr.value && !drTouched) { const ok = [...dr.options].find(o => o.value && !o.disabled); if (ok) dr.value = ok.value; }   // ברירת מחדל: הרחפן הראשון שפנוי בכל הטווח
       };

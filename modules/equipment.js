@@ -15,7 +15,7 @@ const dueTxt = x => x.n < 0 ? `${x.t} פג` : x.n === 0 ? `${x.t} פג היום`
 const issueTxt = (r, i) => String(i.body || '').replace(r.name + ': ', '');
 
 export async function renderEquipment(el) {
-  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">ציוד</h1>${isManager() ? `<button class="hbtn" id="add" aria-label="פריט ציוד">${icon('plus', 20)}</button>` : ''}</header><div id="el" class="stack lg"><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">ציוד</h1>${isManager() ? `<a class="hbtn" href="#/compliance" aria-label="תוקף ותעודות">${icon('shield', 20)}</a><button class="hbtn" id="add" aria-label="פריט ציוד">${icon('plus', 20)}</button>` : ''}</header><div id="el" class="stack lg"><div class="skel"></div></div>`;
   let rows, iss, days;
   try {
     const since = isoDay(new Date(Date.now() - 120 * 864e5));

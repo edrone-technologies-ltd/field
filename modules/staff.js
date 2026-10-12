@@ -29,7 +29,7 @@ function payToDate(T, rate) {
 // ---------- רשימת עובדים ----------
 export async function renderStaff(el) {
   if (!isManager()) { el.innerHTML = '<div class="empty-line">למנהלים בלבד</div>'; return; }
-  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">עובדים</h1>${isAdmin() ? `<button class="hbtn" id="bulk" aria-label="תלושים לחודש">${icon('plus', 20)}</button>` : ''}</header><div id="sl" class="stack lg"><div class="skel"></div></div>`;
+  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">עובדים</h1><a class="hbtn" href="#/compliance" aria-label="תוקף ותעודות">${icon('shield', 20)}</a>${isAdmin() ? `<button class="hbtn" id="bulk" aria-label="תלושים לחודש">${icon('plus', 20)}</button>` : ''}</header><div id="sl" class="stack lg"><div class="skel"></div></div>`;
   const [{ data: people }, { data: prof }, { data: rates }, { data: docs }] = await Promise.all([
     (q => isAdmin() ? q : q.neq('role', 'admin'))(sb.from('profiles').select('id,full_name,role,phone,is_active').order('full_name')),   // תפעול לא מנהל את ההנהלה
     sb.from('employee_profile').select('user_id,job_title,employment_type'),
@@ -74,13 +74,15 @@ export async function renderEmployee(el, userId, tab = 'info') {
 }
 
 async function infoTab(box, p) {
-  const { data: e } = await sb.from('employee_profile').select('*').eq('user_id', p.id).maybeSingle();
+  const [{ data: e }, { data: bans }] = await Promise.all([sb.from('employee_profile').select('*').eq('user_id', p.id).maybeSingle(),
+    sb.from('site_bans').select('reason,sites(name)').eq('user_id', p.id).then(r => r, () => ({ data: [] }))]);   // לא לשבץ באתר (db/122) — נקבע מדף הפרויקט
   const F = [['job_title', 'תפקיד בחברה'], ['division', 'חטיבה'], ['employment_type', 'סוג התקשרות'], ['start_date', 'תחילת עבודה', 'date'], ['id_number', 'תעודת זהות'], ['birth_date', 'תאריך לידה', 'date'], ['address', 'כתובת'], ['emergency_contact', 'איש קשר לחירום'], ['notes', 'הערות', 'long']];
   const v = (k, type) => e?.[k] ? (type === 'date' ? new Date(e[k]).toLocaleDateString('he-IL') : esc(e[k])) : '<span class="muted">—</span>';
   // שדות חובה לתיק שלם — מה שחסר מסומן, ולחיצה על שורה פותחת עריכה ישר בשדה
   const NEED = ['job_title', 'start_date', 'id_number', 'emergency_contact'], miss = NEED.filter(k => !e?.[k]).concat(p.phone ? [] : ['__phone']);
   box.innerHTML = `${miss.length ? `<button class="arow warn card-like" type="button" data-go="${miss[0]}"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>חסרים ${miss.length} פרטים</b><small>${miss.map(k => k === '__phone' ? 'טלפון' : F.find(f => f[0] === k)[1]).join(' · ')}</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
     <div class="menu">${F.filter(([k]) => e?.[k] || NEED.includes(k)).map(([k, l, t]) => `<button type="button" class="lrow kv ${NEED.includes(k) && !e?.[k] ? 'missing' : ''}" data-go="${k}"><span class="grow"><small>${l}</small><b>${v(k, t)}</b></span></button>`).join('')}
+      ${(bans || []).map(b => `<div class="lrow kv"><span class="mic bad-ic">${icon('x', 19)}</span><span class="grow"><small>לא לשבץ ב${esc(b.sites?.name || 'אתר')}</small><b>${esc(b.reason)}</b></span></div>`).join('')}
       ${p.is_pilot ? `<div class="lrow kv"><span class="grow"><small>רישיון מטיס</small><b>${esc(p.pilot_license_no || '')}${p.pilot_license_expiry ? ' · עד ' + new Date(p.pilot_license_expiry).toLocaleDateString('he-IL') : ''}</b></span></div>` : ''}
       <div class="lrow kv"><span class="grow"><small>הרשאה באפליקציה</small><b>${esc(ROLE_HE[p.role] || '')}${p.is_active ? '' : ' · מושבת'}</b></span>${isAdmin() ? '<a class="chip" href="#/admin">שינוי</a>' : ''}</div></div>
     <button class="btn ghost block" id="edit">עריכת פרטים</button>`;

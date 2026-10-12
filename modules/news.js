@@ -114,17 +114,19 @@ export async function renderRequests(el) {
 
 export async function newRequest(done, pre) {
   const { data: st } = await sb.from('app_settings').select('value').eq('key', 'request_categories').maybeSingle();
-  const C = st?.value || ['אחר']; let cat = C.includes(pre) ? pre : C[0], file = null;
+  // נושא חובה — בלי ברירת מחדל שקטה (הנפוץ מסומן כהצעה בלבד)
+  const C = st?.value || ['אחר']; let cat = C.includes(pre) ? pre : C.length === 1 ? C[0] : null, file = null;
   sheet(`<h3>בקשה למשרד</h3>
-    <div class="field">נושא<div class="chips">${C.map(c => `<button type="button" class="chip" data-c="${esc(c)}" aria-pressed="${c === cat}">${esc(c)}</button>`).join('')}</div></div>
+    <div class="field">נושא<div class="chips" id="rcc">${C.map((c, i) => `<button type="button" class="chip${!cat && !i ? ' sugg' : ''}" data-c="${esc(c)}" aria-pressed="${c === cat}">${esc(c)}</button>`).join('')}</div></div>
     <label class="field">מה צריך<textarea id="rb" rows="4" placeholder="למשל: חסרות לי 6 שעות בתלוש של ספטמבר"></textarea></label>
     <label class="btn ghost block">${icon('photo', 18)} <span id="rfl">צירוף תמונה (לא חובה)</span><input type="file" accept="image/*" id="rf" hidden></label>
     <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="rs">שליחה למשרד</button></div>`, (s, close) => {
     const PH = { 'שכר': 'למשל: חסרות לי 6 שעות בתלוש של ספטמבר', 'שעות ונוכחות': 'למשל: שכחתי להחתים ביום שלישי', 'ציוד': 'למשל: צריך כפפות ונעלי עבודה מידה 43', 'מסמך / אישור': 'למשל: אישור העסקה לבנק', 'רכב': 'למשל: נורת שמן דולקת ברכב 12-345-67' };
     $$('[data-c]', s).forEach(c => c.onclick = () => { cat = c.dataset.c; $$('[data-c]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); $('#rb', s).placeholder = PH[cat] || 'מה צריך?'; $('#rb', s).focus(); });
-    $('#rb', s).placeholder = PH[cat] || 'מה צריך?';
+    $('#rb', s).placeholder = PH[cat || C[0]] || 'מה צריך?';
     $('#rf', s).onchange = e => { file = e.target.files[0]; $('#rfl', s).textContent = file ? 'תמונה צורפה' : 'צירוף תמונה (לא חובה)'; };
     $('#rs', s).onclick = async () => {
+      if (!cat) { const c = $('#rcc', s); c.classList.remove('need'); void c.offsetWidth; c.classList.add('need'); return toast('מה הנושא?'); }
       const body = $('#rb', s).value.trim(); if (!body) return toast('מה צריך?');
       $('#rs', s).disabled = true; let photo_path = null;
       if (file) try { const { shrink } = await import('../lib/store.js'); const blob = await shrink(file); photo_path = `${state.user.id}/requests/${crypto.randomUUID()}.jpg`;

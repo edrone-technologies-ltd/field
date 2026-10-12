@@ -93,7 +93,7 @@ const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיח
 // dayId: יום השטח שאליו התקלה שייכת (לא חובה). מספיק סוג בלחיצה, מילים או תמונה
 export function issueSheet(pid, after, back, dayId = null) {
   let kind = null, crit = false, files = [];
-  sheet(`<h3>תקלה / אירוע בטיחות</h3><div class="chips">${Object.keys(ISSUE_KIND).map(k => `<button class="chip" data-k="${k}" aria-pressed="false">${k}</button>`).join('')}</div>
+  sheet(`<h3>תקלה / אירוע בטיחות</h3><div class="chips" id="ikc">${Object.keys(ISSUE_KIND).map((k, i) => `<button class="chip${i ? '' : ' sugg'}" data-k="${k}" aria-pressed="false">${k}</button>`).join('')}</div>
     <textarea id="ib" rows="4" placeholder="מה קרה, איפה, מה נעשה"></textarea>
     <label class="tog"><span>קריטי — העבודה נעצרה / סכנה</span><span class="sw"><input type="checkbox" id="ic"><i></i></span></label>
     <label class="btn ghost block">${icon('photo', 18)} תמונות<input type="file" accept="image/*" multiple id="ip" hidden></label><div id="ipn" class="small muted"></div>
@@ -102,9 +102,10 @@ export function issueSheet(pid, after, back, dayId = null) {
     $('#ic', s).onchange = e => crit = e.target.checked;
     $('#ip', s).onchange = e => { files = [...e.target.files]; $('#ipn', s).textContent = files.length ? `${files.length} תמונות יצורפו` : ''; };
     $('#isend', s).onclick = async () => {
-      const text = $('#ib', s).value.trim(); if (!text && !kind && !files.length) { $('#ib', s).focus(); return toast('בחרו סוג, כתבו או צלמו'); }
+      const text = $('#ib', s).value.trim();
+      if (!kind) { const c = $('#ikc', s); c.classList.remove('need'); void c.offsetWidth; c.classList.add('need'); return toast('מה סוג התקלה?'); }   // סיווג חובה — בלי "אחר" שקט (לקח מסמנטו)
       if ($('#isend', s).disabled) return; $('#isend', s).disabled = true;
-      const body = text ? (['רחפן', 'לקוח'].includes(kind) ? `${kind}: ${text}` : text) : kind || 'תקלה (בתמונה)';
+      const body = text ? (['רחפן', 'לקוח'].includes(kind) ? `${kind}: ${text}` : text) : files.length && kind === 'אחר' ? 'תקלה (בתמונה)' : kind;
       const row = { id: uid(), project_id: pid, ...(dayId ? { work_day_id: dayId } : {}), kind: ISSUE_KIND[kind] || 'other', severity: crit ? 'critical' : 'normal', body, opened_by: state.user.id };
       await enqueue({ kind: 'insert', table: 'issues', row });
       for (const f of files) await addFieldPhoto(f, { kind: 'issue', project_id: pid, issue_id: row.id, ...(dayId ? { work_day_id: dayId } : {}) });

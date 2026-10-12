@@ -610,7 +610,7 @@ export async function renderDay(el, id) {
     $('#fiss').onclick = () => {
       // מספיק אחד מהשלושה: סוג (בלחיצה), מילים או תמונה — לא חובה לכתוב
       let kind = null, crit = false, ph = null, orig = null;
-      sheet(`<h3>דיווח תקלה</h3><div class="chips">${(D.S.issue_types || Object.keys(ISSUE_KIND)).map(k => `<button class="chip" data-k="${esc(k)}" aria-pressed="false">${esc(k)}</button>`).join('')}</div>
+      sheet(`<h3>דיווח תקלה</h3><div class="chips" id="ikc">${(D.S.issue_types || Object.keys(ISSUE_KIND)).map((k, i) => `<button class="chip${i ? '' : ' sugg'}" data-k="${esc(k)}" aria-pressed="false">${esc(k)}</button>`).join('')}</div>
         <textarea id="ib" placeholder="מה קרה?"></textarea>
         <label class="tog"><span>קריטי — העבודה נעצרה</span><span class="sw"><input type="checkbox" id="ic"><i></i></span></label>
         <label class="btn ghost block">${icon('photo', 18)} צילום התקלה<input type="file" accept="image/*" capture="environment" id="ip" hidden></label><div id="ipn" class="small muted"></div>
@@ -622,9 +622,10 @@ export async function renderDay(el, id) {
           const r = await import('../lib/viewer.js').then(m => m.markupFile(f)).catch(() => ({ blob: f, marked: false })); if (!r) return;
           ph = r.blob; orig = r.marked ? f : null; $('#ipn', s).textContent = r.marked ? 'התמונה המסומנת תצורף' : 'התמונה תצורף'; };
         $('#isend', s).onclick = async () => {
-          const text = $('#ib', s).value.trim(); if (!text && !kind && !ph) { $('#ib', s).focus(); return toast('בחרו סוג, כתבו או צלמו'); }
+          const text = $('#ib', s).value.trim();
+          if (!kind) { const c = $('#ikc', s); c.classList.remove('need'); void c.offsetWidth; c.classList.add('need'); return toast('מה סוג התקלה?'); }   // סיווג חובה — בלי "אחר" שקט
           if ($('#isend', s).disabled) return; $('#isend', s).disabled = true;
-          const body = text ? (kind === 'רחפן' || kind === 'לקוח' ? `${kind}: ${text}` : text) : kind || 'תקלה (בתמונה)';
+          const body = text ? (kind === 'רחפן' || kind === 'לקוח' ? `${kind}: ${text}` : text) : ph && kind === 'אחר' ? 'תקלה (בתמונה)' : kind;
           const row = { id: uid(), project_id: D.day.project_id, work_day_id: D.day.id, kind: ISSUE_KIND[kind] || 'other', severity: crit ? 'critical' : 'normal',
             body, opened_by: state.user.id, equipment_id: kind === 'רחפן' ? D.day.drone_id : null };
           D.issues.push(row); await insert('issues', row);

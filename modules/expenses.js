@@ -46,7 +46,7 @@ const LAST = 'edrone-exp-last';
 const lastGet = () => { try { return JSON.parse(localStorage.getItem(LAST) || '{}'); } catch { return {}; } };
 export async function newExpense(projectId, done, back, file0 = null) {
   const L = lastGet();
-  let cat = CATS[L.cat] ? L.cat : 'fuel', file = file0, prevUrl = null;
+  let cat = CATS[L.cat] && L.cat !== 'other' ? L.cat : 'fuel', file = file0, prevUrl = null;   // "אחר" אף פעם לא ברירת מחדל
   if (!projectId) {   // ברירת מחדל: הפרויקט של המשמרת הפתוחה / של יום השטח היום
     projectId = (await cache.get('open-shift').catch(() => null))?.project_id || null;
     if (!projectId) try { const { data } = await sb.from('work_days').select('project_id,work_day_crew!inner(user_id)').eq('day', isoDay()).eq('work_day_crew.user_id', state.user.id).limit(1); projectId = data?.[0]?.project_id || null; } catch { /* */ }

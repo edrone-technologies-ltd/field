@@ -12,7 +12,7 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'dispatch', 'tasks']);
+const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'compliance', 'purchase', 'expenses', 'dispatch', 'tasks']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -81,9 +81,11 @@ function renderMenu() {
     ]],
     ['ניהול', [
       isManager() && ['#/live', 'map', 'מגדל פיקוח', 'כל השטח עכשיו — מפה, צוותים והתראות'],
+      isManager() && innerWidth >= 768 && ['#/desk', 'clipboard', 'שולחן ניהול', 'למחשב'],
       isManager() && ['#/requests', 'send', 'בקשות מהצוות', 'שכר, ציוד, מסמכים'],
       isManager() && ['#/attendance', 'team', 'נוכחות צוות', can('finance') ? 'אישורים וייצוא לשכר' : 'אישורים ושעות'],
       isManager() && ['#/staff', 'users', 'עובדים', can('finance') ? 'פרטים, שכר ומסמכים' : 'פרטים ומסמכים'],
+      isManager() && ['#/compliance', 'shield', 'תוקף ותעודות', 'רישיונות, תעודות, ביטוח וטיפולים'],
       isManager() && ['#/clients', 'folder', 'לקוחות', 'תיק לקוח והיסטוריית עבודות'],
       state.profile.role === 'admin' && ['#/activity', 'clock', 'פעילות', 'מי מחובר ומה קורה'],
       state.profile.role === 'admin' && ['#/onboarding/launch', 'activity', 'השקה', 'מי נכנס, התקין והפעיל התראות'],
@@ -287,6 +289,8 @@ async function routeInner() {
     case '': return (await home()).renderHome(app);
     case 'ops': return (await import('./modules/ops.js')).renderOps(app);
     case 'live': if (!isManager()) return deny(); return (await import('./modules/live.js')).renderLive(app);
+    case 'desk': if (!isManager()) return deny(); return (await import('./modules/desk.js')).renderDesk(app, h.slice(1).join('/'));   // שולחן ניהול (מחשב)
+    case 'compliance': if (!isManager()) return deny(); return (await import('./modules/compliance.js')).renderCompliance(app);
     case 'schedule': case 'today': return (await home()).renderSchedule(app);
     case 'alerts': return (await home()).renderAlerts(app);
     case 'reports': return (await home()).renderReports(app);
