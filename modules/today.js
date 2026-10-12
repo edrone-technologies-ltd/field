@@ -139,7 +139,7 @@ export async function renderDay(el, id) {
 
   // ---------- שלבים ----------
   function sMorning() {
-    const crew = D.day.work_day_crew.map(c => ({ n: (c.profiles?.full_name || '').trim(), lead: c.role === 'lead', st: c.cant_come_at ? 'off' : c.confirmed_at || c.clock_in ? 'on' : '', ph: c.user_id !== state.user.id ? String(c.profiles?.phone || '').replace(/\D/g, '').replace(/^972/, '0') : '' })).filter(x => x.n);
+    const crew = D.day.work_day_crew.map(c => ({ n: (c.profiles?.full_name || '').trim(), lead: c.user_id === D.day.crew_lead_id, st: c.cant_come_at ? 'off' : c.confirmed_at || c.clock_in ? 'on' : '', ph: c.user_id !== state.user.id ? String(c.profiles?.phone || '').replace(/\D/g, '').replace(/^972/, '0') : '' })).filter(x => x.n);
     const nTasks = D.tasks.filter(t => t.phase !== 'הכנה').length;
     // סדר המסך = סדר הבוקר: מתי ולאן → מה המשרד ביקש → מה לקחת → מה עושים היום → איך (שמש) → מי ואיפה (איש קשר, מפה)
     return `<div class="card stack">
@@ -148,7 +148,7 @@ export async function renderDay(el, id) {
           <div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים</span></div></div>
         ${countdown()}
         ${D.day.gust_max != null && !P.site_id ? `<div class="alert ${D.day.weather_alerted ? 'bad' : ''}"><span class="dot ${D.day.weather_alerted ? '' : 'ok'}"></span><span class="grow"><b>רוח עד ${D.day.wind_max} קמ״ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ״מ` : ''}</b><small>תחזית לשעות העבודה</small></span></div>` : ''}
-        <div class="opcrew">${crew.map(c => c.ph ? `<a class="opc ${c.st}" href="tel:${esc(c.ph)}" aria-label="חיוג ל${esc(c.n)}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</a>` : `<span class="opc ${c.st}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</span>`).join('')}${D.day.drone ? `<span class="opc">${icon('drone', 14)} ${esc(D.day.drone.name)}</span>` : ''}</div>
+        <div class="opcrew">${isManager() && D.day.status !== 'done' ? `<button type="button" class="opc" onclick="import('./modules/dayadmin.js').then(m => m.openDayAdmin('${D.day.id}', () => dispatchEvent(new HashChangeEvent('hashchange'))))" aria-label="שינוי צוות וראש צוות">✎ צוות</button>` : ''}${crew.map(c => c.ph ? `<a class="opc ${c.st}" href="tel:${esc(c.ph)}" aria-label="חיוג ל${esc(c.n)}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</a>` : `<span class="opc ${c.st}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</span>`).join('')}${D.day.drone ? `<span class="opc">${icon('drone', 14)} ${esc(D.day.drone.name)}</span>` : ''}</div>
         ${navButtons(site.lat || P.lat, site.lng || P.lng, D.day.address || site.address || site.name || P.name)}
       </div>
       ${opsStrip()}

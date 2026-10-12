@@ -11,7 +11,8 @@ export async function openDayAdmin(id, after) {
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).in('role', ['crew', 'crew_lead', 'ops_manager', 'admin']).order('full_name'),
     sb.from('equipment').select('id,name,health').eq('kind', 'drone').order('name')]);
   if (error || !w) return toast('היום לא נמצא');
-  if (w.status !== 'planned') { location.hash = '#/day/' + id; return; }   // יום שכבר התחיל — מסך הביצוע
+  if (w.status === 'done') { location.hash = '#/day/' + id; return; }   // יום שנסגר — מסך הביצוע
+  const started = w.status !== 'planned';   // יום שהתחיל: רק צוות וראש צוות (אביחי 12/10 — ראש צוות לא נתקע)
   const av = await availability(w.day, w.day, { exceptDay: id, drones: drones || [] }).catch(() => ({ person: () => '', drone: id2 => (drones || []).find(d => d.id === id2)?.health === 'grounded' ? 'מקורקע' : '' }));
   const no = u => (w.work_day_crew || []).find(c => c.user_id === u && c.cant_come_at);
   const P = new Map((people || []).map(p => [p.id, p])), nm = u => (P.get(u)?.full_name || '').split(' ')[0];
@@ -28,9 +29,9 @@ export async function openDayAdmin(id, after) {
       ${quick.length ? `<div class="lrow"><span class="mic">${icon('plus', 18)}</span><div class="chips grow">${quick.map(x => `<button type="button" class="chip" data-addu="${x.id}">${esc(nm(x.id) || x.full_name)}${x.is_pilot && !pilotIn ? ' · מטיס' : ''}</button>`).join('')}</div></div>` : ''}
       ${free.length > quick.length ? `<label class="lrow"><span class="mic">${icon('users', 18)}</span><select id="da-add" class="grow"><option value="">${quick.length ? 'עוד…' : 'הוספת אדם…'}</option>${free.map(p => { const why = av.person(p.id); return `<option value="${p.id}" ${why ? 'disabled' : ''}>${esc(p.full_name)}${p.is_pilot ? ' · מטיס' : ''}${why ? ' — ' + esc(why) : ''}</option>`; }).join('')}</select></label>` : ''}
     </div>
-    <div class="row"><label class="field grow">תאריך<input type="date" id="da-day" value="${w.day}"></label><label class="field grow">יציאה<input type="time" id="da-time" value="${(w.report_time || '').slice(0, 5)}"></label></div>
+    ${started ? `<a class="btn ghost block" href="#/day/${id}">מסך היום</a>` : `<div class="row"><label class="field grow">תאריך<input type="date" id="da-day" value="${w.day}"></label><label class="field grow">יציאה<input type="time" id="da-time" value="${(w.report_time || '').slice(0, 5)}"></label></div>
     <label class="field">רחפן<select id="da-drone"><option value="">בלי רחפן</option>${(drones || []).map(d => { const why = av.drone(d.id); return `<option value="${d.id}" ${d.id === w.drone_id ? 'selected' : ''} ${why ? 'disabled' : ''}>${esc(d.name)}${why ? ' — ' + esc(why) : d.health === 'warning' ? ' — במעקב' : ''}</option>`; }).join('')}</select></label>
-    <div class="row-btns"><button class="btn ghost" id="da-cancel">ביטול היום</button><button class="btn primary" id="da-save">שמירת השינויים</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" id="da-cancel">ביטול היום</button><button class="btn primary" id="da-save">שמירת השינויים</button></div>`}`, (s, close) => {
     const busy = b => { b.disabled = true; return () => { b.disabled = false; }; };
     $$('[data-rm]', s).forEach(b => b.onclick = async () => {
       if (!(await confirmBox(`להסיר את ${nm(b.dataset.rm)} מהיום?`, { ok: 'הסרה', danger: true }))) return;
@@ -41,14 +42,14 @@ export async function openDayAdmin(id, after) {
       const { error: e } = await sb.rpc('assign_day', { p: w.project_id, d: w.day, u: b.dataset.addu }); if (e) { b.disabled = false; return toast(errText(e, 'השיבוץ לא נשמר — נסו שוב'), 5000); } done(`${nm(b.dataset.addu)} שובץ · קיבל עדכון`, close); });
     const add = $('#da-add', s); if (add) add.onchange = async () => { if (!add.value) return; add.disabled = true;
       const { error: e } = await sb.rpc('assign_day', { p: w.project_id, d: w.day, u: add.value }); if (e) { add.disabled = false; add.value = ''; return toast(errText(e, 'השיבוץ לא נשמר — נסו שוב'), 5000); } done('שובץ · קיבל עדכון', close); };
-    $('#da-save', s).onclick = async e => {
+    if (!started) $('#da-save', s).onclick = async e => {
       const un = busy(e.target), d = $('#da-day', s).value, tm = $('#da-time', s).value || null, dr = $('#da-drone', s).value || null;
       if (tm !== ((w.report_time || '').slice(0, 5) || null) || dr !== (w.drone_id || null)) {
         const { error: e1 } = await sb.from('work_days').update({ report_time: tm, drone_id: dr }).eq('id', id); if (e1) { un(); return toast(errText(e1, 'לא נשמר — נסו שוב')); } }
       if (d && d !== w.day) { const { error: e2 } = await sb.rpc('move_day', { w: id, d }); if (e2) { un(); return toast(errText(e2, 'היום לא הועבר — נסו שוב'), 5000); } return done(`הועבר ל${dayLabel(d)} · הצוות קיבל עדכון`, close); }
       done('נשמר', close);
     };
-    $('#da-cancel', s).onclick = async e => {
+    if (!started) $('#da-cancel', s).onclick = async e => {
       if (!(await confirmBox(`לבטל את יום השטח ב-${dm(w.day)}?`, { ok: 'ביטול היום', danger: true }))) return;
       const un = busy(e.target);
       for (const u of crew) { const { error: e3 } = await sb.rpc('unassign_day', { w: id, u }); if (e3) { un(); return toast(errText(e3, 'הביטול לא נשמר — נסו שוב')); } }   // כל אחד מקבל עדכון; היום נמחק כשאין בו אף אחד

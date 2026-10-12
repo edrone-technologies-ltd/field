@@ -1775,3 +1775,4 @@ body.client-mode .tabbar,body.client-mode #net,body.client-mode .topbar{display:
 .qth img { width: 38px; height: 38px; object-fit: cover; border-radius: 8px; background: var(--line, #ddd); }
 .kpis.qk { margin: 4px 0 2px; }
 .lrow:has(.qth) { flex-shrink: 0; }
+.chip.islead{border-color:var(--lime);font-weight:700}.chip.islead::before{content:'★';color:var(--lime);margin-inline-end:4px}

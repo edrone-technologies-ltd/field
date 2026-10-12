@@ -372,7 +372,7 @@ export async function renderProject(el, id, tab = 'o') {
     let start = pre.start || (() => { const d = new Date(Date.now() + 864e5); while ([5, 6].includes(d.getDay())) d.setDate(d.getDate() + 1); return isoDay(d); })();
     // שיבוץ מחדש: אותו צוות, רחפן ושעות כמו בימים שכבר מתוכננים. ראש צוות ברירת מחדל = ראש צוות לפי תפקיד
     const prev = D.days.filter(d => d.status === 'planned' && d.day >= isoDay()).sort((a, b) => a.day < b.day ? -1 : 1)[0];
-    const leads = D.team.filter(x => ['crew_lead', 'ops_manager', 'admin'].includes(x.role)).sort((a, b) => (b.role === 'crew_lead') - (a.role === 'crew_lead'));
+    const leads = [...D.team].sort((a, b) => (b.role === 'crew_lead') - (a.role === 'crew_lead'));   // אביחי 12/10: כל אחד מהצוות יכול להיות ראש צוות
     const leadDef = prev?.crew_lead_id || leads[0]?.id, crewDef = new Set((prev?.work_day_crew || []).map(c => c.user_id).filter(u => u !== prev.crew_lead_id));
     const droneDef = D.drones.find(x => x.id === prev?.drone_id && x.health !== 'grounded')?.id;
     const dTag = x => x.health === 'grounded' ? ' — מקורקע' : x.health === 'warning' ? ' — במעקב' : '';
@@ -389,11 +389,16 @@ export async function renderProject(el, id, tab = 'o') {
       <div class="field">תחזית<div id="wxs" class="wxs"><div class="small muted">בודק תחזית…</div></div></div>
       ${D.days.some(d => d.status === 'planned') ? '<div class="note">ימים מתוכננים יוחלפו</div>' : ''}
       <div class="row"><button class="btn ghost grow" data-close>ביטול</button><button class="btn primary grow" id="sgo">שיבוץ</button></div>`, (s, close) => {
-      $$('[data-u]', s).forEach(c => c.onclick = () => c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') !== 'true'));
+      // ראש הצוות מסומן בצוות בכוכב; לחיצה כפולה על אדם = הופך לראש צוות (הבחירה הרגילה — ברשימה למעלה)
+      const markLead = () => { const L = $('#sl', s).value; $$('[data-u]', s).forEach(c => { const me = c.dataset.u === L; c.classList.toggle('islead', me); if (me) c.setAttribute('aria-pressed', 'true'); }); };
+      $$('[data-u]', s).forEach(c => { c.onclick = () => { if (c.dataset.u === $('#sl', s).value) return; c.setAttribute('aria-pressed', c.getAttribute('aria-pressed') !== 'true'); };
+        c.ondblclick = () => { const sl = $('#sl', s), o = [...sl.options].find(x => x.value === c.dataset.u); if (o && !o.disabled) { sl.value = c.dataset.u; markLead(); } }; });
+      $('#sl', s).onchange = markLead; markLead();
       $$('[data-team]', s).forEach(c => c.onclick = () => {
         const t = teams.find(x => x.id === c.dataset.team); $$('[data-team]', s).forEach(x => x.setAttribute('aria-pressed', x === c));
         const sel = $('#sl', s); if (t.lead_id && [...sel.options].some(o => o.value === t.lead_id && !o.disabled)) sel.value = t.lead_id;
         $$('[data-u]', s).forEach(x => x.setAttribute('aria-pressed', !x.disabled && [t.pilot_id, t.operator_id].includes(x.dataset.u) && x.dataset.u !== sel.value));
+        markLead();
       });
       // זמינות בטווח שנבחר: חופש / לא יכול להגיע / משובץ בפרויקט אחר → לא ניתן לבחירה, עם הסיבה
       let avSeq = 0;
@@ -403,6 +408,7 @@ export async function renderProject(el, id, tab = 'o') {
         $$('[data-u]', s).forEach(c => { const why = av.person(c.dataset.u); c.disabled = !!why; if (why) c.setAttribute('aria-pressed', 'false'); $('.why', c).textContent = why; });
         const sl = $('#sl', s); [...sl.options].forEach(o => { const why = av.person(o.value); o.disabled = !!why; o.textContent = o.dataset.n + (why ? ' — ' + why : ''); });
         if (sl.selectedOptions[0]?.disabled) { const ok = [...sl.options].find(o => !o.disabled); if (ok) sl.value = ok.value; }
+        markLead();
         const dr = $('#sdr', s); [...dr.options].forEach(o => { if (!o.value) return; const why = av.drone(o.value); o.disabled = !!why; o.textContent = o.dataset.n + (why ? ' — ' + why : o.dataset.w); });
         if (dr.selectedOptions[0]?.disabled) dr.value = '';
       };
@@ -456,7 +462,7 @@ export async function renderProject(el, id, tab = 'o') {
         .then(r => r.json()).then(j => { const h = j.hourly; h.time.forEach((t, i) => { H[t.slice(0, 13)] = { w: h.wind_speed_10m[i], g: h.wind_gusts_10m[i], r: h.precipitation[i] || 0 }; }); drawWx(); }).catch(drawWx);
       else drawWx();
       $('#sgo', s).onclick = async () => {
-        const crew = $$('[data-u][aria-pressed="true"]', s).map(c => c.dataset.u);
+        const crew = $$('[data-u][aria-pressed="true"]', s).map(c => c.dataset.u).filter(u => u !== $('#sl', s).value);
         const args = { p: id, start_day: $('#sd', s).value, lead: $('#sl', s).value, crew, drone: $('#sdr', s).value || null, report: $('#st', s).value || '06:00', ndays: +$('#sn', s).value || null, skip: plan().filter(x => x.skip).map(x => x.d),
           arrive: $('#sa', s).value || null, shift_end: $('#se', s).value || null, fridays: $('#sfr', s).checked };
         if (!args.start_day || !args.lead || $('#sl', s).selectedOptions[0]?.disabled) return toast(args.start_day ? 'אין ראש צוות פנוי בתאריכים האלה' : 'חסר תאריך');

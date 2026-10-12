@@ -52,7 +52,7 @@ export async function renderOps(el) {
     const i0 = issues.length;
     const pn = (w.projects?.name || '').replace(/^[^—]*—\s*/, '') || w.projects?.name || '', when = w.day === t ? 'היום' : w.day === tm ? 'מחר' : `${HE_D1[new Date(w.day + 'T12:00:00').getDay()]} ${dm(w.day)}`, href = `#/day/${w.id}`;
     const crew = (w.work_day_crew || []), ppl = [...new Set([w.crew_lead_id, ...crew.map(c => c.user_id)].filter(Boolean))];
-    const fix = w.status === 'planned' ? { act: () => import('./dayadmin.js').then(m => m.openDayAdmin(w.id, () => renderOps(el))) } : {};
+    const fix = w.status !== 'done' ? { act: () => import('./dayadmin.js').then(m => m.openDayAdmin(w.id, () => renderOps(el))) } : {};
     if (!w.crew_lead_id) issues.push({ tone: 'bad', ic: 'users', t: `אין ראש צוות · ${when}`, s: pn, href , ...fix });
     if (!crew.length) issues.push({ tone: 'bad', ic: 'users', t: `לא שובץ צוות · ${when}`, s: pn, href , ...fix });
     else if (!ppl.some(id => P.get(id)?.is_pilot)) issues.push({ tone: 'bad', ic: 'drone', t: `אין מטיס בצוות · ${when}`, s: pn, href , ...fix });

@@ -192,7 +192,7 @@ async function surveyVisits(t) {
 // כרטיס יום ראשי: היום (פתיחה/המשך) או השיבוץ הבא (מחר / יום ד׳ 14.10) — שעות, כתובת, מי איתי, תחזית ואישור הגעה
 function dayHero(w, pr, cover) {
   const isToday = w.day === today(), crew = (w.work_day_crew || []).filter(c => c.user_id !== state.user.id).map(c => (c.profiles?.full_name || '').trim()).filter(Boolean);
-  const lead = (w.work_day_crew || []).find(c => c.role === 'lead' || c.user_id === w.crew_lead_id), ilead = w.crew_lead_id === state.user.id;
+  const lead = (w.work_day_crew || []).find(c => c.user_id === w.crew_lead_id), ilead = w.crew_lead_id === state.user.id;
   const cta = !isToday ? 'לפרטי היום' : w.status === 'planned' && !meOn(w)?.clock_in ? 'פתיחת היום' : w.status === 'done' ? 'סיכום היום' : 'המשך היום';
   const no = meOn(w)?.cant_come_at || PQ.no.has(w.id), okd = meOn(w)?.confirmed_at || PQ.ok.has(w.id);
   return `<div class="dhero"><a class="photo-hero" href="#/day/${w.id}">
