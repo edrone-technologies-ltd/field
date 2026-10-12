@@ -112,6 +112,7 @@ export async function renderChat(el, { site, project, conversation }) {
     const sc = document.getElementById('app'); sc.scrollTo({ top: sc.scrollHeight });
   }
   await load();
+  if (!comp.isConnected) return;   // יצאו מהמסך בזמן הטעינה — המסגרת כבר הוסרה
   if (channel) sb.removeChannel(channel);
   channel = sb.channel('msg-' + key.id).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `${key.col}=eq.${key.id}` },
     p => { const had = rows.find(r => r.id === p.new.id);
@@ -122,9 +123,9 @@ export async function renderChat(el, { site, project, conversation }) {
   addEventListener('hashchange', () => { clearInterval(rt); if (channel) { sb.removeChannel(channel); channel = null; } }, { once: true });
   const markRead = () => sb.from('conversation_members').update({ last_read_at: new Date().toISOString() }).eq('conversation_id', key.id).eq('user_id', state.user.id).then(() => {});
 
-  const imp = $('#cimp');
+  const imp = $('#cimp', comp);
   if (imp) imp.onclick = () => imp.setAttribute('aria-pressed', imp.getAttribute('aria-pressed') !== 'true');
-  const ta = $('#ctext');
+  const ta = $('#ctext', comp);
   const pop = document.createElement('div'); pop.className = 'mpop'; pop.hidden = true; comp.appendChild(pop);
   const atQuery = () => { const v = ta.value.slice(0, ta.selectionStart); const m = /(^|\s)@([^\s@]{0,20}(?: [^\s@]{0,20})?)$/.exec(v); return m ? { q: m[2], at: v.length - m[2].length - 1 } : null; };
   const showPop = () => {
@@ -154,9 +155,9 @@ export async function renderChat(el, { site, project, conversation }) {
     setTimeout(async () => { const m = rows.find(r => r.id === row.id); if (!m?._local) return;
       try { const { data } = await sb.from('messages').select('id,created_at').eq('id', row.id).maybeSingle(); if (data) { m._local = false; m.created_at = data.created_at; retick(); } } catch { /* */ } }, 3500);
   }
-  $('#csend').onclick = () => send();
+  $('#csend', comp).onclick = () => send();
   ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey && matchMedia('(pointer:fine)').matches) { e.preventDefault(); send(); } };
-  $('#catt').onchange = async e => {
+  $('#catt', comp).onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     try {
       const blob = await shrink(f), photoId = crypto.randomUUID(), path = `${state.user.id}/chat/${key.id}/${photoId}.jpg`;

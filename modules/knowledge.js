@@ -109,7 +109,7 @@ export async function renderKbItem(el, id) {
   if (!x) { el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">מרכז ידע</h1></header><div class="empty-line">ההדרכה לא נמצאה</div>`; return; }
   // צפייה נרשמת בפתיחה; "צפיתי והבנתי" בלחיצה
   const { data: v } = await sb.from('kb_views').select('confirmed_at,passed_at,score,signed_at').eq('item_id', id).eq('user_id', state.user.id).maybeSingle();
-  if (!v) sb.from('kb_views').insert({ item_id: id, user_id: state.user.id }).then(() => {});
+  if (!v) sb.from('kb_views').upsert({ item_id: id, user_id: state.user.id }, { onConflict: 'item_id,user_id', ignoreDuplicates: true }).then(() => {});   // ציור חוזר — בלי 409
   const files = x.files || [], urls = files.length ? await signedUrls('kb', files.map(f => f.path)) : {};
   const emb = embedUrl(x.video_url), M = isManager();
   el.innerHTML = `<header class="phead">${backBtn('#/kb')}<h1 class="grow">${esc(x.title)}</h1><button class="hbtn" id="kbsh" aria-label="שיתוף">${shareIcon(20)}</button></header>

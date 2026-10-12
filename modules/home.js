@@ -169,6 +169,8 @@ export async function renderHome(el) {
   const pend = ahead.filter(needsOk), pendRest = pend.filter(w => !heroDays.includes(w));
   const sv = can('specs') ? await surveyVisits(t) : [];   // סוקר: הסיורים הקרובים (מהליד) — ישר לטופס האפיון
   const LS = {}; for (const w of heroDays) LS[w.id] = await cache.get('day:' + w.id + ':local').catch(() => null);
+  const PS = await prestartHold(heroDays.filter(w => w.day === t && ['issue', 'on_site'].includes(w.status)));
+  heroDays.forEach(w => { if (PS[w.id]) LS[w.id] = { ...(LS[w.id] || {}), hold: PS[w.id] }; });
   // סדר = כרטיס אחד דומיננטי "מה הבא שלי" ← משמרת ← מחכה לך (עד 3) ← משימות ← דוח פתוח ← השעות שלי
   box.innerHTML = `${heroDays.map(w => dayHero(w, byId.get(w.project_id) || {}, cov[w.project_id], LS[w.id], w.status === 'done' && ahead[0] && !needsOk(ahead[0]) ? { ...ahead[0], pname: byId.get(ahead[0].project_id)?.name } : null)).join('') || (sv.length ? '' : empty('calendar', 'אין שיבוץ בשבועיים הקרובים', 'שיבוץ חדש יופיע כאן'))}
     <div id="hclock"></div><div id="qown"></div><div id="attn"></div>
@@ -198,12 +200,33 @@ async function surveyVisits(t) {
 // "מה הבא שלי": פעולה אחת לפי השעה והמצב — אישור ← העמסה ← יציאה ← הגעה ← עבודה ← סגירה (ראש צוות) / יציאה מהמשמרת (צוות)
 // s = השלב (0 בוקר … 5 נסגר) · act = מה הכפתור עושה: go (ליום) · load / close (ליום, ישר לשלב) · arrive · photo · out
 const iLeadOf = w => !w.crew_lead_id || w.crew_lead_id === state.user.id;
+// עצירה לפני תחילת העבודה (חריג בבדיקה, db/130): ממתינים להחלטה · הופסקה · הרחפן הושבת ועוד לא הוחלף — במקום "סיום יום"/"מתחילים לעבוד"
+async function prestartHold(days) {
+  if (!days.length) return {};
+  try {
+    const ids = days.map(w => w.id);
+    const [{ data: I }, { data: W }] = await Promise.all([
+      sb.from('issues').select('work_day_id,decision,decision_note,status,equipment_id,created_at').in('work_day_id', ids).not('prestart', 'is', null).order('created_at', { ascending: false }),
+      sb.from('work_days').select('id,drone_id,opened_at').in('id', ids)]);
+    const out = {};
+    for (const w of days) {
+      const L = (I || []).filter(x => x.work_day_id === w.id), d = (W || []).find(x => x.id === w.id) || {};
+      if (d.opened_at) continue;   // העבודה כבר התחילה — עצירה אחר כך היא תקלה רגילה
+      const st = L.find(x => x.decision === 'stopped'), gr = L.find(x => x.decision === 'grounded' && (!x.equipment_id || x.equipment_id === d.drone_id));
+      if (L.some(x => !x.decision && x.status === 'open')) out[w.id] = 'העבודה הופסקה · ממתין להחלטת מנהל תפעול';
+      else if (w.status === 'issue' && st) out[w.id] = 'העבודה הופסקה' + (st.decision_note ? ' · ' + st.decision_note : '');
+      else if (w.status === 'on_site' && gr) out[w.id] = 'הרחפן הושבת · ממתינים לרחפן חלופי';
+    }
+    return out;
+  } catch { return {}; }
+}
 function nextStep(w, L) {
   const lead = iLeadOf(w), isToday = w.day === today();
   if (w.day > today()) return needsOk(w) ? { s: -1, confirm: true } : { s: -1, act: 'go', cta: 'לפרטי היום', ghost: true };
   if (w.status === 'done') return { s: 5, act: 'go', cta: 'היום נסגר ✓', ghost: true, done: true };
   if (w.finished_at || (L?.stage === 4 && lead)) return lead ? { s: 4, act: 'close', cta: w.kind === 'report' ? 'שליחת הדוח' : 'סגירת היום ושליחה' } : { s: 4, act: 'out', cta: 'יציאה מהמשמרת', wait: true };
   if (w.kind === 'report') return { s: 4, act: 'close', cta: 'השלמת הדוח' };
+  if (L?.hold) return { s: 2, act: 'go', cta: L.hold, ghost: true };
   if (['working', 'issue'].includes(w.status)) return lead ? { s: 3, act: 'close', cta: 'סיום יום' } : { s: 3, act: 'photo', cta: 'צילום מהעבודה' };
   if (w.arrived_at || w.status === 'on_site') return { s: 2, act: 'go', cta: 'מתחילים לעבוד' };
   if (w.departed_at || w.status === 'en_route') return { s: 2, act: 'arrive', cta: 'הגענו לאתר' };
