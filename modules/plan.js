@@ -4,6 +4,7 @@ import { sb, state, isManager, sheet, icon, $, $$, esc, toast, signedUrls, zoom,
 import { shrink } from '../lib/store.js';
 import { errText } from '../lib/audit.js';
 import { shareIcon, sharePrint } from '../lib/share.js';
+import { terms, serviceOf } from '../lib/service.js';
 
 const KIND = { facade: 'אפיון', site: 'אפיון', obstacle: 'מכשול', before: 'לפני', after: 'אחרי', general: 'שטח', report: 'דוח קודם' };
 
@@ -29,7 +30,7 @@ export async function renderPlan(el, pid, print = false) {
   el.innerHTML = '<div class="skel tall"></div>';
   const M = isManager();
   const [{ data: p }, { data: tasks }, { data: days }, { data: rows }] = await Promise.all([
-    sb.from('projects').select('id,name,client_name,site_id,sites(name,address,contact_name,contact_phone)').eq('id', pid).single(),
+    sb.from('projects').select('id,name,client_name,site_id,service,sites(name,address,contact_name,contact_phone,service)').eq('id', pid).single(),
     sb.from('tasks').select('id,title,day_no,method,instructions,risk,building_id,work_day_id,status').eq('project_id', pid).neq('phase', 'מעקב').neq('status', 'dropped').order('day_no').order('seq'),
     sb.from('work_days').select('id,day,status,report_time,kind,drone_id').eq('project_id', pid).neq('kind', 'report').order('day'),
     sb.from('plan_days').select('*').eq('project_id', pid).order('day_no')]);
@@ -129,15 +130,16 @@ async function loadout(p, ndays, days) {
   if (!p.site_id) return '';
   const droneIds = [...new Set(days.map(d => d.drone_id).filter(Boolean))];
   const [{ data: bs }, { data: dr }] = await Promise.all([
-    sb.from('buildings').select('floors,specs(status,method,material,floors,site_ops,hydrants,power)').eq('site_id', p.site_id),
+    sb.from('buildings').select('floors,specs(status,method,material,floors,site_ops,hydrants,power,service_type)').eq('site_id', p.site_id),
     droneIds.length ? sb.from('equipment').select('name').in('id', droneIds) : Promise.resolve({ data: [] })]);
   const S = (bs || []).flatMap(b => (Array.isArray(b.specs) ? b.specs : [b.specs]).filter(x => x?.status === 'done').map(x => ({ ...x, fl: Number(x.floors ?? b.floors) || 0 })));
   if (!S.length) return '';
+  const t = terms(serviceOf(p, S.find(x => x.service_type)?.service_type));   // פנלים על גג — בלי "קומות"; סריקה — בלי "שטיפה"
   const O = S.map(x => x.site_ops || {}), has = (k, v) => O.some(o => o[k] === v), any = k => [...new Set(O.flatMap(o => o[k] || []))];
   const M = new Set(S.map(x => x.method).filter(Boolean)), mats = [...new Set(S.map(x => x.material).filter(m => m && m !== 'אחר'))];
   const fl = Math.max(0, ...S.map(x => x.fl)), haz = any('hazards');
   const L = [];
-  if (M.has('רחפן') || M.has('משולב') || !M.size) L.push(['רחפן', (dr || []).map(x => x.name).join(', ') || 'שטיפה']);
+  if (M.has('רחפן') || M.has('משולב') || !M.size) L.push(['רחפן', (dr || []).map(x => x.name).join(', ') || (t.wash ? 'שטיפה' : t.work)]);
   if (M.has('סנפלינג') || M.has('משולב')) L.push(['סנפלינג', 'ציוד גלישה ועיגון']);
   if (mats.length) L.push(['חומר ניקוי', mats.join(' · ') + (ndays ? ` · ל-${ndays} ימי עבודה` : '')]);
   if (has('water', 'מכלית')) L.push(['מים', 'מכלית — אין מקור באתר']);
@@ -145,7 +147,7 @@ async function loadout(p, ndays, days) {
   else if (has('water', 'ברז באתר')) L.push(['מים', 'מחבר לברז']);
   else if (S.some(x => x.hydrants)) L.push(['מים', 'מתאם הידרנט']);   // אפיונים מלפני 096
   // צינור הלחץ והמשאבה קבועים על הנגרר — לא בהעמסה. סחיבה רחוקה — כהערה
-  if (has('access', 'רחוק — סחיבה')) L.push(['גישה', 'רחוק — סחיבה' + (fl ? ` · גובה ${fl} קומות` : '')]);
+  if (has('access', 'רחוק — סחיבה')) L.push(['גישה', 'רחוק — סחיבה' + (t.roof ? ' · עבודה על גג' : fl ? ` · גובה ${fl} קומות` : '')]);
   if (has('power', 'גנרטור')) L.push(['חשמל', 'גנרטור · כבל מאריך · עמדת חשמל ניידת']);
   else if (has('power', 'שקע באתר') || S.some(x => x.power)) L.push(['חשמל', 'שקע באתר — בלי גנרטור · כבל מאריך']);
   L.push(['בטיחות', ['ציוד מגן אישי', 'ערכת עזרה ראשונה', 'מערכת קשר', haz.includes('הולכי רגל') && 'גידור מעבר הולכי רגל', has('launch', 'גג') && 'עבודה מהגג — רתמות'].filter(Boolean).join(' · ')]);

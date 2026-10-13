@@ -1,6 +1,7 @@
 // התקדמות לפי אזור (חזית) ו"מ״ר לשעה". האזורים מגיעים מהאפיון (db/112 project_zones) — אין שדה מ״ר ידני.
 // סגירת יום: צ׳יפ לכל חזית של המבנים של היום, מסומן מראש לפי המשימות שבוצעו. פרויקט: פס לכל מבנה + % כולל. דוחות: "תפוקה".
 import { sb, cache, isManager, icon, esc, nf, $, $$ } from '../lib/core.js';
+import { terms, serviceOf } from '../lib/service.js';
 
 export const zkey = z => z.b + '|' + z.k;
 export async function loadZones(pid) {
@@ -27,11 +28,11 @@ export function zonePrefill(Zs, tasks, dayId) {
   }
   return [...new Set(out)];
 }
-export function zonesHtml(list, sel) {
+export function zonesHtml(list, sel, lbl = x => x) {   // lbl = שם האזור בשפת השירות (פנלים: "מערך")
   if (!list.length) return '';
   const multi = new Set(list.map(z => z.b)).size > 1, m2 = list.filter(z => sel.includes(zkey(z))).reduce((s, z) => s + Number(z.m2 || 0), 0);
   return `<div class="sec zsec"><div class="row"><h3 class="grow">מה הושלם היום</h3>${m2 ? `<span class="pill lime" id="zm2">${nf(Math.round(m2))} מ״ר</span>` : '<span id="zm2"></span>'}</div>
-    <div class="chips">${list.map(z => `<button type="button" class="chip zchip" data-z="${esc(zkey(z))}" aria-pressed="${sel.includes(zkey(z))}">${esc(multi ? z.bn + ' · ' + z.t : z.t)}${z.m2 ? `<small>${nf(Math.round(z.m2))}</small>` : ''}</button>`).join('')}</div></div>`;
+    <div class="chips">${list.map(z => `<button type="button" class="chip zchip" data-z="${esc(zkey(z))}" aria-pressed="${sel.includes(zkey(z))}">${esc(multi ? z.bn + ' · ' + lbl(z.t) : lbl(z.t))}${z.m2 ? `<small>${nf(Math.round(z.m2))}</small>` : ''}</button>`).join('')}</div></div>`;
 }
 export function bindZones(root, list, sel, onChange) {
   $$('[data-z]', root).forEach(b => b.onclick = () => {
@@ -49,6 +50,7 @@ export async function progressCard(box, pid, { started = false } = {}) {
   if (!box) return;
   const Zs = await loadZones(pid); const Z = Zs?.zones || [];
   if (!Z.length) return;
+  const t = terms(await sb.from('projects').select('service,sites(service)').eq('id', pid).maybeSingle().then(r => serviceOf(r.data), () => null));
   const done = new Map((Zs.done || []).map(x => [zkey(x), x]));
   if (!done.size && !started) return;
   const B = []; Z.forEach(z => { let b = B.find(x => x.id === z.b); if (!b) B.push(b = { id: z.b, name: z.bn, z: [] }); b.z.push(z); });
@@ -56,10 +58,10 @@ export async function progressCard(box, pid, { started = false } = {}) {
   const dn = area ? Z.filter(z => done.has(zkey(z))).reduce((s, z) => s + Number(z.m2), 0) : Z.filter(z => done.has(zkey(z))).length;
   const P = pct(dn, tot), dm = d => `${+d.slice(8)}.${+d.slice(5, 7)}`;
   box.innerHTML = `<section class="zprog card stack"><div class="row"><div class="ring" style="--p:${P}"><b>${P}%</b></div>
-      <div class="grow"><b>התקדמות בשטח</b><div class="small muted">${area ? `${nf(Math.round(dn))} מתוך ${nf(Math.round(tot))} מ״ר` : `${dn} מתוך ${tot} חזיתות`}</div></div></div>
+      <div class="grow"><b>התקדמות בשטח</b><div class="small muted">${area ? `${nf(Math.round(dn))} מתוך ${nf(Math.round(tot))} מ״ר` : `${dn} מתוך ${tot} ${t.units}`}</div></div></div>
     ${B.map(b => { const bt = area ? b.z.reduce((s, z) => s + Number(z.m2), 0) : b.z.length, bd = area ? b.z.filter(z => done.has(zkey(z))).reduce((s, z) => s + Number(z.m2), 0) : b.z.filter(z => done.has(zkey(z))).length;
       return `<div class="zb"><div class="row"><b class="grow">${esc(b.name)}</b><span class="small muted">${pct(bd, bt)}%</span></div><div class="progress"><i style="width:${pct(bd, bt)}%"></i></div>
-        ${b.z.length > 1 || b.z[0].k !== 'all' ? `<div class="zfs">${b.z.map(z => { const d = done.get(zkey(z)); return `<span class="zf${d ? ' on' : ''}">${d ? icon('check', 12) : ''}${esc(z.t.replace(/^חזית /, ''))}${d ? `<small>${dm(d.day)}</small>` : ''}</span>`; }).join('')}</div>` : ''}</div>`; }).join('')}
+        ${b.z.length > 1 || b.z[0].k !== 'all' ? `<div class="zfs">${b.z.map(z => { const d = done.get(zkey(z)); return `<span class="zf${d ? ' on' : ''}">${d ? icon('check', 12) : ''}${esc(t.zone(z.t).replace(new RegExp('^' + t.unit + ' '), ''))}${d ? `<small>${dm(d.day)}</small>` : ''}</span>`; }).join('')}</div>` : ''}</div>`; }).join('')}
   </section>`;
 }
 

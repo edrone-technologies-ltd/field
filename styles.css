@@ -2554,3 +2554,13 @@ body.ws .xrow .stack.tight{flex-direction:row;gap:6px}
 .dtpick.mini .chip{min-height:28px;padding:3px 9px;font-size:.8rem}
 /* אחרי לילה — אזהרה בשורת צוות (ניהול היום) */
 .lrow small.warn{color:var(--warn);font-weight:600}
+/* sv: ממצאי ביקור / סיכום הפיילוט בדוח ללקוח + "ללקוח" בדוח ביקור */
+.creport .cr-vf{margin:0 0 7mm}
+.creport .cr-vf p{font-size:10.6pt;line-height:1.7;color:#2A2E35;margin:0 0 3mm}
+.creport .cr-vf .row3{margin-top:4mm}
+.creport .cr-vs{border-inline-start:1.2mm solid #C6EA5E;padding-inline-start:4mm}
+.creport .cr-vs>b{display:block;font-size:10pt;margin-bottom:2mm}
+.sovis .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-weight:500}
+.chip.vcl{gap:4px}
+.chip.vcl[aria-pressed="false"]{opacity:.55}
+.finding .vtext{white-space:normal;line-height:1.6}

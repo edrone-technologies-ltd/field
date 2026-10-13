@@ -1,6 +1,8 @@
 // החתמת לקוח: הכל נמשך לבד מהדוחות היומיים (ימי שטח באפליקציה + דוחות ממאנדי), המנהל/ראש הצוות בוחר מה נכלל, הלקוח חותם.
 // שלב 1 "מה נכלל" (ימים · תמונות · משימות · מקטעים) → שלב 2 חתימה. הבחירה נשמרת עם החתימה (include + snapshot), החתימה סוגרת את הפרויקט (db/081).
 import { sb, state, enqueue, uid, $, $$, esc, icon, toast, dm, isoDay, thumbUrls, signedUrls, zoom, backBtn, goUp, cache } from '../lib/core.js';
+import { terms, serviceOf, siteCtx, fixWorks, isPilot } from '../lib/service.js';
+import { visitDefault, visitPhotos } from './visits.js';
 
 const HE_D1 = ['א׳', 'ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳'];
 const dow = d => HE_D1[new Date(d + 'T12:00').getDay()];
@@ -9,22 +11,27 @@ export async function renderSignoff(el, pid, dayId = null) {
   el.innerHTML = `<header class="phead">${backBtn('#/p/' + pid)}<h1 class="grow">החתמת לקוח</h1></header><div class="skel"></div><div class="skel"></div>`;
   try { await sb.rpc('join_project', { p: pid }); } catch {}
   const q = p => p.then(r => r.data || []).catch(() => []);
-  const [{ data: p }, wds, reps, phs, tasks, iss] = await Promise.all([
-    sb.from('projects').select('id,name,client_name,client_id,site_id,sites(name,contact_name,contact_phone)').eq('id', pid).single(),
+  const [{ data: p }, wds, reps, phs, tasks, iss, vis] = await Promise.all([
+    sb.from('projects').select('id,name,client_name,client_id,site_id,service,engagement,sites(name,contact_name,contact_phone,service)').eq('id', pid).single(),
     q(sb.from('work_days').select('id,day,status,work_types,gallons,material,weather_stop').eq('project_id', pid).eq('status', 'done').order('day')),
     q(sb.from('field_reports').select('monday_item_id,report_date,work,crew,gallons,notes,issues,photos').eq('project_id', pid).eq('excluded', false).order('report_date')),
     q(sb.from('photos').select('id,storage_path,kind,work_day_id,created_at').eq('project_id', pid).in('kind', ['before', 'after', 'general']).order('created_at')),
     q(sb.from('tasks').select('id,title,buildings(name)').eq('project_id', pid).eq('status', 'done').order('seq')),
     q(sb.from('issues').select('id,body,resolution').eq('project_id', pid).eq('status', 'closed')),
+    q(sb.from('project_visits').select('id,kind,visit_date,findings,summary,summary_client').eq('project_id', pid).order('visit_date')),   // מנהלים בלבד (RLS)
   ]);
   if (!p) { el.innerHTML = `<header class="phead">${backBtn('#/')}<h1>החתמת לקוח</h1></header><div class="empty-line">הפרויקט לא נמצא</div>`; return; }
   const ors = [p.site_id && `site_id.eq.${p.site_id}`, p.client_id && `client_id.eq.${p.client_id}`].filter(Boolean).join(',');
   const contacts = ors ? await q(sb.from('contacts').select('name,role,email,phone').eq('active', true).or(ors)) : [];
+  // שפת השירות (פנלים · "על גגות הלולים") + ביקורים שיש בהם תוכן ללקוח
+  const vtx = vis.flatMap(v => [...(v.findings || []).map(x => x.text), v.summary]);
+  const t0 = terms(serviceOf(p)), t = terms(serviceOf(p), siteCtx(t0.key, [p.name, p.sites?.name, ...vtx])), pilot = isPilot(p, vtx);
+  const V = vis.map(v => ({ v, F: (v.findings || []).map((x, i) => ({ x, i })).filter(({ x }) => (x.text || '').trim() || visitPhotos(x).length) })).filter(y => y.F.length || (y.v.summary || '').trim());
 
   // ---- ימים: יום שטח מהאפליקציה גובר; דוח ממאנדי לאותו תאריך = כפילות (נדחף משם). פריטים שסומנו "⚠️" במאנדי — לא נספרים
   const dayOf = new Map(wds.map(w => [w.day, w]));
   const D = new Map();
-  for (const w of wds) D.set(w.day, { d: w.day, w, work: (w.work_types || []).join(' · '), gal: Number(w.gallons) || 0, mat: w.material, wx: w.weather_stop });
+  for (const w of wds) D.set(w.day, { d: w.day, w, work: fixWorks(w.work_types, t).join(' · '), gal: Number(w.gallons) || 0, mat: w.material, wx: w.weather_stop });
   for (const r of reps) { if (!r.report_date || /^⚠/.test(r.notes || '')) continue; const x = D.get(r.report_date) || { d: r.report_date, work: '', gal: 0 };
     if (!dayOf.has(r.report_date)) { x.work = x.work || r.work || ''; x.gal += Number(r.gallons) || 0; x.rep = r; }
     if (r.issues) x.issues = [...(x.issues || []), r.issues]; D.set(r.report_date, x); }
@@ -48,12 +55,15 @@ export async function renderSignoff(el, pid, dayId = null) {
   const ck = 'signoff:' + pid;
   const saved = (await cache.get(ck)) || {};
   const S = { days: new Set(saved.days || days.filter(x => !x.wx).map(x => x.d)), photos: new Set(saved.photos || preList), tasks: new Set(saved.tasks || tasks.map(t => t.id)),
-    sec: { works: true, photos: true, qty: false, issues: false, ...(saved.sec || {}) }, step: 1, rating: 5, text: saved.text || null };
-  const persist = () => cache.set(ck, { days: [...S.days], photos: [...S.photos], tasks: [...S.tasks], sec: S.sec, text: S.text }).catch(() => {});
+    sec: { works: true, photos: true, qty: false, issues: false, ...(saved.sec || {}) }, step: 1, rating: 5, text: saved.text || null,
+    visits: new Map(V.map(({ v }) => { const d = (saved.visits || []).find(x => x.id === v.id) || visitDefault(v); return [v.id, { f: new Set(d.f), s: !!d.s }]; })) };
+  const persist = () => cache.set(ck, { days: [...S.days], photos: [...S.photos], tasks: [...S.tasks], sec: S.sec, text: S.text, visits: visSel() }).catch(() => {});
+  const visSel = () => [...S.visits].map(([id, x]) => ({ id, f: [...x.f].sort((a, b) => a - b), s: x.s }));
+  const visN = () => [...S.visits.values()].reduce((n, x) => n + x.f.size + (x.s ? 1 : 0), 0);
   const works = () => [...new Set(days.filter(x => S.days.has(x.d)).flatMap(x => (x.work || '').split(/\s*[·,]\s*/).filter(Boolean)))];
   const chosen = () => days.filter(x => S.days.has(x.d));
   const summaryText = () => { const c = chosen(), r = c.length ? `${dm(c[0].d)}${c.length > 1 ? '–' + dm(c.at(-1).d) : ''}` : '';
-    return [works().join(' · '), c.length ? `${c.length === 1 ? 'יום עבודה אחד' : c.length + ' ימי עבודה'} (${r})` : '', S.sec.works && S.tasks.size ? `${S.tasks.size} משימות בוצעו` : ''].filter(Boolean).join('\n'); };
+    return [works().map(w => w === t.day ? t.workFull : w).join(' · '), c.length ? `${c.length === 1 ? 'יום עבודה אחד' : c.length + ' ימי עבודה'} (${r})` : '', S.sec.works && S.tasks.size ? `${S.tasks.size} משימות בוצעו` : ''].filter(Boolean).join('\n'); };
 
   const tog = (k, label) => `<label class="tog"><span>${label}</span><span class="sw"><input type="checkbox" data-sec="${k}" ${S.sec[k] ? 'checked' : ''}><i></i></span></label>`;
   const bar = document.createElement('div'); bar.className = 'bar'; document.body.appendChild(bar);
@@ -69,6 +79,11 @@ export async function renderSignoff(el, pid, dayId = null) {
           <span class="sw"><input type="checkbox" data-day="${x.d}" ${S.days.has(x.d) ? 'checked' : ''}><i></i></span></label>`).join('')}</div></section>
         <section><h3 class="sh">מה נכלל בדוח</h3><div class="menu pad">${tog('works', 'עבודות שבוצעו')}${tog('photos', 'תיעוד בתמונות')}${tog('qty', 'כמויות וחומר')}${iss.length || days.some(x => x.issues) ? tog('issues', 'תקלות שטופלו') : ''}</div></section>
         <label class="field">מה בוצע<textarea id="sw" rows="3">${esc(S.text ?? summaryText())}</textarea></label>
+        ${V.length ? `<section class="sovis${pilot ? ' pilot' : ''}"><div class="sh-row"><h3 class="sh">${pilot ? 'סיכום הפיילוט' : 'ממצאי ביקור'}</h3><span class="count" id="vcount">${visN()}</span></div>
+          ${V.map(({ v, F }) => { const sel = S.visits.get(v.id); return `<div class="pgroup"><small class="muted">${dm(v.visit_date)}</small><div class="list">
+            ${F.map(({ x, i }) => `<label class="lrow"><span class="grow"><b class="clamp2">${esc((x.text || '').trim() || 'תמונות מהביקור')}</b><small>${[x.sev === 'fix' ? 'לתיקון — פנימי' : '', visitPhotos(x).length ? visitPhotos(x).length + ' תמונות' : ''].filter(Boolean).join(' · ')}</small></span>
+              <span class="sw"><input type="checkbox" data-vf="${v.id}|${i}" ${sel.f.has(i) ? 'checked' : ''}><i></i></span></label>`).join('')}
+            ${(v.summary || '').trim() ? `<label class="lrow"><span class="grow"><b class="clamp2">${esc(v.summary.trim())}</b><small>סיכום</small></span><span class="sw"><input type="checkbox" data-vs="${v.id}" ${sel.s ? 'checked' : ''}><i></i></span></label>` : ''}</div></div>`; }).join('')}</section>` : ''}
         ${S.sec.photos && P.some(src) ? `<section><div class="sh-row"><h3 class="sh">תמונות</h3><span class="count" id="pcount">${S.photos.size}</span>${S.photos.size ? '<button class="more" id="pclr">ניקוי</button>' : ''}</div>
           ${c.map(x => byDay(x.d).length ? `<div class="pgroup"><small class="muted">${dow(x.d)} ${dm(x.d)}</small><div class="pgrid">${byDay(x.d).map(ph => `<button type="button" class="pick ${S.photos.has(key(ph)) ? 'on' : ''}" data-ph="${esc(key(ph))}" aria-pressed="${S.photos.has(key(ph))}">
             <img src="${esc(src(ph))}" alt="" loading="lazy">${ph.k === 'before' ? '<span class="pk-tag">לפני</span>' : ph.k === 'after' ? '<span class="pk-tag a">אחרי</span>' : ''}<span class="pk-on">${icon('check', 16)}</span></button>`).join('')}</div></div>` : '').join('')}</section>` : ''}
@@ -79,6 +94,8 @@ export async function renderSignoff(el, pid, dayId = null) {
     $('#sw', el).oninput = e => { S.text = e.target.value; persist(); };
     $$('[data-day]', el).forEach(i => i.onchange = () => { i.checked ? S.days.add(i.dataset.day) : S.days.delete(i.dataset.day); persist(); step1(); });
     $$('[data-sec]', el).forEach(i => i.onchange = () => { S.sec[i.dataset.sec] = i.checked; persist(); step1(); });
+    $$('[data-vf]', el).forEach(i => i.onchange = () => { const [id, k] = i.dataset.vf.split('|'), f = S.visits.get(id).f; i.checked ? f.add(+k) : f.delete(+k); persist(); $('#vcount', el).textContent = visN(); });
+    $$('[data-vs]', el).forEach(i => i.onchange = () => { S.visits.get(i.dataset.vs).s = i.checked; persist(); $('#vcount', el).textContent = visN(); });
     $$('[data-task]', el).forEach(i => i.onchange = () => { i.checked ? S.tasks.add(i.dataset.task) : S.tasks.delete(i.dataset.task); persist(); $('.fold .count', el).textContent = `${S.tasks.size}/${tasks.length}`; });
     $$('[data-ph]', el).forEach(b => {
       let t = null, long = false;
@@ -137,7 +154,7 @@ export async function renderSignoff(el, pid, dayId = null) {
         const id = uid(), path = `${state.user.id}/signoff/${id}.png`, sigData = $('#sig').toDataURL('image/png');
         const photos = S.sec.photos ? P.filter(x => S.photos.has(key(x))).map(({ b, p: pth, k, d }) => ({ b, p: pth, k, d })) : [];
         const text = (S.text ?? summaryText()).trim();
-        const include = { days: c.map(x => x.d), sections: S.sec, photos, tasks: S.sec.works ? [...S.tasks] : [], text };
+        const include = { days: c.map(x => x.d), sections: S.sec, photos, tasks: S.sec.works ? [...S.tasks] : [], text, ...(V.length ? { visits: visSel() } : {}) };
         const snapshot = { project: p.name, client: p.client_name, range: [c[0].d, c.at(-1).d], days: c.map(x => ({ d: x.d, work: x.work, gal: x.gal, mat: x.mat || null })),
           tasks: S.sec.works ? tasks.filter(t => S.tasks.has(t.id)).map(t => ({ t: t.title, b: t.buildings?.name || null })) : [],
           qty: S.sec.qty ? { gallons: c.reduce((t, x) => t + (x.gal || 0), 0), material: [...new Set(c.map(x => x.mat).filter(Boolean))] } : null,

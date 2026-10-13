@@ -10,6 +10,11 @@ const FIELD = ['ops_manager', 'crew_lead', 'crew', 'surveyor', 'admin'];
 const team = async () => ((await sb.from('profiles').select('id,full_name,role').eq('is_active', true).order('full_name')).data || []).filter(u => FIELD.includes(u.role));
 const PH = x => x.photos || (x.photo ? [x.photo] : []);   // תמונות לממצא (תאימות לדוחות עם תמונה אחת)
 const SEV = { ok: ['תקין', 'ok'], note: ['הערה', 'warn'], fix: ['לתיקון', 'bad'] };
+// מה מהביקור נכנס לדוח ללקוח: ממצא — סימון מפורש (c); אחרת כתיבה מקצועית (לא "לתיקון", 80+ תווים). סיכום — summary_client (ברירת מחדל כן).
+// "לתיקון" והערות קצרות = פנימי לצוות, אלא אם בחרו
+export const findingShared = x => x.c ?? (x.sev !== 'fix' && (x.text || '').trim().length >= 80);
+export const visitDefault = v => ({ id: v.id, f: (v.findings || []).map((x, i) => findingShared(x) && ((x.text || '').trim() || PH(x).length) ? i : -1).filter(i => i >= 0), s: !!(v.summary || '').trim() && v.summary_client !== false });
+export const visitPhotos = PH;
 
 // טופס חדש / עריכה
 export async function renderVisitForm(el, pid, vid) {
@@ -44,7 +49,7 @@ export async function renderVisitForm(el, pid, vid) {
           ${f.findings.length ? f.findings.map((x, i) => `<div class="finding">
             <textarea data-ft="${i}" rows="2" placeholder="מה ראית">${esc(x.text || '')}</textarea>
             <div class="row"><div class="chips">${Object.entries(SEV).map(([k, [t]]) => `<button type="button" class="chip" data-fs="${i}" data-v="${k}" aria-pressed="${x.sev === k}">${t}</button>`).join('')}</div><span class="grow"></span>
-              <button type="button" class="chip" data-fr="${i}" aria-label="הסרה">${icon('x', 16)}</button></div>
+              <button type="button" class="chip vcl" data-fc="${i}" aria-pressed="${findingShared(x)}">${icon('send', 14)} ללקוח</button><button type="button" class="chip" data-fr="${i}" aria-label="הסרה">${icon('x', 16)}</button></div>
             <div class="fphs">${PH(x).map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}<label class="fph add" aria-label="הוספת תמונה">${icon('photo', 18)}<input type="file" accept="image/*" multiple data-fp="${i}" hidden></label></div></div>`).join('') : ''}
         </section>
         ${todoHtml(f, urls)}
@@ -52,7 +57,7 @@ export async function renderVisitForm(el, pid, vid) {
           <label class="field">עד מתי<input type="date" id="vdue" value="${who.due}"></label>` : ''}
         ${f.kind === 'client_tour' ? `<label class="field">מה הלקוח אמר<textarea id="vc" rows="3" placeholder="טענות, בקשות, שביעות רצון">${esc(f.client_feedback || '')}</textarea></label>` : ''}
         <div class="field">ציון כללי<div class="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-r="${n}" aria-pressed="${f.rating >= n}">★</button>`).join('')}</div></div>
-        <label class="field">סיכום<textarea id="vs" rows="3">${esc(f.summary || '')}</textarea></label>
+        <div class="field"><div class="row"><span class="grow">סיכום</span><button type="button" class="chip vcl" id="vsc" aria-pressed="${f.summary_client !== false}">${icon('send', 14)} ללקוח</button></div><textarea id="vs" rows="3">${esc(f.summary || '')}</textarea></div>
         <button class="btn primary block big" id="vsave">שמירת דוח ביקור${pending(f).length ? ` + ${pending(f).length} לצ׳קליסט` : ''}</button>
       </div>`;
     const keep = () => { if ($('#vdue')) who.due = $('#vdue').value; f.visit_date = $('#vd').value; f.participants = $('#vp').value; f.summary = $('#vs').value; if ($('#vc')) f.client_feedback = $('#vc').value; $$('[data-ft]').forEach(t => f.findings[+t.dataset.ft].text = t.value); };
@@ -68,6 +73,8 @@ export async function renderVisitForm(el, pid, vid) {
     $('#vadd').onclick = () => { keep(); f.findings.push({ text: '', sev: 'note' }); draw(); setTimeout(() => $$('[data-ft]').pop()?.focus(), 50); };
     $$('[data-fs]').forEach(b => b.onclick = () => { keep(); f.findings[+b.dataset.fs].sev = b.dataset.v; draw(); });
     $$('[data-fr]').forEach(b => b.onclick = () => { keep(); f.findings.splice(+b.dataset.fr, 1); draw(); });
+    $$('[data-fc]').forEach(b => b.onclick = () => { keep(); const x = f.findings[+b.dataset.fc]; x.c = !findingShared(x); b.setAttribute('aria-pressed', x.c); });
+    $('#vsc').onclick = e => { keep(); f.summary_client = f.summary_client === false; e.currentTarget.setAttribute('aria-pressed', f.summary_client); };
     const addTodo = () => { const t = $('#vtin').value.trim(); if (!t) return; keep(); f.todo.push({ text: t }); draw(); setTimeout(() => $('#vtin')?.focus(), 50); };
     $('#vtadd').onclick = addTodo; $('#vtin').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); addTodo(); } };
     $$('[data-tr]').forEach(b => b.onclick = () => { keep(); f.todo.splice(+b.dataset.tr, 1); draw(); });
@@ -101,7 +108,7 @@ export async function renderVisitForm(el, pid, vid) {
     $('#vsave').onclick = async () => {
       keep(); f.findings = f.findings.filter(x => (x.text || '').trim() || PH(x).length);
       const row = { project_id: pid, todo: f.todo, kind: f.kind, visit_date: f.visit_date, participants: f.participants || null, findings: f.findings,
-        client_feedback: f.client_feedback || null, rating: f.rating || null, summary: f.summary || null };
+        client_feedback: f.client_feedback || null, rating: f.rating || null, summary: f.summary || null, summary_client: f.summary_client !== false };
       $('#vsave').disabled = true;
       const { data, error } = vid ? await sb.from('project_visits').update(row).eq('id', vid).select('id').single() : await sb.from('project_visits').insert(row).select('id').single();
       if (error) { $('#vsave').disabled = false; return toast(errText(error, 'הדוח לא נשמר — נסו שוב')); }
@@ -141,8 +148,8 @@ export async function renderVisit(el, id) {
       ${tot ? `<div class="card row">${ring(dn, tot)}<div class="grow"><b>${dn === tot ? 'הכל טופל' : `טיפול בשטח · ${dn}/${tot}`}</b><div class="small muted">${unas.length ? `${unas.length} ממתינים לשיוך` : dn === tot ? '' : 'מתעדכן מהשטח'}</div></div>${M && unas.length ? `<button class="btn primary sm" id="vassign">שיוך לצוות</button>` : ''}</div>
         ${M ? `<a class="lrow" href="#/visit/${v.id}/fix"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><b>פרוטוקול תיקונים</b><small>${tot} פריטים · לפני ואחרי</small></span><span class="chev">${icon('chev', 18)}</span></a>` : ''}` : ''}
       ${F.length ? `<section class="stack"><div class="sh-row"><h3 class="sh">ממצאים</h3><span class="count">${F.length}</span></div>
-        ${F.map(x => `<div class="finding ro"><div class="row"><span class="pill ${SEV[x.sev]?.[1] || ''}">${SEV[x.sev]?.[0] || ''}</span><span class="grow"></span>${st(x)}</div>
-          <div>${esc(x.text || '')}</div>${shots(x)}</div>`).join('')}</section>` : ''}
+        ${F.map(x => `<div class="finding ro"><div class="row"><span class="pill ${SEV[x.sev]?.[1] || ''}">${SEV[x.sev]?.[0] || ''}</span>${M && findingShared(x) ? '<span class="pill lime">ללקוח</span>' : ''}<span class="grow"></span>${st(x)}</div>
+          <div class="vtext">${esc(x.text || '').replace(/\n/g, '<br>')}</div>${shots(x)}</div>`).join('')}</section>` : ''}
       ${T.length ? `<section class="stack"><h3 class="sh">צ׳קליסט לצוות</h3>${T.map(x => `<div class="finding ro"><div class="row"><b class="grow">${esc(x.text)}</b>${st(x)}</div>${shots(x)}</div>`).join('')}</section>` : ''}
       ${M && open.length ? `<button class="btn primary block" id="tochk">העברה לצ׳קליסט הפרויקט (${open.length})</button>` : ''}
       ${v.client_feedback ? `<section class="stack"><h3 class="sh">מה הלקוח אמר</h3><div class="card">${esc(v.client_feedback).replace(/\n/g, '<br>')}</div></section>` : ''}

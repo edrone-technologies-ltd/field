@@ -4,6 +4,7 @@ import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
 import { isNight, nightRange, nightTag, isCurrent, wxKey } from '../lib/night.js';
 import { dtTag, isWorkDay, needsPreflight, isCoord } from '../lib/daytype.js';
 import { loadZones, dayZones, zonePrefill, zonesHtml, bindZones, zonesPayload, zkey } from './zones.js';
+import { terms, serviceOf, workChoices } from '../lib/service.js';
 import { SEC, needsDrone, pulseRoles, mySection, decideSheet, afterDecide } from './prestart.js';
 import { sb, state, cache, enqueue, sendsLabel, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, haptic } from '../lib/core.js';
 
@@ -12,7 +13,7 @@ const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיח
 const T_STATUS = { todo: ['לביצוע', ''], in_progress: ['בעבודה', 'lime'], done: ['בוצע', 'ok'], blocked: ['נתקע', 'bad'], dropped: ['בוטל', ''] };
 const NEXT = { todo: 'done', in_progress: 'done', done: 'todo', blocked: 'done', dropped: 'todo' };   // הקשה אחת = בוצע (ושוב = ביטול)
 const hhmm = t => (t || '').slice(0, 5);
-const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,sites(name,address,contact_name,contact_phone,access_notes,access_auto,lat,lng,map_path)), work_day_crew(user_id,role,hours,clock_in,confirmed_at,cant_come_at,profiles(full_name,phone,is_pilot,field_role)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
+const DAY_SEL = '*, projects(id,name,client_name,work_notes,site_id,cover_path,lat,lng,service,engagement,sites(name,address,contact_name,contact_phone,access_notes,access_auto,lat,lng,map_path,service)), work_day_crew(user_id,role,hours,clock_in,confirmed_at,cant_come_at,profiles(full_name,phone,is_pilot,field_role)), drone:equipment!work_days_drone_id_fkey(id,name,health,health_detail)';
 
 function statusPill(d) {
   const m = { planned: ['מתוכנן', ''], en_route: ['בדרך', 'warn'], on_site: ['באתר', 'lime'], working: ['בעבודה', 'lime'], issue: ['תקלה', 'bad'], done: ['נסגר', 'ok'] }[d.status] || ['', ''];
@@ -97,7 +98,7 @@ export async function renderDay(el, id) {
     if (d.arrived_at || d.status === 'on_site' || d.departed_at) return 2;
     return D.local.stage === 1 && !isCoord(d) ? 1 : 0;   // יום תיאום — בלי שלב העמסה
   }
-  const P = D.day.projects || {}, site = P.sites || {};
+  const P = D.day.projects || {}, site = P.sites || {}, TT = terms(serviceOf(P));   // שפת השירות: פנלים → "מערך", ברירת מחדל "שטיפת פנלים סולאריים"
   const photoUrls = {};
   async function loadUrls() {
     const paths = D.photos.filter(p => !p.url).map(p => p.storage_path);
@@ -161,7 +162,7 @@ export async function renderDay(el, id) {
       ${site.access_notes && !(site.access_notes === site.access_auto && opsStrip()) ? `<div class="note">${esc(site.access_notes)}</div>` : ''}
       ${logi().length && !opsStrip() ? `<section><h3 class="sh">לפני היציאה</h3><div class="list">${logi().map(l => `<div class="lrow"><span class="grow">${esc(l)}</span></div>`).join('')}</div></section>` : ''}
       ${dayList().length ? `<section><h3 class="sh">משימות היום</h3><div class="list">${dayList().map(t => `<div class="lrow"><span class="grow"><b>${esc(t.title)}</b>${t.risk ? `<small class="issue">${esc(t.risk)}</small>` : ''}${t.instructions ? `<small>${esc(t.instructions)}</small>` : ''}</span>${t.phase ? `<span class="pill">${esc(t.phase)}</span>` : ''}</div>`).join('')}</div></section>` : ''}
-      ${canClose() && !isCoord(D.day) ? sunCard() : ''}
+      ${canClose() && !isCoord(D.day) && TT.sun ? sunCard() : ''}
       ${contactCard(site.contact_name, site.contact_phone)}
       ${site.map_path ? '<div class="card sitemap compact" id="daymap"></div>' : ''}`;
   }
@@ -318,7 +319,7 @@ export async function renderDay(el, id) {
     if (D.local.close && !D.local.close._v) D.local.close = null;   // מבנה ישן (שמר גם ערכים נגזרים) — מתחילים נקי
     const O = D.local.close ||= { _v: 2 }, base = {
       material: D.day.material_used || D.day.material_planned || (isWorkDay(D.day) ? 'Assert Lemon' : null), gallons: D.day.gallons ?? (D.day.gallons_planned != null ? Number(D.day.gallons_planned) : null),   // ברירת מחדל = המתוכנן; משנים רק בחריג
-      work: D.day.work_types?.length ? D.day.work_types : isWorkDay(D.day) ? ['ניקוי חזיתות'] : [], equipment_ok: D.day.equipment_ok ?? !D.issues.some(i => i.kind === 'equipment' && i.status !== 'closed'),   // דווחה היום תקלת ציוד → לא מסמנים "חזר תקין" לבד quality: D.day.quality || 0,
+      work: D.day.work_types?.length ? D.day.work_types : isWorkDay(D.day) ? [TT.day] : [], equipment_ok: D.day.equipment_ok ?? !D.issues.some(i => i.kind === 'equipment' && i.status !== 'closed'),   // דווחה היום תקלת ציוד → לא מסמנים "חזר תקין" לבד quality: D.day.quality || 0,
       notes: D.day.notes || '', weather: D.day.weather_stop, flights: D.day.flights ?? null, air: D.day.air_minutes ?? null,
       // שעות: מה שנשמר ביום, אחרת מהשעון. בלי משמרת בשעון — ריק (לא מנחשים שעות למי שאולי לא הגיע)
       hours: Object.fromEntries(D.day.work_day_crew.map(c => [c.user_id, c.hours ?? D.clockH?.[c.user_id] ?? null])),
@@ -367,7 +368,7 @@ export async function renderDay(el, id) {
         <div class="sec">${isCoord(D.day) ? '' : `<b>חומר</b>${chips('material', D.S.materials || ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'])}
           <b>גלונים</b><div class="stepper"><button type="button" data-g="-0.5">−</button><input class="days grow" id="gal" type="number" inputmode="decimal" step="0.5" min="0" value="${C.gallons ?? ''}" placeholder="${D.day.gallons_planned ? nf(D.day.gallons_planned) : ''}"><button type="button" data-g="0.5">+</button></div>
           ${D.day.gallons_planned ? `<div class="chips"><button type="button" class="chip" id="galp" aria-pressed="${C.gallons != null && +C.gallons === +D.day.gallons_planned}">כמתוכנן · ${nf(D.day.gallons_planned)}</button></div>` : ''}`}
-          <b>סוג העבודה</b>${chips('work', D.S.work_types || [], true)}</div>
+          <b>סוג העבודה</b>${chips('work', workChoices(D.S.work_types, TT), true)}</div>
         <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => { const v = C.hours[c.user_id], clk = D.clockH?.[c.user_id];
           return `<div class="row hrow"><span class="grow"><b>${esc(c.profiles?.full_name || '')}</b>${clk != null ? `<small class="muted">מהשעון ${nf(clk)}</small>` : ''}</span>
           ${clk == null && !REPORT ? `<button type="button" class="chip sm" data-h0="${c.user_id}" aria-pressed="${v === 0}">לא הגיע</button>${dh && v == null ? `<button type="button" class="chip sm" data-hd="${c.user_id}">${nf(dh)} ש׳</button>` : ''}` : ''}
@@ -379,7 +380,7 @@ export async function renderDay(el, id) {
           <b>איכות העבודה</b><div class="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-q="${n}" aria-pressed="${C.quality >= n}">★</button>`).join('')}</div>
           <label class="field">${D.day.is_last_day ? 'מה נשאר פתוח' : 'מה נשאר למחר'}<textarea id="tmr">${esc(C.tomorrow)}</textarea></label></div>
       </details>`;
-    return reportTop + zonesHtml(ZD(), C.zones) + (REPORT || !isWorkDay(D.day) ? '' : baBlock()) + edit +
+    return reportTop + zonesHtml(ZD(), C.zones, TT.zone) + (REPORT || !isWorkDay(D.day) ? '' : baBlock()) + edit +
       (D.day.is_last_day ? `<div class="sec"><h3>החתמת לקוח</h3>
         <label class="field">שם החותם<input type="text" id="sn" value="${esc(C.sign.name)}"></label>
         <label class="field">תפקיד<input type="text" id="sr" value="${esc(C.sign.role)}" placeholder="מנהל אחזקה, מנהל אתר…"></label>
@@ -397,7 +398,7 @@ export async function renderDay(el, id) {
     if ((C.notes || '').trim()) L.push(['pen', C.notes.trim()]);
     const ZL = ZD(), Z = ZL.filter(z => C.zones.includes(zkey(z)));
     if (Z.length) { const multi = new Set(ZL.map(z => z.b)).size > 1, m2 = Z.reduce((s, z) => s + Number(z.m2 || 0), 0);
-      L.push(['check', `הושלם: ${Z.map(z => multi ? z.bn + ' · ' + z.t : z.t).join(', ')}${m2 ? ` (${nf(Math.round(m2))} מ״ר)` : ''}`]); }
+      L.push(['check', `הושלם: ${Z.map(z => multi ? z.bn + ' · ' + TT.zone(z.t) : TT.zone(z.t)).join(', ')}${m2 ? ` (${nf(Math.round(m2))} מ״ר)` : ''}`]); }
     const T = (REPORT ? D.tasks.filter(t => t.work_day_id === D.day.id) : dayList()).filter(t => t.status !== 'dropped');
     const done = T.filter(t => t.status === 'done'), open = T.filter(t => t.status !== 'done');
     if (T.length) L.push(['clipboard', `בוצע ${done.length}/${T.length}${done.length ? ': ' + done.map(t => t.title).join(' · ') : ''}`]);
