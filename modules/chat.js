@@ -1,5 +1,5 @@
 // שיחה חיה: לאתר (אפיון), לפרויקט (צוות) או שיחה פנימית (אישי/קבוצה). טקסט, תמונה, סימון "חשוב". בזמן אמת.
-import { sb, state, enqueue, signedUrls, isManager, sheet, $, $$, esc, toast, zoom, initials, icon, HE_DOW, thumbUrls } from '../lib/core.js';
+import { sb, state, enqueue, signedUrls, isManager, sheet, $, $$, esc, toast, zoom, initials, icon, HE_DOW, thumbUrls, cache } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { ogIndex, kbOgImg, kbIdFromUrl, appUrl } from '../lib/share.js';
 
@@ -34,10 +34,10 @@ const dlabel = iso => { const d = new Date(iso), t = new Date(); const y = new D
   return d.toDateString() === t.toDateString() ? 'היום' : d.toDateString() === y.toDateString() ? 'אתמול' : `יום ${HE_DOW[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}`; };
 
 export async function renderChat(el, { site, project, conversation }) {
-  const key = site ? { col: 'site_id', id: site.id } : project ? { col: 'project_id', id: project.id } : { col: 'conversation_id', id: conversation.id };
-  const label = site ? site.name : project ? project.name : conversation.title;
+  const key = conversation ? { col: 'conversation_id', id: conversation.id } : site ? { col: 'site_id', id: site.id } : { col: 'project_id', id: project.id };   // שיחת עבודה (db/133) גוברת על פרויקט/אתר
+  const label = conversation ? conversation.title : site ? site.name : project.name;
   // "חשוב" = חובת אישור קריאה. בשיחות פנימיות — רק מנהל מסמן. בצ׳אט פרויקט — גם עובר כעדכון למאנדי.
-  const showImportant = !conversation || isManager();
+  const showImportant = !conversation || isManager() || conversation.kind === 'field';
   el.innerHTML = `<div class="chat" id="msgs"><div class="skel"></div></div>`;
   const comp = document.createElement('div'); comp.className = 'composer';
   comp.innerHTML = `<label class="cbtn" title="תמונה" aria-label="צירוף תמונה">${icon('photo', 22)}<input type="file" accept="image/*" id="catt"></label>
@@ -96,6 +96,8 @@ export async function renderChat(el, { site, project, conversation }) {
     box.innerHTML = rows.length ? rows.map(m => {
       const me = m.author_id === state.user.id, d = dkey(m.created_at);
       const sep = d !== lastDay ? `<div class="dsep"><span>${dlabel(m.created_at)}</span></div>` : '';
+      if (m.source === 'system') { lastDay = d; lastAuthor = ''; return `${sep}<div class="sysline"><span>${esc(m.body)}</span></div>`; }   // "צ׳אט השטח נפתח · …"
+
       const first = m.author_id !== lastAuthor || d !== lastDay, showWho = !me && conversation?.kind !== 'dm' && first;   // בשיחה אישית — בלי שם על כל בועה
       lastDay = d; lastAuthor = m.author_id;
       return `${sep}<div class="msg ${me ? 'me' : ''} ${m.important ? 'imp' : ''} ${first ? '' : 'cont'} ${(m.mentions || []).includes(state.user.id) ? 'tagged' : ''}">
@@ -112,6 +114,7 @@ export async function renderChat(el, { site, project, conversation }) {
     const sc = document.getElementById('app'); sc.scrollTo({ top: sc.scrollHeight });
   }
   await load();
+  if (conversation && conversation.member !== false) markRead();   // נפתח = נקרא (גם מתוך פרויקט/אתר, לא רק מתיבת ההודעות)
   if (!comp.isConnected) return;   // יצאו מהמסך בזמן הטעינה — המסגרת כבר הוסרה
   if (channel) sb.removeChannel(channel);
   channel = sb.channel('msg-' + key.id).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `${key.col}=eq.${key.id}` },
@@ -121,7 +124,7 @@ export async function renderChat(el, { site, project, conversation }) {
   // קריאה של האחרים מתעדכנת כל 15 שניות כל עוד השיחה פתוחה (רק הסימונים, בלי לצייר מחדש)
   const rt = conversation ? setInterval(async () => { if (document.hidden) return; await loadReads(); retick(); }, 15000) : 0;
   addEventListener('hashchange', () => { clearInterval(rt); if (channel) { sb.removeChannel(channel); channel = null; } }, { once: true });
-  const markRead = () => sb.from('conversation_members').update({ last_read_at: new Date().toISOString() }).eq('conversation_id', key.id).eq('user_id', state.user.id).then(() => {});
+  function markRead() { return sb.from('conversation_members').update({ last_read_at: new Date().toISOString() }).eq('conversation_id', key.id).eq('user_id', state.user.id).then(() => { unreadCache = null; }); }
 
   const imp = $('#cimp', comp);
   if (imp) imp.onclick = () => imp.setAttribute('aria-pressed', imp.getAttribute('aria-pressed') !== 'true');
@@ -165,4 +168,43 @@ export async function renderChat(el, { site, project, conversation }) {
       await send(path);
     } catch { toast('התמונה לא נשלחה — נסו שוב'); }
   };
+}
+
+// ---------- צ׳אט עבודה (db/133): "לפני ביצוע" (ליד/אפיון/מכירה — הנהלה וסוקר) · "צוות שטח" (נפתח ביום השטח הראשון) ----------
+// לא נקראו לפי פרויקט/אתר — מ-my_inbox (קריאה אחת משותפת לכמה תגיות במסך)
+let unreadCache = null;
+export function workUnread() {
+  unreadCache ||= sb.rpc('my_inbox').then(({ data }) => {
+    const byP = new Map(), byS = new Map(), add = (m, k, n) => k && m.set(k, (m.get(k) || 0) + n);
+    for (const c of data || []) if (['pre', 'field'].includes(c.kind) && c.unread) { add(byP, c.project_id, c.unread); add(byS, c.site_id, c.unread); }
+    return { byP, byS, rows: data || [] };
+  }, () => ({ byP: new Map(), byS: new Map(), rows: [] }));
+  setTimeout(() => { unreadCache = null; }, 15000);
+  return unreadCache;
+}
+// פרויקט: מה שלו + "לפני ביצוע" של האתר שלו
+export const unreadOf = (U, { project, site }) => (project ? (U.byP.get(project.id) || 0) : 0) + ((project?.site_id || site?.id) ? (U.byS.get(project?.site_id || site.id) || 0) : 0);
+export const ubadge = n => n ? `<span class="cub" aria-label="${n} לא נקראו">${n > 99 ? '99+' : n}</span>` : '';
+
+const WK = { pre: 'לפני ביצוע', field: 'צוות שטח' };
+export async function renderWorkChat(el, { project, site }) {
+  el.innerHTML = '<div class="skel"></div>';
+  const ck = 'wchat:' + (project?.id || site?.id);
+  let convs = null;
+  try { const { data, error } = await sb.rpc('chat_open', { p_project: project?.id || null, p_site: project ? null : site?.id || null }); if (error) throw error; convs = data || []; cache.set(ck, convs).catch(() => {}); }
+  catch { convs = (await cache.get(ck).catch(() => null)) || []; }
+  unreadCache = null;
+  if (!el.isConnected) return;
+  if (!convs.length) { el.innerHTML = `<div class="empty-line">אין הודעות עדיין</div>`; return; }
+  const pick = sessionStorage.getItem(ck);
+  let cur = convs.find(c => c.kind === pick) || convs.find(c => c.unread && c.kind === 'field') || convs.find(c => c.unread) || convs.find(c => c.kind === 'field') || convs[0];
+  el.innerHTML = `${convs.length > 1 ? `<div class="tabs wctabs" id="wct">${convs.map(c => `<button data-k="${c.kind}" aria-selected="${c === cur}">${WK[c.kind] || esc(c.title || '')}${c === cur ? '' : ubadge(c.unread)}</button>`).join('')}</div>` : ''}<div id="wcb"></div>`;
+  const show = c => {
+    cur = c; c.unread = 0; try { sessionStorage.setItem(ck, c.kind); } catch { /* */ }
+    $$('#wct button', el).forEach(b => { b.setAttribute('aria-selected', b.dataset.k === c.kind); if (b.dataset.k === c.kind) b.querySelector('.cub')?.remove(); });
+    document.querySelectorAll('.composer').forEach(x => x.remove());
+    renderChat($('#wcb', el), { conversation: c, project, site });
+  };
+  $$('#wct button', el).forEach(b => b.onclick = () => b.dataset.k !== cur.kind && show(convs.find(c => c.kind === b.dataset.k)));
+  show(cur);
 }

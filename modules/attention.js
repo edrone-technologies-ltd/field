@@ -125,6 +125,18 @@ async function noPushRows() {
   return [{ k: 'nopush', tone: 'warn', ic: icon('chat', 18), title: ppl.length > 1 ? `${ppl.length} בצוות לא מקבלים התראות` : `${ppl[0].full_name.split(' ')[0]} לא מקבל התראות`, sub: ppl.map(x => x.full_name.split(' ')[0]).join(' · '),
     list: ppl.map(x => ({ href: `#/staff/${x.id}`, t: x.full_name, s: '' })) }];
 }
+// הודעות שלא נקראו (גם בצ׳אט פרויקט/אתר — db/133): "טל כתב בגלאון: …" → ישר לשיחה
+async function chatRows() {
+  const { data } = await sb.rpc('my_inbox');
+  const un = (data || []).filter(c => c.unread && !c.muted).sort((a, b) => String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
+  if (!un.length) return [];
+  const first = s => String(s || '').split(' ')[0], where = c => c.kind === 'dm' ? '' : ` ב${String(c.title || '').split(/\s+[—(-]/)[0]}`;
+  const line = c => `${first(c.last_author || c.title)} כתב${where(c)}`;
+  const n = un.reduce((t, c) => t + c.unread, 0);
+  if (un.length === 1) return [{ k: 'chat', tone: 'warn', ic: icon('chat', 18), title: line(un[0]), sub: un[0].last_message || '', href: `#/c/${un[0].id}` }];
+  return [{ k: 'chat', tone: 'warn', ic: icon('chat', 18), title: `${n} הודעות חדשות`, sub: [...new Set(un.map(line))].slice(0, 3).join(' · '),
+    list: un.map(c => ({ href: `#/c/${c.id}`, t: line(c), s: c.last_message || '' })) }];
+}
 async function pushRows() {
   const st = await pushState();
   if (st === 'off') return [{ k: 'push', tone: 'warn', ic: icon('chat', 18), title: 'התראות כבויות', sub: '', btn: 'הפעלה' }];
@@ -134,7 +146,7 @@ async function pushRows() {
 
 // כל מה שמחכה למשתמש עצמו (הודעות, הדרכות, קליטה, התראות, שיבוץ שחסר)
 export async function attentionItems() {
-  const parts = await Promise.all([noPushRows(), tourRows(), unclosedRows(), schedRows(), weeklyRows(), certRows(), equipRows(), import('./repairs.js').then(m => m.repairRows()), newsRows(), onbRows(), kbRows(), pushRows()].map(p => p.catch(() => [])));   // תיקונים: ממתינים לאישור / הוחזרו (db/112)
+  const parts = await Promise.all([noPushRows(), tourRows(), unclosedRows(), schedRows(), weeklyRows(), certRows(), equipRows(), import('./repairs.js').then(m => m.repairRows()), newsRows(), onbRows(), kbRows(), pushRows(), chatRows()].map(p => p.catch(() => [])));   // תיקונים: ממתינים לאישור / הוחזרו (db/112)
   let items = parts.flat();
   if (items.some(x => x.k === 'onb')) items = items.filter(x => x.k !== 'kb');   // הקליטה כבר מפנה להדרכות החובה
   return items;

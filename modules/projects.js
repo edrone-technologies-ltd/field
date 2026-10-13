@@ -76,7 +76,12 @@ export async function renderProjects(el) {
     })) : `<div class="empty-line">${q ? 'לא נמצא פרויקט' : 'אין פרויקטים'}</div>`;
     $$('#pl [data-rd]').forEach(a => { const r = RD.get(a.dataset.rd), all = r.ok === r.n, near = r.next_day && r.next_day <= soon;
       a.querySelector('.grow')?.insertAdjacentHTML('afterend', `<span class="rdring ${all ? 'ok' : near ? 'warn' : ''}" style="--p:${Math.round(r.ok / r.n * 100)}" title="${esc(all ? 'מוכן לשטח' : 'חסר: ' + (r.miss || []).join(', '))}" aria-label="מוכנות ${r.ok} מתוך ${r.n}"><b>${all ? icon('check', 14) : r.ok + '/' + r.n}</b></span>`); });
+    // הודעות שלא נקראו בצ׳אט הפרויקט → תגית על השורה (לחיצה = ישר לצ׳אט)
+    if (UR) $$('#pl a.frow').forEach(a => { const pid = a.getAttribute('href').split('/')[2], pr = rows.find(x => x.id === pid), n = pr && unreadOf(UR, { project: pr });
+      if (n) { a.querySelector('.grow')?.insertAdjacentHTML('afterend', ubadge(n)); a.setAttribute('href', `#/p/${pid}/c`); } });
   };
+  let UR = null, unreadOf, ubadge;
+  import('./chat.js').then(async m => { unreadOf = m.unreadOf; ubadge = m.ubadge; UR = await m.workUnread(); if ([...UR.byP.values(), ...UR.byS.values()].some(Boolean) && $('#pl')) draw(); }).catch(() => {});
   // "לא מוכנים" — פרויקטים שמתוכננים קדימה ועוד חסר בהם משהו (הקרוב ביותר ראשון)
   const nrN = [...RD.values()].filter(x => x.ok < x.n).length;
   if (nrN) $('#pf [data-f="d"]').insertAdjacentHTML('beforebegin', `<button aria-selected="false" data-f="r">לא מוכנים <span class="count">${nrN}</span></button>`);
@@ -119,6 +124,8 @@ export async function renderProject(el, id, tab = 'o') {
       <span class="ph-bottom"><span class="row tight">${p.engagement === 'פיילוט' ? '<span class="pill pilot">פיילוט</span>' : ''}<span class="pill ${TONE[p.status_label] ?? ''}">${esc(stLabel(p.status_label))}</span></span><b>${esc(p.name)}</b><small>${esc([p.service, p.client_name].filter(Boolean).join(' · '))}</small></span></div>
     <div class="tabs" id="pt">${TABS.map(([k, t]) => `<button data-t="${k}" aria-selected="${k === tab || (['i', 'sch'].includes(tab) && k === 'o')}">${t}</button>`).join('')}</div>
     <div id="pb" class="stack"></div>`;
+  // צ׳אט: כמה לא נקראו (צוות שטח + לפני ביצוע של האתר)
+  if (tab !== 'c') import('./chat.js').then(async m => { const n = m.unreadOf(await m.workUnread(), { project: p }); const b = $('#pt [data-t="c"]'); if (n && b && b.getAttribute('aria-selected') !== 'true') b.insertAdjacentHTML('beforeend', m.ubadge(n)); }).catch(() => {});
   $$('#pt button').forEach(b => b.onclick = () => { replaceHash(`#/p/${id}/${b.dataset.t}`, false); renderTab(b.dataset.t); $$('#pt button').forEach(x => x.setAttribute('aria-selected', x === b)); });
   const reload = t => renderProject(el, id, t);
 
@@ -527,7 +534,8 @@ export async function renderProject(el, id, tab = 'o') {
   // ----- צ׳אט צוות -----
   async function chat(box) {
     box.innerHTML = `<div id="cx"></div>`;
-    (await import('./chat.js')).renderChat($('#cx'), { project: p });
+    (await import('./chat.js')).renderWorkChat($('#cx'), { project: p });
+    $('#pt [data-t="c"] .cub')?.remove();
   }
 
   // ----- סגירה: ימים נסגרו → חתימת לקוח (סוגרת את הפרויקט) → דוח ללקוח. הצעד הבא תמיד בולט -----

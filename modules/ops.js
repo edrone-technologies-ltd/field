@@ -137,8 +137,9 @@ export async function renderOps(el) {
   const N = sortNeeds([
     ...issues.map(i => ({ tone: i.tone, ic: icon(i.ic, 20), title: i.t, sub: i.s, ds: i.ds || (i.d ? [i.d] : []), ...(i.act ? { act: i.act } : { href: i.href }) })),
     ...sys.filter(a => a.k !== 'shiftreq' && !grDup(a)).map(a => ({ tone: a.tone, ic: icon(a.ic, 20), title: a.title, sub: a.sub, href: a.href, list: a.list, act: a.act })),
-    ...mineA.filter(x => x.k !== 'push')]);
-  const pushA = mineA.find(x => x.k === 'push');   // הגדרה אישית — לא חלק מתור הניהול
+    ...mineA.filter(x => x.k !== 'push' && x.k !== 'chat')]);
+  const pushA = mineA.find(x => x.k === 'push');
+  const chatA = mineA.find(x => x.k === 'chat');   // הודעות שלא נקראו — פס בולט בראש הבית, לא שורה שנבלעת ב"עוד" (db/133)   // הגדרה אישית — לא חלק מתור הניהול
 
   // ---- היום ומחר ----
   const dayCard = w => {
@@ -200,6 +201,7 @@ export async function renderOps(el) {
   hmBox.innerHTML = `
       ${pushA ? pushA.href ? `<a class="lrow slim" id="pushA" href="${pushA.href}"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span></a>`
         : `<div class="lrow slim" id="pushA"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span>${pushA.btn ? `<button class="btn ghost sm" id="pushOn">${pushA.btn}</button>` : ''}</div>` : ''}
+      ${chatA ? `<a class="lrow slim chatA" href="${chatA.list ? '#/inbox' : chatA.href}"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(chatA.title)}</b>${chatA.sub ? `<small>${esc(chatA.sub)}</small>` : ''}</span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
       <div class="kpis opk">${kpi(dToday.length, 'בשטח היום', 'today')}${kpi(open.length, 'במשמרת', 'shift')}${kpi(N.length, 'לטיפול', 'needs', N.some(i => i.tone === 'bad') ? 'bad' : N.length ? 'warn' : '')}${kpi(approvals.length, 'לאישור', 'appr', approvals.length ? 'warn' : '')}</div>
       ${week}
       ${needsList(N, { limit: 3 })}

@@ -2503,3 +2503,17 @@ body.ws .xrow .stack.tight{flex-direction:row;gap:6px}
 .psdec .btn{flex:1}
 .pulsetxt span{white-space:nowrap}
 .prest>.row>.grow{display:flex;flex-direction:column;gap:2px;min-width:0}
+/* צ׳אט עבודה (db/133): תגית לא נקראו · שורת מערכת · לשוניות לפני ביצוע/צוות שטח */
+.cub{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;margin-inline-start:6px;border-radius:99px;background:var(--lime);color:var(--lime-ink);font-weight:800;font-size:.72rem;line-height:1;vertical-align:middle;font-variant-numeric:tabular-nums}
+.frow .cub{margin-inline-start:0;flex:none}
+.sysline{display:flex;justify-content:center;margin:10px 0}
+.sysline span{font-size:.8rem;color:var(--muted);background:var(--bg2);border-radius:99px;padding:5px 12px;text-align:center}
+.wctabs{margin-bottom:10px}
+.msgrow .wk{font-size:.7rem;font-weight:700;color:var(--muted);background:var(--bg2);border-radius:99px;padding:1px 7px;margin-inline-start:6px}
+.chatA{background:var(--card);border:1.5px solid var(--lime);border-radius:16px}
+.chatA .mic{background:var(--lime);color:var(--lime-ink)}
+.chatA small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:62vw}
+.tabs button:has(.cub){position:relative;overflow:visible}
+.tabs button .cub{position:absolute;top:-4px;inset-inline-end:-2px;min-width:18px;height:18px;font-size:.66rem;padding:0 5px;margin:0;box-shadow:0 0 0 2px var(--bg2)}
+.wctabs button .cub{position:static;box-shadow:none;margin-inline-start:6px}
+.phead .muted a{color:inherit;font-weight:700;text-decoration:underline}

@@ -4,7 +4,8 @@ import { errText } from '../lib/audit.js';
 
 // פעמון / פעמון מושתק (בלי התראות מהשיחה הזאת — חוץ מתיוג אישי והודעה חשובה)
 const bell = (off, n = 20) => `<svg width="${n}" height="${n}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>${off ? '<path d="M3 3l18 18"/>' : ''}</svg>`;
-const av = c => `<span class="avatar ${c.kind === 'group' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 20) : esc(initials(c.title))}</span>`;
+const WORK = { pre: 'לפני ביצוע', field: 'צוות שטח' };   // שיחות עבודה של פרויקט/אתר (db/133)
+const av = c => `<span class="avatar ${c.kind !== 'dm' ? 'grp' : ''}">${c.kind === 'group' ? icon('users', 20) : WORK[c.kind] ? icon(c.kind === 'field' ? 'users' : 'chat', 20) : esc(initials(c.title))}</span>`;
 
 export async function renderInbox(el) {
   el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">הודעות</h1><button class="hbtn" id="new" aria-label="הודעה חדשה">${icon('plus', 20)}</button></header>
@@ -13,9 +14,9 @@ export async function renderInbox(el) {
   try { const { data, error } = await sb.rpc('my_inbox'); if (error) throw error; rows = data || []; await cache.set('inbox', rows); }
   catch { rows = (await cache.get('inbox')) || []; }
   await kbNames(rows);
-  const groups = rows.filter(c => c.kind === 'group'), dms = rows.filter(c => c.kind === 'dm');
-  const row = c => `<a class="lrow msgrow ${c.unread ? 'unread' : ''}" href="#/c/${c.id}">${av(c)}<span class="grow"><span class="r1"><b>${esc(c.title || '')}</b><small>${c.muted ? `<span class="mutei" aria-label="מושתק">${bell(true, 13)}</span>` : ''}${c.last_message_at ? timeAgo(c.last_message_at) : ''}</small></span>
-    <small class="r2">${esc(c.last_message || (c.kind === 'group' ? `${(c.members || []).length} חברים` : 'אין הודעות עדיין'))}</small></span>${c.unread ? `<span class="badge">${c.unread}</span>` : ''}</a>`;
+  const groups = rows.filter(c => c.kind !== 'dm'), dms = rows.filter(c => c.kind === 'dm');
+  const row = c => `<a class="lrow msgrow ${c.unread ? 'unread' : ''}" href="#/c/${c.id}">${av(c)}<span class="grow"><span class="r1"><b>${esc(c.title || '')}${WORK[c.kind] ? `<span class="wk">${WORK[c.kind]}</span>` : ''}</b><small>${c.muted ? `<span class="mutei" aria-label="מושתק">${bell(true, 13)}</span>` : ''}${c.last_message_at ? timeAgo(c.last_message_at) : ''}</small></span>
+    <small class="r2">${c.kind !== 'dm' && c.last_author && c.last_message ? esc(c.last_author.split(' ')[0]) + ': ' : ''}${esc(c.last_message || (c.kind === 'group' ? `${(c.members || []).length} חברים` : 'אין הודעות עדיין'))}</small></span>${c.unread ? `<span class="badge">${c.unread}</span>` : ''}</a>`;
   // רשימה אחת לפי ההודעה האחרונה (כמו בוואטסאפ): שלא נקראו למעלה, אחר כך החדשות
   const all = [...dms, ...groups].sort((a, b) => (b.unread && !b.muted ? 1 : 0) - (a.unread && !a.muted ? 1 : 0) || String(b.last_message_at || '').localeCompare(String(a.last_message_at || '')));
   $('#ib').innerHTML = all.map(row).join('') + (dms.length ? '' : `<button class="lrow msgrow newdm" id="new2"><span class="avatar grp">${icon('plus', 20)}</span><span class="grow"><b>הודעה אישית</b></span></button>`);
@@ -74,8 +75,8 @@ export async function renderConversation(el, id) {
   conv ||= ((await cache.get('inbox')) || []).find(c => c.id === id) || { id, kind: 'dm', title: '' };
   const members = (conv.members || []).filter(m => m.id !== state.user.id);
   el.innerHTML = `<header class="phead sticky"><a class="back" href="#/inbox" aria-label="חזרה">${icon('back', 20)}</a>${av(conv)}<div class="grow"><b class="ttl">${esc(conv.title || '')}</b>
-    <small class="muted">${conv.kind === 'group' ? esc(members.map(m => m.name.split(' ')[0]).join(', ')) : ''}</small></div>
-    ${conv.kind === 'group' ? `<button class="hbtn mutebtn" id="mute" aria-pressed="${!!conv.muted}" aria-label="${conv.muted ? 'ביטול השתקה' : 'השתקת הקבוצה'}">${bell(conv.muted)}</button>` : ''}</header><div id="cv"></div>`;
+    <small class="muted">${WORK[conv.kind] ? `${WORK[conv.kind]}${conv.project_id ? ` · <a href="#/p/${conv.project_id}">לפרויקט</a>` : conv.slug ? ` · <a href="#/site/${esc(conv.slug)}">לאתר</a>` : ''}` : conv.kind === 'group' ? esc(members.map(m => m.name.split(' ')[0]).join(', ')) : ''}</small></div>
+    ${conv.kind !== 'dm' ? `<button class="hbtn mutebtn" id="mute" aria-pressed="${!!conv.muted}" aria-label="${conv.muted ? 'ביטול השתקה' : 'השתקת הקבוצה'}">${bell(conv.muted)}</button>` : ''}</header><div id="cv"></div>`;
   const mb = $('#mute');
   if (mb) mb.onclick = async () => {
     if (mb.disabled) return; mb.disabled = true; const on = !conv.muted;

@@ -312,7 +312,8 @@ export async function renderSite(el, slug, tab = 'b') {
   import('../lib/audit.js').then(m => m.signature($('#sig'), { site_id: s.id }));
   $$('.tabs button', el).forEach(b => b.onclick = () => replaceHash(`#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`));
   const body = $('#tabbody');
-  if (tab === 'c') { const { renderChat } = await import('./chat.js'); return renderChat(body, { site: s }); }
+  if (tab === 'c') { const { renderWorkChat } = await import('./chat.js'); return renderWorkChat(body, { site: s }); }   // "לפני ביצוע" של האתר (db/133)
+  import('./chat.js').then(async m => { const n = m.unreadOf(await m.workUnread(), { site: s }); const t = el.querySelector('.tabs [data-t="c"]'); if (n && t) t.insertAdjacentHTML('beforeend', m.ubadge(n)); }).catch(() => {});
   const groups = [...new Set(s.buildings.map(b => b.group_label || ''))];
   body.innerHTML = groups.map(g => `${g ? `<h3 class="sh">${esc(s.group_word)} ${esc(g)}</h3>` : ''}<div class="list">${
     s.buildings.filter(b => (b.group_label || '') === g).map(b => {
