@@ -79,12 +79,13 @@ export async function clockIn(after, { project_id: pid0 = null } = {}) {
   if (sh) return toast(`שבת — לא עובדים. אפשר להחתים מ-${tm(sh.end.toISOString())}`, 4000);
   toast('מאתר מיקום…', 9000);
   const loc = await locateOnce();
-  // גידור: רחוק גם מהמשרד וגם מאתר היום → העובד רואה, יכול לכתוב למה, והמנהל רואה סימון (המרחק נשמר בשרת)
+  // גידור: הכניסה הצפויה = במשרד (תוצרת הארץ 3, ב"ש — app_settings.dispatch.office). ישר לאתר של היום — גם תקין.
+  // רחוק גם מהמשרד וגם מכל אתר שלי היום → העובד רואה, יכול לכתוב למה, והמנהל רואה סימון (המרחק נשמר בשרת, nearest_work_place)
   let note = null;
   if (loc && navigator.onLine) try {
     const { data } = await sb.rpc('my_nearest_place', { la: loc.lat, ln: loc.lng }); const n = data?.[0];
     if (n && n.dist > n.radius) {
-      note = await ask(`במרחק ${km(n.dist)} מ${n.place}`, { hint: 'הכניסה תסומן למנהל', placeholder: 'למשל: יצאתי מהבית ישר לאתר', ok: 'כניסה למשמרת', optional: true });
+      note = await ask('לא במשרד ולא באתר שלך היום', { hint: `${km(n.dist)} מ${n.place} · הכניסה תסומן למנהל`, placeholder: 'למשל: יצאתי מהבית ישר לאתר', ok: 'כניסה למשמרת', optional: true });
       if (note == null) return toast('הכניסה בוטלה');
       note = note.trim() || null;
     }
@@ -159,7 +160,7 @@ async function suggestIn(el) {
     const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { maximumAge: 300000, timeout: 8000 }));
     const { data } = await sb.rpc('my_nearest_place', { la: pos.coords.latitude, ln: pos.coords.longitude }); const n = data?.[0];
     if (!n || n.dist > n.radius || !el.isConnected) return;
-    el.classList.add('hint'); const b = el.querySelector('.grow b'); if (b) b.textContent = `נמצאים ב${n.place} — להיכנס למשמרת?`;
+    el.classList.add('hint'); const b = el.querySelector('.grow b'); if (b) b.textContent = `${n.place === 'המשרד' ? 'במשרד' : 'נמצאים ב' + n.place} — להיכנס למשמרת?`;
   } catch { /* */ }
 }
 

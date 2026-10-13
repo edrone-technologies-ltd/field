@@ -1,5 +1,5 @@
 // ניהול יום שטח מתוכנן (מנהל תפעול ומעלה): כל מה שמתקנים בבעיה של יום — במקום אחד, בלי לעבור למסך הביצוע של העובד.
-// העברת תאריך · ראש צוות · רחפן · שעת יציאה · הוספה/הסרה של אנשים · ביטול היום. כל שינוי = התראה לצוות (בצד השרת).
+// העברת תאריך · ראש צוות · רחפן · שעת יציאה · הגעה/סיום באתר (גם ביום שהתחיל — טל 13/10: סיכם עם הלקוח שעה אחרת) · הוספה/הסרה של אנשים · ביטול היום. כל שינוי = התראה לצוות (בצד השרת).
 // בלחיצה אחת (סימולציית שבוע של אוריאל, 12/10): מחליף למי שלא יכול להגיע · דחיית כל ימי הפרויקט ביום (מזג אוויר) · הזזה ליום פנוי · רחפן חלופי לכל הימים.
 // אחרי שינוי בצוות הגיליון נפתח מחדש מעודכן — ממשיכים לתקן בלי לחפש שוב את היום.
 import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, dm, dayLabel, leadMark, HE_D1, isoDay } from '../lib/core.js';
@@ -11,11 +11,22 @@ const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.get
 const offDay = d => [5, 6].includes(new Date(d + 'T12:00').getDay());
 const nextWork = s => { let d = addDays(s, 1); while (offDay(d)) d = addDays(d, 1); return d; };
 const sd = d => `${HE_D1[new Date(d + 'T12:00').getDay()]} ${dm(d)}`;
+const hm5 = t => (t || '').slice(0, 5);
+const mins = v => v ? +v.slice(0, 2) * 60 + +v.slice(3, 5) : null;
+const hhmmOf = m => { const r = ((Math.floor(m / 5) * 5) % 1440 + 1440) % 1440; return `${String(Math.floor(r / 60)).padStart(2, '0')}:${String(r % 60).padStart(2, '0')}`; };
+// יציאה מומלצת = הגעה − נסיעה מהמשרד (כביש × מקדם תנועה) − העמסה. כמו בשיבוץ ימים (projects.js)
+async function travelFrom(lat, lng) {
+  const { data } = await sb.from('app_settings').select('value').eq('key', 'dispatch').maybeSingle();
+  const Dp = { office: [31.2203, 34.8041], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15, ...(data?.value || {}) };
+  let tr = null;
+  if (lat) try { const j = await (await fetch(`https://router.project-osrm.org/route/v1/driving/${Dp.office[1]},${Dp.office[0]};${lng},${lat}?overview=false`)).json(); if (j.routes?.[0]) tr = Math.ceil(j.routes[0].duration / 60 * Dp.traffic_factor); } catch { /* */ }
+  return { tr, load: Dp.load_min, from: Dp.office_name };
+}
 
 export async function openDayAdmin(id, after) {
   if (!isManager()) return;
   const [{ data: w, error }, { data: people }, { data: drones }, { data: pre }] = await Promise.all([
-    sb.from('work_days').select('id,day,status,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,lat,lng,sites(lat,lng)),work_day_crew(user_id,role,cant_come_at,cant_come_reason)').eq('id', id).single(),
+    sb.from('work_days').select('id,day,status,report_time,site_arrival,site_end,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,lat,lng,sites(lat,lng)),work_day_crew(user_id,role,cant_come_at,cant_come_reason)').eq('id', id).single(),
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).in('role', ['crew', 'crew_lead', 'ops_manager', 'admin']).order('full_name'),
     sb.from('equipment').select('id,name,health').eq('kind', 'drone').order('name'),
     // חריג בבדיקה לפני עבודה (db/130): ממתין להחלטה · הופסק · רחפן שהושבת ועוד משובץ
@@ -57,7 +68,7 @@ export async function openDayAdmin(id, after) {
     + (preDr.length ? `<div class="lrow"><span class="mic">${icon('drone', 18)}</span><div class="chips grow">${preDr.map((d, i) => `<button type="button" class="chip ${i ? '' : 'primary'}" data-predr="${d.id}">${esc(d.name)} במקום</button>`).join('')}</div></div>` : '');
   const done = (msg, close) => { close(); toast(msg, 2200, 'success'); after?.(); };
   const again = (msg, close) => { done(msg, close); openDayAdmin(id, after); };   // נשארים בגיליון, מעודכן
-  sheet(`<div class="stack tight"><h3 class="sh">${esc(w.projects?.name || '')}</h3><small class="muted">${dayLabel(w.day)}${w.report_time ? ' · יציאה ' + w.report_time.slice(0, 5) : ''}</small></div>
+  sheet(`<div class="stack tight"><h3 class="sh">${esc(w.projects?.name || '')}</h3><small class="muted">${dayLabel(w.day)}${w.report_time ? ' · יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) + (w.site_end ? '–' + w.site_end.slice(0, 5) : '') : ''}</small></div>
     ${preHtml}${started ? '' : wx}
     ${started ? '' : `<div class="lrow da-mv"><span class="mic">${icon('calendar', 18)}</span><div class="chips grow">
       ${rest.length ? `<button type="button" class="chip ${w.weather_alerted ? 'primary' : ''}" data-shift="1">כל ${rest.length + 1} הימים · יום קדימה</button>` : ''}
@@ -70,7 +81,8 @@ export async function openDayAdmin(id, after) {
       ${free.length > quick.length ? `<label class="lrow"><span class="mic">${icon('users', 18)}</span><select id="da-add" class="grow"><option value="">${quick.length ? 'עוד…' : 'הוספת אדם…'}</option>${free.map(p => { const why = av.person(p.id), wn = av.warn?.(p.id); return `<option value="${p.id}" ${why ? 'disabled' : ''}>${esc(p.full_name)}${p.is_pilot ? ' · מטיס' : ''}${why ? ' — ' + esc(why) : wn ? ' · ⚠ ' + esc(wn) : ''}</option>`; }).join('')}</select></label>` : ''}
     </div>
     ${swapDr ? `<button type="button" class="arow bad" id="da-dr"><span class="aic">${icon('drone', 18)}</span><span class="grow"><b>${esc((drones || []).find(d => d.id === w.drone_id)?.name || 'הרחפן')} ${esc(drWhy)}</b><small>החלפה ל${esc(swapDr.name)}${drAll.length > 1 ? ` בכל ${drAll.length} הימים` : ''}</small></span><span class="btn primary sm">החלפה</span></button>` : ''}
-    ${started ? `<a class="btn ghost block" href="#/day/${id}">מסך היום</a>` : `<div class="row"><label class="field grow">תאריך<input type="date" id="da-day" value="${w.day}"></label><label class="field grow">יציאה<input type="time" id="da-time" value="${(w.report_time || '').slice(0, 5)}"></label></div>
+    <div class="row"><label class="field grow">הגעה לאתר<input type="time" id="da-sa" value="${hm5(w.site_arrival)}"></label><label class="field grow">סיום באתר<input type="time" id="da-se" value="${hm5(w.site_end)}"></label></div>
+    ${started ? `<div class="row-btns"><a class="btn ghost" href="#/day/${id}">מסך היום</a><button class="btn primary" id="da-save">שמירת השעות</button></div>` : `<div class="row"><label class="field grow">תאריך<input type="date" id="da-day" value="${w.day}"></label><label class="field grow">יציאה<small id="da-hint"></small><input type="time" id="da-time" value="${hm5(w.report_time)}"></label></div>
     <label class="field">רחפן<select id="da-drone"><option value="">בלי רחפן</option>${(drones || []).map(d => { const why = av.drone(d.id); return `<option value="${d.id}" ${d.id === w.drone_id ? 'selected' : ''} ${why ? 'disabled' : ''}>${esc(d.name)}${why ? ' — ' + esc(why) : (d.health === 'warning' ? ' — במעקב' : '') + (av.droneWarn?.(d.id) ? ' · ⚠ ' + esc(av.droneWarn(d.id)) : '')}</option>`; }).join('')}</select></label>
     <div class="row-btns"><button class="btn ghost" id="da-cancel">ביטול היום</button><button class="btn primary" id="da-save">שמירת השינויים</button></div>`}`, (s, close) => {
     const busy = b => { b.disabled = true; return () => { b.disabled = false; }; };
@@ -101,7 +113,17 @@ export async function openDayAdmin(id, after) {
     $$('[data-predr]', s).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true;   // היום כבר התחיל — רק היום הזה; המטיס בודק את הכלי החדש מההתחלה
       const { error: e } = await sb.from('work_days').update({ drone_id: b.dataset.predr }).eq('id', id); if (e) { b.disabled = false; return toast(errText(e, 'לא נשמר — נסו שוב')); }
       done(`${(drones || []).find(d => d.id === b.dataset.predr)?.name || 'הרחפן'} · המטיס בודק את הכלי החדש`, close); });
-    if (started) return;
+    const timesChanged = () => ['site_arrival|#da-sa', 'site_end|#da-se', 'report_time|#da-time'].some(k => { const [f, q] = k.split('|'), el = $(q, s); return el && (el.value || null) !== (hm5(w[f]) || null); });
+    const saveTimes = async () => { if (!timesChanged()) return true;
+      const { error: e } = await sb.rpc('set_day_times', { w: id, dep: $('#da-time', s)?.value || null, arr: $('#da-sa', s).value || null, fin: $('#da-se', s).value || null });
+      if (e) { toast(errText(e, 'השעות לא נשמרו — נסו שוב')); return false; } return true; };
+    if (started) { $('#da-save', s).onclick = async e => { const un = busy(e.target), ch = timesChanged(); if (!(await saveTimes())) return un(); done(ch ? 'השעות עודכנו' : 'נשמר', close); }; return; }
+    // הגעה לאתר זזה → יציאה מומלצת מחושבת מחדש (אלא אם שינו את היציאה ידנית)
+    let tv = null, depTouched = false; const dep = $('#da-time', s), hint = $('#da-hint', s);
+    const recalc = () => { const a = mins($('#da-sa', s).value); if (!tv || a == null) return; const r = hhmmOf(a - (tv.tr ?? 0) - tv.load);
+      hint.textContent = tv.tr != null ? `מומלץ ${r}` : ''; if (!depTouched && $('#da-sa', s).value !== hm5(w.site_arrival)) dep.value = r; };
+    dep.oninput = () => { depTouched = true; }; $('#da-sa', s).addEventListener('change', recalc);
+    travelFrom(lat, lng).then(x => { tv = x; if (s.isConnected) recalc(); });
     $$('[data-shift]', s).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true;
       const { data: n, error: e } = await sb.rpc('shift_days', { w: id, n: 1 }); if (e) { b.disabled = false; return toast(errText(e, 'הימים לא הוזזו — נסו שוב'), 6000); }
       done(`${n} ימי שטח זזו יום קדימה · מ${sd(nextWork(w.day))} · הצוות קיבל עדכון`, close); });
@@ -109,11 +131,12 @@ export async function openDayAdmin(id, after) {
       const { error: e } = await sb.rpc('move_day', { w: id, d: b.dataset.mvd }); if (e) { b.disabled = false; return toast(errText(e, 'היום לא הועבר — נסו שוב'), 5000); }
       done(`הועבר ל${dayLabel(b.dataset.mvd)} · הצוות קיבל עדכון`, close); });
     $('#da-save', s).onclick = async e => {
-      const un = busy(e.target), d = $('#da-day', s).value, tm = $('#da-time', s).value || null, dr2 = $('#da-drone', s).value || null;
-      if (tm !== ((w.report_time || '').slice(0, 5) || null) || dr2 !== (w.drone_id || null)) {
-        const { error: e1 } = await sb.from('work_days').update({ report_time: tm, drone_id: dr2 }).eq('id', id); if (e1) { un(); return toast(errText(e1, 'לא נשמר — נסו שוב')); } }
+      const un = busy(e.target), d = $('#da-day', s).value, dr2 = $('#da-drone', s).value || null, ch = timesChanged();
+      if (dr2 !== (w.drone_id || null)) {
+        const { error: e1 } = await sb.from('work_days').update({ drone_id: dr2 }).eq('id', id); if (e1) { un(); return toast(errText(e1, 'לא נשמר — נסו שוב')); } }
+      if (!(await saveTimes())) return un();   // השרת מתריע לצוות "השיבוץ שלך עודכן" (db/134)
       if (d && d !== w.day) { const { error: e2 } = await sb.rpc('move_day', { w: id, d }); if (e2) { un(); return toast(errText(e2, 'היום לא הועבר — נסו שוב'), 5000); } return done(`הועבר ל${dayLabel(d)} · הצוות קיבל עדכון`, close); }
-      done('נשמר', close);
+      done(ch && crew.length ? 'נשמר · הצוות קיבל עדכון' : 'נשמר', close);
     };
     $('#da-cancel', s).onclick = async e => {
       if (!(await confirmBox(`לבטל את יום השטח ב-${dm(w.day)}?`, { ok: 'ביטול היום', danger: true }))) return;

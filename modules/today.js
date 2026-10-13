@@ -147,11 +147,11 @@ export async function renderDay(el, id) {
     // סדר המסך = סדר הבוקר: מתי ולאן → מה המשרד ביקש → מה לקחת → מה עושים היום → איך (שמש) → מי ואיפה (איש קשר, מפה)
     return `<div class="card stack">
         <div class="kpis dayk"><div class="kpi"><b>${hhmm(D.day.report_time) || '—'}</b><span>יציאה מהמשרד</span></div>
-          ${D.day.site_arrival ? `<div class="kpi"><b><bdi dir="ltr">${hhmm(D.day.site_arrival)}${D.day.site_end ? `<small class="kend">–${hhmm(D.day.site_end)}</small>` : ''}</bdi></b><span>באתר</span></div>` : `<div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div>`}
+          ${D.day.site_arrival ? `<div class="kpi"${isManager() && D.day.status !== 'done' ? ' data-dadm role="button" tabindex="0" aria-label="שינוי שעות היום"' : ''}><b><bdi dir="ltr">${hhmm(D.day.site_arrival)}${D.day.site_end ? `<small class="kend">–${hhmm(D.day.site_end)}</small>` : ''}</bdi></b><span>באתר</span></div>` : `<div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div>`}
           <div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים</span></div></div>
         ${countdown()}
         ${D.day.gust_max != null && !P.site_id ? `<div class="alert ${D.day.weather_alerted ? 'bad' : ''}"><span class="dot ${D.day.weather_alerted ? '' : 'ok'}"></span><span class="grow"><b>רוח עד ${D.day.wind_max} קמ״ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ״מ` : ''}</b><small>תחזית לשעות העבודה</small></span></div>` : ''}
-        <div class="opcrew">${isManager() && D.day.status !== 'done' ? `<button type="button" class="opc" onclick="import('./modules/dayadmin.js').then(m => m.openDayAdmin('${D.day.id}', () => dispatchEvent(new HashChangeEvent('hashchange'))))" aria-label="שינוי צוות וראש צוות">✎ צוות</button>` : ''}${crew.map(c => c.ph ? `<a class="opc ${c.st}" href="tel:${esc(c.ph)}" aria-label="חיוג ל${esc(c.n)}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</a>` : `<span class="opc ${c.st}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</span>`).join('')}${D.day.drone ? `<span class="opc">${icon('drone', 14)} ${esc(D.day.drone.name)}</span>` : ''}</div>
+        <div class="opcrew">${isManager() && D.day.status !== 'done' ? `<button type="button" class="opc" onclick="import('./modules/dayadmin.js').then(m => m.openDayAdmin('${D.day.id}', () => dispatchEvent(new HashChangeEvent('hashchange'))))" aria-label="שינוי צוות ושעות">✎ צוות ושעות</button>` : ''}${crew.map(c => c.ph ? `<a class="opc ${c.st}" href="tel:${esc(c.ph)}" aria-label="חיוג ל${esc(c.n)}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</a>` : `<span class="opc ${c.st}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</span>`).join('')}${D.day.drone ? `<span class="opc">${icon('drone', 14)} ${esc(D.day.drone.name)}</span>` : ''}</div>
         ${navButtons(site.lat || P.lat, site.lng || P.lng, D.day.address || site.address || site.name || P.name)}
       </div>
       ${opsStrip()}
@@ -497,6 +497,7 @@ export async function renderDay(el, id) {
     $('#dtop', el).hidden = REPORT || ![0, 2, 3].includes(s);
     const body = $('#dstage', el); body.innerHTML = [sMorning, sLoad, sSite, sWork, sClose, sDone][s]();
     bindCopy(body); bindPhotos(body); bindOps(body);
+    $$('[data-dadm]', body).forEach(b => b.onclick = () => import('./dayadmin.js').then(m => m.openDayAdmin(D.day.id, () => dispatchEvent(new HashChangeEvent('hashchange')))));   // מנהל: לחיצה על 'באתר' = שינוי שעות היום (db/134)
     const dm0 = $('#daymap', el);
     if (dm0) signedUrls('plans', [site.map_path]).then(u => { const url = u[site.map_path]; if (!url) { dm0.remove(); return; }
       dm0.innerHTML = `<button class="smimg" type="button"><img src="${esc(url)}" alt="מפת האתר"></button><b>מפת האתר</b>`; $('.smimg', dm0).onclick = () => zoom(url, 'מפת האתר'); }).catch(() => dm0.remove());

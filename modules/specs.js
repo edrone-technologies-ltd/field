@@ -254,7 +254,7 @@ async function wx3(s) {
 
 
 // ---------- הערכת מחיר (הרשאת כספים בלבד) — לפי הפרמטרים החיים מלוח התמחור במאנדי ----------
-const BASE = [31.2524, 34.7908]; // ב״ש
+const BASE = [31.2203, 34.8041]; // המשרד — תוצרת הארץ 3, באר שבע (db/134)
 async function roadKm(lat, lng) {
   try {
     const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${BASE[1]},${BASE[0]};${lng},${lat}?overview=false`);

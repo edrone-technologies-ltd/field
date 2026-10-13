@@ -17,6 +17,7 @@ export async function renderAdmin(el) {
   $('#ad').innerHTML = `
     <div class="stack">
     <div id="teams"></div>
+    <div id="office"></div>
     <h3 class="sh">אנשים והרשאות</h3>
     ${people.length > 10 ? '<input type="search" id="aq" placeholder="חיפוש לפי שם או טלפון" aria-label="חיפוש">' : ''}
     <div class="list" id="apl">${[...people].sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0)).map(p => `<div class="lrow${p.is_active ? '' : ' off'}" data-q="${esc((p.full_name || '') + ' ' + (p.phone || ''))}">
@@ -62,7 +63,7 @@ export async function renderAdmin(el) {
     c.disabled = true; const { error } = await q; c.disabled = false; if (error) { c.checked = !c.checked; return toast(errText(error, 'לא נשמר — נסו שוב')); } toast('השיוך עודכן');
   });
   const aq = $('#aq'); if (aq) aq.oninput = () => { const v = aq.value.trim(); $$('#apl [data-q]').forEach(r => r.hidden = !!v && !r.dataset.q.includes(v)); };
-  usageCard(el); teamsCard(people);
+  usageCard(el); teamsCard(people); officeCard();
   // קישור עמוק ליומן הסנכרון (#/admin/sync) — מההתראה "הסנכרון נעצר" / "שליחה למאנדי נכשלה"
   if (location.hash.startsWith('#/admin/sync')) { replaceHash('#/admin', false); $('#sync')?.scrollIntoView({ block: 'start' }); }
 }
@@ -123,4 +124,22 @@ async function usageCard(el) {
     <div class="small muted">${Object.entries(u.by_bucket || {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${BK[k] || k} ${mb(v)}`).join(' · ')}</div>
     ${months != null ? `<div class="small">30 יום: ${mb(u.last_30d)} · ${months > 24 ? 'מספיק ליותר משנתיים' : `מתמלא בעוד ${months < 1 ? 'פחות מחודש' : '~' + Math.round(months) + ' חודשים'}`}</div>` : ''}`;
   const h = el.querySelector('.phead'); if (h) h.after(c); else el.prepend(c);
+}
+
+// מיקום המשרד (app_settings.dispatch.office): נקודת הכניסה הצפויה בנוכחות, חישוב שעת יציאה, מגדל הפיקוח והקוסם. מיקום נוכחי או קואורדינטות
+async function officeCard() {
+  const box = $('#office'); if (!box) return;
+  const { data } = await sb.from('app_settings').select('value').eq('key', 'dispatch').maybeSingle();
+  const v = data?.value || {}, o = Array.isArray(v.office) ? v.office : null;
+  box.innerHTML = `<h3 class="sh">המשרד</h3><div class="list"><div class="lrow"><span class="mic">${icon('pin', 18)}</span><span class="grow"><b>${esc(v.office_addr || v.office_name || 'המשרד')}</b><small><bdi dir="ltr">${o ? o.map(x => (+x).toFixed(4)).join(', ') : '—'}</bdi></small></span>${o ? `<a class="chip" href="https://www.google.com/maps?q=${o[0]},${o[1]}" target="_blank" rel="noopener">מפה</a>` : ''}</div>
+    <div class="lrow"><span class="mic">${icon('pen', 18)}</span><div class="chips grow"><button class="chip" id="ofhere">אני במשרד עכשיו</button><button class="chip" id="ofset">הזנת קואורדינטות</button></div></div></div>`;
+  const save = async (la, ln, b) => { b.disabled = true; const { error } = await sb.rpc('set_office', { la, ln }); b.disabled = false;
+    if (error) return toast(errText(error, 'לא נשמר — נסו שוב')); toast('מיקום המשרד עודכן', 2200, 'success'); officeCard(); };
+  $('#ofhere', box).onclick = e => { const b = e.currentTarget; if (!navigator.geolocation) return toast('אין מיקום בטלפון הזה'); b.disabled = true; toast('מאתר מיקום…', 9000);
+    navigator.geolocation.getCurrentPosition(async p => { b.disabled = false; const ok = await confirmBox('לקבוע את המשרד כאן?', { body: `${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)} · דיוק ${Math.round(p.coords.accuracy)} מ׳`, ok: 'קביעה' });
+      if (ok) save(p.coords.latitude, p.coords.longitude, b); }, () => { b.disabled = false; toast('לא התקבל מיקום'); }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }); };
+  $('#ofset', box).onclick = e => { const b = e.currentTarget; sheet(`<h3>מיקום המשרד</h3><input type="text" id="ofll" dir="ltr" inputmode="decimal" placeholder="31.2203, 34.8041" value="${o ? o.join(', ') : ''}">
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="ofok">שמירה</button></div>`, (s, close) => {
+    $('#ofok', s).onclick = () => { const m = $('#ofll', s).value.match(/(-?\d+(?:\.\d+)?)[,\s]+(-?\d+(?:\.\d+)?)/); if (!m) return toast('קו רוחב, קו אורך — למשל 31.2203, 34.8041'); close(); save(+m[1], +m[2], b); };
+  }); };
 }

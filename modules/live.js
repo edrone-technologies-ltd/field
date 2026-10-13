@@ -107,7 +107,7 @@ async function load(c) {
       c.office ? null : soft(sb.from('app_settings').select('value').eq('key', 'dispatch').maybeSingle()),
     ]);
     if (C !== c) return;
-    if (set && !c.office) { const o = set.value?.office; c.office = Array.isArray(o) ? { ll: o, name: set.value.office_name || 'משרד' } : { ll: [31.2524, 34.7908], name: 'משרד' }; }
+    if (set && !c.office) { const o = set.value?.office; c.office = Array.isArray(o) ? { ll: o, name: set.value.office_name || 'משרד' } : { ll: [31.2203, 34.8041], name: 'המשרד' }; }
     // יום "דיווח עצמי" כפול ליום מתוכנן של אותו פרויקט — פעם אחת
     const D = days.filter(w => w.kind !== 'report' || !days.some(x => x !== w && x.kind !== 'report' && x.project_id === w.project_id && x.day === w.day));
     D.forEach(w => { w.st = stOf(w); w.g = geoOf(w); });

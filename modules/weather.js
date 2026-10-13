@@ -115,5 +115,5 @@ export async function renderWeather(el, siteId = '') {
   $('#wme', el).onclick = () => { const b = $('#wme', el); if (!navigator.geolocation) return toast('הטלפון לא תומך במיקום'); if (b.disabled) return; b.disabled = true;
     navigator.geolocation.getCurrentPosition(p => { b.disabled = false; map?.setView([p.coords.latitude, p.coords.longitude], 11); setPoint(p.coords.latitude, p.coords.longitude, 'המיקום שלי'); },
       () => { b.disabled = false; toast('לא התקבל מיקום — בדקו את הרשאת המיקום'); }, { enableHighAccuracy: false, timeout: 10000 }); };
-  if (sel >= 0) draw(); else setPoint(31.2524, 34.7908, 'באר שבע');
+  if (sel >= 0) draw(); else setPoint(31.2203, 34.8041, 'המשרד');
 }

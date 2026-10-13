@@ -61,7 +61,7 @@ async function load() {
   if (pe) throw pe;
   const open = (projs || []).filter(isOpenProject);
   const ids = open.map(p => p.id);
-  const Dp = { office: [31.2524, 34.7908], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15, ...(disp?.value || {}) };
+  const Dp = { office: [31.2203, 34.8041], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15, ...(disp?.value || {}) };
   const geo = p => { const la = p.sites?.lat ?? p.lat, ln = p.sites?.lng ?? p.lng; return la != null && ln != null ? [+la, +ln] : null; };
   const uniqS = [...new Map(open.filter(p => p.site_id && geo(p)).map(p => [p.site_id, { id: p.site_id, lat: geo(p)[0], lng: geo(p)[1] }])).values()];
   // תחזית ונסיעה — במקביל לשאר, עם תקרת זמן (בלי תחזית — לא מדלגים)

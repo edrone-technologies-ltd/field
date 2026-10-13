@@ -165,7 +165,7 @@ export async function renderProject(el, id, tab = 'o') {
       <div class="list">
         <div class="lrow"><span class="mic">${icon('calendar', 19)}</span><span class="grow">${PL.length > 1 ? `<b class="pulsetxt">${PL.map(r => `<span>${pulseLbl(r)}</span>`).join(' · ')}</b><small>${PL.length} פעימות · ${pulseWd(PL)} ימי עבודה${done ? ` · ${done} בוצעו` : ''}</small>` : p.planned_from ? `<b>${dm(p.planned_from)} – ${dm(p.planned_to || p.planned_from)}</b><small>${(n => n === 1 ? 'יום עבודה אחד' : n + ' ימי עבודה')(wdays(p.planned_from, p.planned_to || p.planned_from))}${done ? ` · ${done} בוצעו` : ''}</small>` : '<b>אין תאריכים</b>'}</span>${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : p.dates_dirty && p.monday_item_id ? '<span class="pill">מתעדכן במאנדי</span>' : ''}</div>
         ${up.map(d => `<a class="lrow" href="#/day/${d.id}"><span class="datebox ${d.day === t ? 'now' : ''}"><b>${+d.day.slice(8)}</b><small>${d.day === t ? 'היום' : HE_D1[new Date(d.day + 'T12:00').getDay()]}</small></span>
-          <span class="grow"><b>${d.report_time ? 'יציאה ' + d.report_time.slice(0, 5) : 'יום שטח'}${d.is_last_day ? ' · יום אחרון' : ''}</b><small>${crewOf(d) || 'לא שובץ צוות'}</small></span>${M && d.status === 'planned' ? `<button class="chip" data-mv="${d.id}" data-day="${d.day}">העברה</button>` : ''}</a>`).join('')}
+          <span class="grow"><b>${d.report_time ? 'יציאה ' + d.report_time.slice(0, 5) : 'יום שטח'}${d.is_last_day ? ' · יום אחרון' : ''}</b><small>${d.site_arrival ? `באתר <bdi dir="ltr">${d.site_arrival.slice(0, 5)}${d.site_end ? '–' + d.site_end.slice(0, 5) : ''}</bdi> · ` : ''}${crewOf(d) || 'לא שובץ צוות'}</small></span>${M ? `<button class="chip" data-mv="${d.id}" data-day="${d.day}">עריכה</button>` : ''}</a>`).join('')}
         ${M ? `<button class="addrow" id="schm">${icon('plus', 18)} ${up.length ? 'שיבוץ מחדש' : 'שיבוץ ימים'}</button>` : ''}
       </div></section>`;
   }
@@ -191,7 +191,7 @@ export async function renderProject(el, id, tab = 'o') {
         close(); toast(n ? `התאריכים עודכנו · ${n} ימי שטח הוזזו` : 'התאריכים עודכנו'); reload('o'); };
     });
     const sm = $('#schm', box); if (sm) sm.onclick = () => openSched();
-    // העברה = ניהול היום: יום קדימה לכל הפרויקט, יום פנוי בלחיצה, או תאריך אחר
+    // עריכה = ניהול היום: שעות (יציאה/הגעה/סיום באתר), יום קדימה לכל הפרויקט, יום פנוי בלחיצה, או תאריך אחר. גם ביום שהתחיל — שעות וצוות
     $$('[data-mv]', box).forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); import('./dayadmin.js').then(m => m.openDayAdmin(b.dataset.mv, () => reload('o'))); });
   }
   // ----- מוכנות לביצוע: כל מה שצריך כדי לצאת לשטח, ברשימה אחת. אוטומטי מהנתונים; מה שאין לו מקור (מרחב אווירי, כניסה, מים) — סימון בלחיצה -----
@@ -496,7 +496,7 @@ export async function renderProject(el, id, tab = 'o') {
       pulseEditor($('#spl', s), pre.pulses?.length ? pre.pulses : [[start, pre.end || endOf(start, pre.n || maxDay)]], (pl, bad) => { PLcur = pl; PLbad = bad; syncN(); });
       $('#sfr', s).onchange = syncN; $('#se', s).onchange = drawWx;
       // יציאה מהמשרד = הגעה − נסיעה (כביש × מקדם תנועה) − העמסה. המנהל יכול לשנות ידנית
-      let travelMin = null, touched = !!prev?.report_time; const Dp = { office: [31.2524, 34.7908], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15 };
+      let travelMin = null, touched = !!prev?.report_time; const Dp = { office: [31.2203, 34.8041], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15 };
       const recalc = () => {
         const a = hr('#sa'); if (a == null) return;
         const tot = (travelMin ?? 0) + Dp.load_min, dep = ((a * 60 - tot) % 1440 + 1440) % 1440, r5 = Math.floor(dep / 5) * 5;
