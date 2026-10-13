@@ -14,7 +14,7 @@ export function pulseRoles(day) {
   const lead = day.crew_lead_id || null;
   const C = (day.work_day_crew || []).filter(c => !c.cant_come_at).slice().sort((a, b) => a.user_id < b.user_id ? -1 : a.user_id > b.user_id ? 1 : 0);
   const ip = c => !!(c.profiles?.is_pilot || c.profiles?.field_role === 'pilot');
-  const pilot = C.find(c => c.role === 'pilot')?.user_id || (C.some(c => c.user_id === lead && ip(c)) ? lead : null) || C.find(ip)?.user_id || lead;
+  const pilot = C.find(c => c.role === 'pilot')?.user_id || (C.some(c => c.user_id === lead && ip(c)) ? lead : null) || C.find(ip)?.user_id || null;   // בלי מטיס אין רחפן (אביחי 13/10)
   const gset = C.find(c => c.role === 'ground')?.user_id || null;
   const rest = C.filter(c => !ip(c) && c.user_id !== pilot).sort((a, b) => (b.profiles?.field_role === 'operator') - (a.profiles?.field_role === 'operator') || (a.user_id === lead) - (b.user_id === lead));
   const ground = gset || rest[0]?.user_id || lead;

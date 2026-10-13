@@ -250,6 +250,9 @@ export async function renderDay(el, id) {
   }
   function pulseCard(k) {
     const S = secState(k), R = roles(), resp = k === 'drone' ? R.pilot : R.ground, mine = mySection(R, k), can = mine || isManager();
+    if (k === 'drone' && !R.pilot) return `<div class="card stack prest bad" id="pulse-drone"><div class="row"><span class="pic">${icon(SEC[k].ic, 20)}</span><span class="grow"><b>${SEC[k].t}</b><small>אין מטיס בצוות</small></span><span class="pill bad">חסום</span></div>
+      <div class="alert bad"><span class="dot"></span><span class="grow"><b>בלי מטיס אין רחפן</b><small>להוסיף מטיס לצוות או להוריד את הרחפן מהיום</small></span></div>
+      ${isManager() ? `<button class="btn ghost block" type="button" onclick="import('./modules/dayadmin.js').then(m => m.openDayAdmin('${D.day.id}', () => dispatchEvent(new HashChangeEvent('hashchange'))))">ניהול הצוות והרחפן</button>` : ''}</div>`;   // אביחי 13/10
     const pill = S.pend ? '<span class="pill bad">ממתין להחלטה</span>' : S.stopped ? '<span class="pill bad">הופסק</span>' : S.grounded ? '<span class="pill bad">הושבת</span>'
       : S.signed ? `<span class="pill ok">${icon('check', 14)} ${S.iss.length ? 'כשיר' : 'תקין'}</span>` : `<span class="pill">${S.n}/${S.items.length}</span>`;
     const open = (D.local.popen || []).includes(k) || (can && S.n > 0 && !S.signed);
