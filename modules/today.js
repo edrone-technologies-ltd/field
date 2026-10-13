@@ -2,6 +2,7 @@
 import { coverArt, icon, leadMark, navButtons, thumbUrls } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
 import { isNight, nightRange, nightTag, isCurrent, wxKey } from '../lib/night.js';
+import { dtTag, isWorkDay, needsPreflight } from '../lib/daytype.js';
 import { loadZones, dayZones, zonePrefill, zonesHtml, bindZones, zonesPayload, zkey } from './zones.js';
 import { SEC, needsDrone, pulseRoles, mySection, decideSheet, afterDecide } from './prestart.js';
 import { sb, state, cache, enqueue, sendsLabel, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, haptic } from '../lib/core.js';
@@ -112,7 +113,7 @@ export async function renderDay(el, id) {
     const s = stage();
     return `<div class="phero sm"><span class="img" style="background-image:url('${coverUrl || coverArt(P.name || '')}')"></span>
         <a class="back glass" href="#/" aria-label="חזרה">${icon('back', 20)}</a>
-        <span class="ph-bottom"><span class="row"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${isNight(D.day) ? nightTag(D.day) + ' ' + esc(nightRange(D.day)) : dayLabel(D.day.day)}</span>${statusPill(D.day)}</span>
+        <span class="ph-bottom"><span class="row"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${isNight(D.day) ? nightTag(D.day) + ' ' + esc(nightRange(D.day)) : dayLabel(D.day.day)}${dtTag(D.day)}</span>${statusPill(D.day)}</span>
         <b>${esc(P.name || '')}</b>${D.day.day_goal ? `<small>${esc(D.day.day_goal)}</small>` : ''}</span></div>
       ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? icon('check', 16) : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`}`;
   }
@@ -230,7 +231,9 @@ export async function renderDay(el, id) {
   }
   // ---------- דופק לפני עבודה (אביחי 12/10) ----------
   // בדיקת רחפן = המטיס · בדיקת בטיחות = מפעיל הקרקע. "הכל תקין ✓" בלחיצה; "לא תקין" בפריט = תקלה קריטית שמחכה להחלטת מנהל התפעול
-  const secs = () => needsDrone(D.day) ? ['drone', 'safety'] : ['safety'];
+  // יום תיאום / סיור (db/138) — בלי בדיקה לפני התחלה. יום טסטים — כן (הרחפן טס)
+  const secs = () => !needsPreflight(D.day) ? [] : needsDrone(D.day) ? ['drone', 'safety'] : ['safety'];
+  const ZD = () => isWorkDay(D.day) ? dayZones(D.zones, D.tasks, D.day.id) : [];   // טסטים/תיאום/הכנה — בלי חזיתות ובלי מ״ר
   const secItems = k => D.S[SEC[k].key] || [];
   const roles = () => pulseRoles(D.day);
   const fname = u => (D.team.find(x => x.id === u)?.full_name || roles().name(u) || '').split(' ')[0];
@@ -287,7 +290,7 @@ export async function renderDay(el, id) {
     return `${!D.day.arrived_at ? `<button class="btn primary block" id="arrive">הגענו לאתר</button>` : `<div class="small muted">הגעתם ב-${new Date(D.day.arrived_at).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}</div>`}
       ${secs().map(pulseCard).join('')}
       ${opsStrip(true)}
-      ${baBlock({ after: false })}
+      ${isWorkDay(D.day) ? baBlock({ after: false }) : ''}
       ${contactCard(site.contact_name, site.contact_phone)}`;
   }
   function sWork() {
@@ -311,8 +314,8 @@ export async function renderDay(el, id) {
   function closeVals() {
     if (D.local.close && !D.local.close._v) D.local.close = null;   // מבנה ישן (שמר גם ערכים נגזרים) — מתחילים נקי
     const O = D.local.close ||= { _v: 2 }, base = {
-      material: D.day.material_used || D.day.material_planned || 'Assert Lemon', gallons: D.day.gallons ?? (D.day.gallons_planned != null ? Number(D.day.gallons_planned) : null),   // ברירת מחדל = המתוכנן; משנים רק בחריג
-      work: D.day.work_types?.length ? D.day.work_types : ['ניקוי חזיתות'], equipment_ok: D.day.equipment_ok ?? !D.issues.some(i => i.kind === 'equipment' && i.status !== 'closed'),   // דווחה היום תקלת ציוד → לא מסמנים "חזר תקין" לבד quality: D.day.quality || 0,
+      material: D.day.material_used || D.day.material_planned || (isWorkDay(D.day) ? 'Assert Lemon' : null), gallons: D.day.gallons ?? (D.day.gallons_planned != null ? Number(D.day.gallons_planned) : null),   // ברירת מחדל = המתוכנן; משנים רק בחריג
+      work: D.day.work_types?.length ? D.day.work_types : isWorkDay(D.day) ? ['ניקוי חזיתות'] : [], equipment_ok: D.day.equipment_ok ?? !D.issues.some(i => i.kind === 'equipment' && i.status !== 'closed'),   // דווחה היום תקלת ציוד → לא מסמנים "חזר תקין" לבד quality: D.day.quality || 0,
       notes: D.day.notes || '', weather: D.day.weather_stop, flights: D.day.flights ?? null, air: D.day.air_minutes ?? null,
       // שעות: מה שנשמר ביום, אחרת מהשעון. בלי משמרת בשעון — ריק (לא מנחשים שעות למי שאולי לא הגיע)
       hours: Object.fromEntries(D.day.work_day_crew.map(c => [c.user_id, c.hours ?? D.clockH?.[c.user_id] ?? null])),
@@ -333,8 +336,9 @@ export async function renderDay(el, id) {
   // מה חסר לשליחה — שורת תגיות כמו בשלב "באתר" + סימון השדות
   function closeMissing() {
     const m = [];
-    if (!D.photos.some(p => p.kind === 'after')) m.push(['תמונת אחרי', 'label.addph:has(input[data-kind="after"])']);
-    if (C.gallons == null) m.push(['גלונים', '#gal']);
+    // יום טסטים/תיאום/הכנה: סגירה פשוטה — בלי תמונת אחרי וגלונים (שעות וחתימה — כרגיל)
+    if (isWorkDay(D.day) && !D.photos.some(p => p.kind === 'after')) m.push(['תמונת אחרי', 'label.addph:has(input[data-kind="after"])']);
+    if (isWorkDay(D.day) && C.gallons == null) m.push(['גלונים', '#gal']);
     if (REPORT && C.start >= C.end) m.push(['שעות התחלה/סיום', '#re']);
     const noH = crewRows().filter(c => C.hours[c.user_id] == null);
     if (noH.length) m.push([noH.length === 1 ? `שעות · ${(noH[0].profiles?.full_name || '').split(' ')[0]}` : 'שעות צוות', noH.map(c => `.hrs[data-u="${c.user_id}"]`).join(',')]);
@@ -372,7 +376,7 @@ export async function renderDay(el, id) {
           <b>איכות העבודה</b><div class="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-q="${n}" aria-pressed="${C.quality >= n}">★</button>`).join('')}</div>
           <label class="field">${D.day.is_last_day ? 'מה נשאר פתוח' : 'מה נשאר למחר'}<textarea id="tmr">${esc(C.tomorrow)}</textarea></label></div>
       </details>`;
-    return reportTop + zonesHtml(dayZones(D.zones, D.tasks, D.day.id), C.zones) + (REPORT ? '' : baBlock()) + edit +
+    return reportTop + zonesHtml(ZD(), C.zones) + (REPORT || !isWorkDay(D.day) ? '' : baBlock()) + edit +
       (D.day.is_last_day ? `<div class="sec"><h3>החתמת לקוח</h3>
         <label class="field">שם החותם<input type="text" id="sn" value="${esc(C.sign.name)}"></label>
         <label class="field">תפקיד<input type="text" id="sr" value="${esc(C.sign.role)}" placeholder="מנהל אחזקה, מנהל אתר…"></label>
@@ -388,7 +392,7 @@ export async function renderDay(el, id) {
   function reportLines() {
     const L = [], nm = c => (c.profiles?.full_name || '').split(' ')[0];
     if ((C.notes || '').trim()) L.push(['pen', C.notes.trim()]);
-    const ZL = dayZones(D.zones, D.tasks, D.day.id), Z = ZL.filter(z => C.zones.includes(zkey(z)));
+    const ZL = ZD(), Z = ZL.filter(z => C.zones.includes(zkey(z)));
     if (Z.length) { const multi = new Set(ZL.map(z => z.b)).size > 1, m2 = Z.reduce((s, z) => s + Number(z.m2 || 0), 0);
       L.push(['check', `הושלם: ${Z.map(z => multi ? z.bn + ' · ' + z.t : z.t).join(', ')}${m2 ? ` (${nf(Math.round(m2))} מ״ר)` : ''}`]); }
     const T = (REPORT ? D.tasks.filter(t => t.work_day_id === D.day.id) : dayList()).filter(t => t.status !== 'dropped');
@@ -568,7 +572,7 @@ export async function renderDay(el, id) {
     $$('[data-dec]').forEach(b => b.onclick = () => { const i = D.issues.find(x => x.id === b.dataset.dec); if (i) decideSheet(i, { who: fname(i.opened_by), after: r => afterDecide(r, () => dispatchEvent(new HashChangeEvent('hashchange'))) }); });
     $$('[data-dadm]').forEach(b => b.onclick = () => import('./dayadmin.js').then(m => m.openDayAdmin(D.day.id, () => dispatchEvent(new HashChangeEvent('hashchange')))));
     const P0 = secs().map(k => [k, secState(k)]), halt = P0.find(([, S]) => S.stopped || S.grounded);
-    const before = D.photos.some(p => p.kind === 'before');
+    const before = !isWorkDay(D.day) || D.photos.some(p => p.kind === 'before');   // יום שאינו יום עבודה — בלי חובת תמונת לפני
     const need = [!D.day.arrived_at && 'הגעה', ...P0.filter(([, S]) => !S.signed).map(([k]) => SEC[k].t), P0.some(([, S]) => S.pend) && 'החלטת מנהל', !before && 'תמונת לפני'].filter(Boolean);
     pulsePoll();
     if (halt && !isManager()) { bar.innerHTML = `<button class="btn ghost" type="button" disabled>${halt[1].grounded ? 'הרחפן הושבת · ממתינים לרחפן חלופי' : 'העבודה הופסקה · ממתינים למנהל התפעול'}</button>`; return; }
@@ -684,7 +688,7 @@ export async function renderDay(el, id) {
     $$('[data-q]').forEach(b => b.onclick = () => { setC('quality', Number(b.dataset.q)); draw(); });
     $('#tmr').oninput = e => setC('tomorrow', e.target.value);
     $('#nts').oninput = e => setC('notes', e.target.value);
-    bindZones(body, dayZones(D.zones, D.tasks, D.day.id), () => C.zones, L => { setC('zones', L); rp(); });
+    bindZones(body, ZD(), () => C.zones, L => { setC('zones', L); rp(); });
     if (REPORT) {
       const span = () => { const [a, b] = [C.start, C.end].map(x => x.split(':').map(Number)); const h = Math.max(0, (b[0] * 60 + b[1] - a[0] * 60 - a[1]) / 60); return Math.round(h * 2) / 2; };
       const setAll = () => { C.crew.forEach(u => setC('hours', span(), u)); draw(); };
@@ -729,7 +733,7 @@ export async function renderDay(el, id) {
       await save('work_days', { status: 'done', finished_at: now, ...extra, closed_at: now, material_used: C.material, gallons: C.gallons, work_types: C.work, equipment_ok: C.equipment_ok,
         weather_stop: !!C.weather, quality: C.quality || null, flights: C.flights ?? null, air_minutes: C.air ?? null, notes: C.notes || null, tomorrow: C.tomorrow || null, signoff,
         report_text: reportLines().map(x => x[1]).join('\n') || null,   // בדיוק מה שהוצג בתצוגה המקדימה — זה מה שמגיע למאנדי
-        ...(dayZones(D.zones, D.tasks, D.day.id).length ? { zones_done: zonesPayload(C.zones) } : {}) });
+        ...(ZD().length ? { zones_done: zonesPayload(C.zones) } : {}) });
       (D.prep || []).forEach(t => { if (!t.work_day_id || t.work_day_id === D.day.id) t.status = 'done'; });   // השרת סוגר את ההכנות עם היום (db/109) — גם כאן, שלא יופיעו מחר
       D.local = { stage: null, checks: {}, loaded: null }; D.tried = false; await keep();
       haptic('success'); celebrate(); draw();

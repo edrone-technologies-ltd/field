@@ -86,11 +86,12 @@ async function equipRows() {
 async function unclosedRows() {
   if (!['admin', 'ops_manager'].includes(state.profile.role)) return [];
   const iso = d => d.toISOString().slice(0, 10), t = iso(new Date()), from = iso(new Date(Date.now() - 30 * 864e5));
-  const { data } = await sb.from('work_days').select('id,day,status,kind,projects(name),lead:profiles!work_days_crew_lead_id_fkey(full_name)')
+  const { data } = await sb.from('work_days').select('id,day,status,kind,day_type,projects(name),lead:profiles!work_days_crew_lead_id_fkey(full_name)')
     .lt('day', t).gte('day', from).not('status', 'in', '(done,cancelled)').order('day', { ascending: false }).limit(60);
   const D = data || []; if (!D.length) return [];
   const dm = d => `${+d.slice(8)}.${+d.slice(5, 7)}`, ST = { planned: 'לא התחיל', en_route: 'נשאר בדרך', on_site: 'באתר', working: 'בעבודה', issue: 'תקלה' };
-  const s = d => [dm(d.day), (d.lead?.full_name || '').split(' ')[0], d.kind === 'report' ? 'טיוטה' : ST[d.status]].filter(Boolean).join(' · ');
+  const DT = { test: 'יום טסטים', coordination: 'תיאום', prep: 'יום הכנה' };   // db/138 — סגירה פשוטה, אבל עדיין צריך לסגור
+  const s = d => [dm(d.day), DT[d.day_type], (d.lead?.full_name || '').split(' ')[0], d.kind === 'report' ? 'טיוטה' : ST[d.status]].filter(Boolean).join(' · ');
   const old = D.some(d => (Date.parse(t) - Date.parse(d.day)) / 864e5 > 3);
   return D.length === 1 ? [{ k: 'unclosed', tone: 'warn', ic: icon('report', 18), title: `יום שטח בלי דוח סגור · ${D[0].projects?.name || ''}`, sub: s(D[0]), href: `#/day/${D[0].id}` }]
     : [{ k: 'unclosed', tone: old ? 'bad' : 'warn', ic: icon('report', 18), title: `${D.length} ימי שטח בלי דוח סגור`, sub: [...new Set(D.map(d => d.projects?.name).filter(Boolean))].join(' · '),

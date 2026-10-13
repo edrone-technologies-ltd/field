@@ -5,8 +5,9 @@
 import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, toast, sheet, timeAgo, shortName, backBtn, stLabel, replaceHash, nf } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 import { wxKey } from '../lib/night.js';
+import { dtTag } from '../lib/daytype.js';
 // עבודת לילה (db/136c): ימי השולחן מגיעים עם night/arr/end — מוצב בתאריך ההתחלה, עם סימון לילה
-const ND = d => ({ day: d.day, night: d.night, site_arrival: d.arr, site_end: d.end }), nl = d => d.night ? ' · לילה' : '';
+const ND = d => ({ day: d.day, night: d.night, site_arrival: d.arr, site_end: d.end }), nl = d => dtTag({ day_type: d.dt }) + (d.night ? ' · לילה' : '');   // סוג יום (db/138b): תגית טסטים/תיאום/הכנה
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const sunday = s => addDays(s, -new Date(s + 'T12:00:00').getDay());
@@ -177,7 +178,7 @@ function cell(r, k) {
     case 'unc': return num(r.unc.length, 'bad');
     case 'rt': return r.rt ? `<b class="dkn ${r.rt.avg_h > 72 ? 'bad' : r.rt.avg_h > 24 ? 'warn' : 'ok'}">${dur(r.rt.avg_h)}</b><small>${r.rt.n} תיקונים</small>` : num(0);
     case 'visit': return r.lv ? `<b class="dkn ${r.lvDays > 30 ? 'bad' : ''}">${r.lvDays <= 0 ? 'היום' : r.lvDays === 1 ? 'אתמול' : `לפני ${r.lvDays} ימים`}</b><small>${esc(first(r.lv.by))}</small>` : r.site_id ? '<b class="dkn muted">אף פעם</b>' : num(0);
-    case 'next': return r.next ? `<b class="dkn ${r.next.day === D.data.today ? 'lime' : ''}">${r.next.day === D.data.today ? 'היום' : sd(r.next.day)}</b><small>${esc(first(r.next.lead_name) || 'בלי ראש צוות')}</small>` : num(0);
+    case 'next': return r.next ? `<b class="dkn ${r.next.day === D.data.today ? 'lime' : ''}">${r.next.day === D.data.today ? 'היום' : sd(r.next.day)}${dtTag({ day_type: r.next.dt })}</b><small>${esc(first(r.next.lead_name) || 'בלי ראש צוות')}</small>` : num(0);
     case 'wx': { const { L, d } = wxLevel(r); return L == null ? num(0) : `<span class="pill ${['ok', 'warn', 'bad'][L]}">${WXW[L]}</span>${L && d ? `<small>${sd(d.day)}</small>` : ''}`; }
   }
   return '';
@@ -321,7 +322,7 @@ function sec(k, r) {
       : r.site_id ? row('לא נרשם ביקור מנהל באתר', '', `<a class="btn primary sm" href="#/visit/new/${r.id}">ביקור חדש</a>`, 'bad') : '';
     case 'unc': return r.unc.map(d => row(`${sd(d.day)} · ${d.status === 'planned' ? 'לא התחיל' : 'לא נסגר'}`, esc([first(d.lead_name) || 'בלי ראש צוות', ST[d.status]].filter(Boolean).join(' · ')),
       d.status === 'planned' ? dayBtn(d.id, 'להעביר / לבטל') : `<a class="btn primary sm" href="#/day/${d.id}">סגירת היום</a>`, 'bad')).join('');
-    case 'next': return r.next ? row(`${r.next.day === t ? 'היום' : sd(r.next.day)}`, esc(first(r.next.lead_name) || 'בלי ראש צוות'), `<a class="btn ghost sm" href="#/dispatch/${r.next.day}">לוח שיבוץ</a>${dayBtn(r.next.id)}`) : '';
+    case 'next': return r.next ? row(`${r.next.day === t ? 'היום' : sd(r.next.day)}${dtTag({ day_type: r.next.dt })}`, esc(first(r.next.lead_name) || 'בלי ראש צוות'), `<a class="btn ghost sm" href="#/dispatch/${r.next.day}">לוח שיבוץ</a>${dayBtn(r.next.id)}`) : '';
     case 'wx': return r.wxDays.map(d => { const x = D.wx[r.id]?.[wxKey(ND(d))], L = Math.max(d.wx ? 2 : 0, x?.L ?? 0), known = x || d.wx;
       return known && (C || L) ? row(`${sd(d.day)} · ${WXW[L]}`, x ? `רוח ${Math.round(x.w)} · משבים ${Math.round(x.g)} קמ״ש${x.p != null ? ` · גשם ${x.p}%` : ''}` : d.gust ? `משבים עד ${d.gust} קמ״ש` : '', L ? dayBtn(d.id, 'להזיז') : '', ['ok', 'warn', 'bad'][L]) : ''; }).join('')
       || (r.wxDays.length ? `<div class="dkok">${icon('sun', 18)}<span>טוב לטיסה בכל הימים בתחזית</span></div>` : '');

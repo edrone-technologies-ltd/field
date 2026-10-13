@@ -8,6 +8,7 @@ import { errText } from '../lib/audit.js';
 import { availability } from '../lib/avail.js';
 import { siteDays } from '../lib/wx.js';
 import { isNight, nightTag, nightToggleHtml, bindNight, wxKey } from '../lib/night.js';
+import { dtTag, dtPickHtml, bindDtPick } from '../lib/daytype.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const sunday = s => addDays(s, -new Date(s + 'T12:00:00').getDay());
@@ -68,7 +69,7 @@ async function load() {
   // תחזית ונסיעה — במקביל לשאר, עם תקרת זמן (בלי תחזית — לא מדלגים)
   const extP = Promise.all([Promise.race([siteDays(uniqS), new Promise(r => setTimeout(() => r({}), 4500))]).catch(() => ({})), travel(uniqS, Dp)]);
   const [{ data: wds }, { data: bans }, { data: week }] = await Promise.all([
-    ids.length ? sb.from('work_days').select('id,day,status,kind,project_id,crew_lead_id,drone_id,report_time,site_arrival,site_end,night,created_at,work_day_crew(user_id,cant_come_at)').in('project_id', ids).neq('status', 'cancelled').order('day') : { data: [] },
+    ids.length ? sb.from('work_days').select('id,day,status,kind,project_id,crew_lead_id,drone_id,report_time,site_arrival,site_end,night,day_type,created_at,work_day_crew(user_id,cant_come_at)').in('project_id', ids).neq('status', 'cancelled').order('day') : { data: [] },
     q(sb.from('site_bans').select('site_id,user_id,reason')),
     sb.from('work_days').select('day,crew_lead_id,project_id,projects(name,site_id,lat,lng,sites(lat,lng)),work_day_crew(user_id,cant_come_at)').gte('day', addDays(a, -1)).lte('day', b).neq('status', 'cancelled'),
   ]);
@@ -262,7 +263,7 @@ function solve() {
   const plan = W.projects.filter(inPlan);
   // 1. נעילות קודם — כמו שהמנהל קבע
   for (const [k, v] of Object.entries(W.locks)) { const [pid, d] = k.split('|'); const p = W.PM.get(pid); if (!p || !candDays(p).includes(d)) continue;
-    S.push({ pid, d, lead: v.lead || null, crew: [...(v.crew || [])], drone: v.drone || null, arr: v.arr || null, end: v.end || null, dep: v.dep || null, locked: true }); }
+    S.push({ pid, d, lead: v.lead || null, crew: [...(v.crew || [])], drone: v.drone || null, arr: v.arr || null, end: v.end || null, dep: v.dep || null, dt: v.dt || 'work', locked: true }); }
   // 2. בחירת ימים לכל פרויקט: טווח מאנדי קודם, יום "לא לטוס" מדולג (אלא אם ננעל), עד הכמות שצריך
   const order = [...plan].sort((a, b) => ((b.rangeDays.length ? 1 : 0) - (a.rangeDays.length ? 1 : 0)) || ((a.to || '9') < (b.to || '9') ? -1 : (a.to || '9') > (b.to || '9') ? 1 : 0) || (a.id < b.id ? -1 : 1));
   for (const p of order) {
@@ -365,13 +366,13 @@ function row(p, cols) {
 
 function cell(p, d, s) {
   const ex = p.ws.filter(w => w.day === d && w.status !== 'cancelled');
-  if (ex.length) return `<div class="wzc ex">${ex.map(w => `<a class="wzex" href="#/day/${w.id}"><small>קיים${nightTag(w)}</small><b>${esc(first(NM(w.crew_lead_id)) || '—')}${leadMark()}</b><small>${(w.work_day_crew || []).filter(c => c.user_id !== w.crew_lead_id).map(c => esc(first(NM(c.user_id)))).join(' · ')}</small></a>`).join('')}</div>`;
+  if (ex.length) return `<div class="wzc ex">${ex.map(w => `<a class="wzex" href="#/day/${w.id}"><small>קיים${dtTag(w)}${nightTag(w)}</small><b>${esc(first(NM(w.crew_lead_id)) || '—')}${leadMark()}</b><small>${(w.work_day_crew || []).filter(c => c.user_id !== w.crew_lead_id).map(c => esc(first(NM(c.user_id)))).join(' · ')}</small></a>`).join('')}</div>`;
   const x = wxOf(p, d), canAdd = d > W.today && (dow(d) !== 5 || W.fri);
   const inR = p.from && p.from <= d && (p.to || p.from) >= d;
   if (!s) return `<div class="wzc empty ${inR && canAdd ? 'inr' : ''} ${x?.L === 2 ? 'nofly' : ''}">${canAdd ? `<button type="button" class="wzadd" data-addd="${p.id}|${d}" aria-label="הוספת יום">${x?.L ? `<small class="${x.L === 2 ? 'bad' : 'mid'}">${x.L === 2 ? 'לא לטוס' : 'גבולי'} · ${Math.round(x.g)}</small>` : icon('plus', 16)}</button>` : ''}</div>`;
   const tone = s.g >= 80 ? 'ok' : s.g >= 55 ? 'mid' : 'bad';
   return `<div class="wzc"><button type="button" class="wzcard ${tone} ${s.locked ? 'locked' : ''}" data-wslot="${p.id}|${d}">
-    <span class="wztop"><b>${s.dep || s.depAuto}</b>${slotNight(s) ? nightTag({ day: d, site_arrival: s.arr, site_end: s.end }) : ''}${s.locked ? `<span class="wzlock" aria-label="נעול">${icon(LOCK, 13)}</span>` : ''}<span class="grow"></span><span class="wzg">${s.g}</span></span>
+    <span class="wztop"><b>${s.dep || s.depAuto}</b>${dtTag({ day_type: s.dt })}${slotNight(s) ? nightTag({ day: d, site_arrival: s.arr, site_end: s.end }) : ''}${s.locked ? `<span class="wzlock" aria-label="נעול">${icon(LOCK, 13)}</span>` : ''}<span class="grow"></span><span class="wzg">${s.g}</span></span>
     ${s.lead ? `<span class="wzlead">${esc(first(NM(s.lead)))}${leadMark()}</span>` : '<span class="wzlead bad">אין ראש צוות</span>'}
     ${s.crew.length ? `<small class="wzcrew">${s.crew.map(u => esc(first(NM(u))) + (licOk(u, d) ? ' <i class="wzpl">מטיס</i>' : '')).join(' · ')}</small>` : ''}
     ${W.PM.get(s.pid).needDrone ? `<small class="wzdr ${s.drone ? '' : 'bad'}">${icon('drone', 12)} ${s.drone ? esc(DRN(s.drone).split('(')[0].trim()) : 'בלי רחפן'}</small>` : ''}
@@ -420,12 +421,14 @@ function openSlot(pid, d) {
     <label class="field">הוספה לצוות<select id="wadd"><option value="">—</option>${opts('crew', null)}</select></label>
     ${p.needDrone ? `<label class="field">רחפן<small>${esc(s.drone ? droneScore(s.drone, s, W.S).R.join(' · ') : '')}</small><select id="wdr"><option value="">בלי רחפן</option>${W.drones.map(x2 => { const w = droneHard(x2.id, d), o = others.find(y => y.drone === x2.id);
       return `<option value="${x2.id}" ${x2.id === s.drone ? 'selected' : ''} ${w && x2.id !== s.drone ? 'disabled' : ''}>${esc(x2.name)}${w ? ' — ' + esc(w) : o ? ' · עובר מ' + esc(pname(W.PM.get(o.pid).name)) : ''}</option>`; }).join('')}</select></label>` : ''}
+    ${dtPickHtml('wdt', s.dt || 'work').replace('chips dtpick', 'chips dtpick mini')}
     ${nightToggleHtml('wnt', slotNight(s))}
     <div class="row"><label class="field grow" id="wlsa">הגעה לאתר<input type="time" id="warr" value="${esc(s.arr || '07:00')}"></label><label class="field grow" id="wlse">סיום<input type="time" id="wend" value="${esc(s.end || '')}"></label></div>
     <div class="row"><label class="field grow">יציאה<small>${tr?.min != null ? 'מחושב: ' + s.depAuto : ''}</small><input type="time" id="wdep" value="${esc(s.dep || s.depAuto)}"></label></div>
     ${blocked.length ? `<details class="wzblk"><summary>לא פנויים (${blocked.length})</summary><small>${blocked.map(esc).join('<br>')}</small></details>` : ''}
     <div class="row-btns"><button class="btn ghost" id="wdrop">הסרת היום</button>${s.locked ? '<button class="btn ghost" id="wunl">שחרור נעילה</button>' : ''}<button class="btn primary" id="wok">${s.locked ? 'שמירה' : 'נעילה'}</button></div>`, (sh, close) => {
     const nightOn = bindNight(sh, { tog: '#wnt', arr: '#warr', end: '#wend', lblA: '#wlsa', lblE: '#wlse', day: () => d });
+    const dtOf = bindDtPick(sh, 'wdt');
     $('#wdrop', sh).onclick = () => { close(); delete W.locks[pid + '|' + d]; W.out.push(pid + '|' + d); const c = cfg(p); W.P[pid] = { ...(W.P[pid] || {}), want: Math.max(0, c.want - 1), size: c.size }; solve(); toast('היום הוסר', 1500); };
     const un = $('#wunl', sh); if (un) un.onclick = () => { close(); delete W.locks[pid + '|' + d]; solve(); };
     $('#wok', sh).onclick = () => {
@@ -437,7 +440,7 @@ function openSlot(pid, d) {
       const moved = [lead, ...crew].filter(Boolean);
       for (const o of others) { const lk = W.locks[o.pid + '|' + d];
         if (lk) { lk.crew = (lk.crew || []).filter(u => !moved.includes(u)); if (moved.includes(lk.lead)) lk.lead = null; if (drone && lk.drone === drone) lk.drone = null; } }
-      W.locks[pid + '|' + d] = { lead, crew: [...new Set(crew)], drone, arr, end, dep: dep !== s.depAuto ? dep : null };
+      W.locks[pid + '|' + d] = { lead, crew: [...new Set(crew)], drone, arr, end, dep: dep !== s.depAuto ? dep : null, dt: dtOf() };
       close(); solve(); toast('ננעל — השאר סודר מחדש סביבו', 1800);
     };
   });
@@ -475,6 +478,10 @@ async function apply() {
     } else xs.forEach(s => items.push({ kind: 'day', p: pid, d: s.d, lead: s.lead, crew: s.crew, drone: s.drone, report: s.dep || s.depAuto, arrive: s.arr || null, ...(s.end ? { end: s.end } : {}), need_pilot: p.needDrone }));
   }
   const { data: r, error } = await sb.rpc('wizard_apply', { items });
+  // סוג יום שאינו "עבודה" (db/138) — אחרי ההחלה, לפי פרויקט+סוג (יום שלא נוצר — לא מושפע)
+  if (!error) for (const [k, ds] of Object.entries(S.filter(s => s.dt && s.dt !== 'work').reduce((m, s) => ((m[s.pid + '|' + s.dt] ||= []).push(s.d), m), {}))) {
+    const [p, t] = k.split('|'); await sb.rpc('set_day_type', { t, p, days: ds }).then(({ error: e }) => e && toast(errText(e, 'סוג היום לא נשמר'), 3000));
+  }
   const fails = error ? [errText(error, 'לא נשמר')] : (r?.fails || []).map(f => `${pname(W.PM.get(f.p)?.name || '')}${f.d ? ' ' + sd(f.d) : ''}: ${errText({ message: f.why }, 'לא נשמר')}`);
   const okN = r?.ok || 0, skipped = noPilot.map(s => `${nm(s)}: אין מטיס בתוקף — לא הוחל`);
   W.locks = {}; W.extra = []; W.out = []; W.P = {};

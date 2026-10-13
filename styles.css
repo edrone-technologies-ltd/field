@@ -2538,3 +2538,17 @@ body.ws .xrow .stack.tight{flex-direction:row;gap:6px}
 .ntog span:first-child{display:inline-flex;align-items:center;gap:6px}
 .isnight .ntog span:first-child{color:#a9a8ff}
 .wztop .ntag{margin-inline-start:4px;padding:0 5px;font-size:10px}
+/* סוג יום (lib/daytype.js, db/138) — תגית קטנה ליד שם היום, ובורר שבבים בשיבוץ */
+.dttag{display:inline-flex;align-items:center;margin-inline-start:6px;padding:1px 7px;border-radius:99px;font-size:11px;font-weight:700;line-height:1.5;vertical-align:middle;white-space:nowrap;background:#3a2f12;color:#ffd77a;border:1px solid #5c4a1b}
+.dttag.dt-coordination{background:#13304a;color:#9fd2ff;border-color:#1f4a6e}
+.dttag.dt-prep{background:#23302a;color:#b6e3c6;border-color:#35503f}
+:root[data-theme="light"] .dttag{background:#fff3d6;color:#7a5200;border-color:#f1d9a0}
+:root[data-theme="light"] .dttag.dt-coordination{background:#e3f1ff;color:#0f4b7d;border-color:#bcdcf7}
+:root[data-theme="light"] .dttag.dt-prep{background:#e6f5eb;color:#1f5a35;border-color:#c3e4cf}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .dttag{background:#fff3d6;color:#7a5200;border-color:#f1d9a0}
+  :root:not([data-theme="dark"]) .dttag.dt-coordination{background:#e3f1ff;color:#0f4b7d;border-color:#bcdcf7}
+  :root:not([data-theme="dark"]) .dttag.dt-prep{background:#e6f5eb;color:#1f5a35;border-color:#c3e4cf}}
+.chip-dark .dttag,.phero .dttag,.photo-hero .dttag{margin-inline-start:4px}
+.wztop .dttag{margin-inline-start:4px;padding:0 5px;font-size:10px}
+.dtpick{gap:6px}.dtpick .chip{min-height:34px;padding:5px 11px;font-size:.85rem}
+.dtpick.mini .chip{min-height:28px;padding:3px 9px;font-size:.8rem}

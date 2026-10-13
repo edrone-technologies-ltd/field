@@ -3,6 +3,7 @@ import { navButtons, replaceHash, thumbUrls , stLabel } from '../lib/core.js';
 import { availability } from '../lib/avail.js';
 import { facadeOrder } from '../lib/sun.js';
 import { isNight, nightRange, nightTag, nightToggleHtml, bindNight } from '../lib/night.js';
+import { dtTag, dtPickHtml, bindDtPick, isWorkDay, SHORT as DT_SHORT } from '../lib/daytype.js';
 import { errText } from '../lib/audit.js';
 import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, folderGrid, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, backBtn, HE_D1, leadMark, coverFor, skeleton } from '../lib/core.js';
 
@@ -157,16 +158,18 @@ export async function renderProject(el, id, tab = 'o') {
   const wdays = (a, b) => { let n = 0; for (let d = new Date(a + 'T12:00'); isoDay(d) <= b; d.setDate(d.getDate() + 1)) if (d.getDay() < 5) n++; return n || 1; };
   // לו״ז הפרויקט: הטווח (מסונכרן עם מאנדי בשני הכיוונים) + ימי השטח. מנהל: שינוי תאריכים, שיבוץ, העברת יום
   function schedSection() {
-    const t = isoDay(), up = D.days.filter(d => d.status !== 'done' && d.status !== 'cancelled' && d.day >= t).sort((a, b) => a.day < b.day ? -1 : 1), done = D.days.filter(d => d.status === 'done' && !/יום טסטים/.test(d.notes || '')).length;
+    const t = isoDay(), up = D.days.filter(d => d.status !== 'done' && d.status !== 'cancelled' && d.day >= t).sort((a, b) => a.day < b.day ? -1 : 1), done = D.days.filter(d => d.status === 'done' && isWorkDay(d)).length;
+    // כל סוגי הימים = ביצוע (נספרים בטווח); 'בוצעו' = ימי עבודה בלבד. ימים מיוחדים — מסוכמים לפי סוג
+    const live = D.days.filter(d => d.status !== 'cancelled'), oth = [...new Set(live.filter(d => !isWorkDay(d)).map(d => d.day_type))].map(k => `${live.filter(d => d.day_type === k).length} ${DT_SHORT[k]}`).join(' · ');
     const PL = projPulses(p), out = up.length && PL.length && up.some(d => !PL.some(([f, t]) => d.day >= f && d.day <= t));
     if (!M && !up.length) return '';
     const crewOf = d => [...new Map([[d.crew_lead_id, null], ...(d.work_day_crew || []).map(c => [c.user_id, c])]).keys()].filter(Boolean)
       .map(u => { const c = (d.work_day_crew || []).find(x => x.user_id === u); return esc((c?.profiles?.full_name || D.team.find(x => x.id === u)?.full_name || '').split(' ')[0]) + (u === d.crew_lead_id ? leadMark() : ''); }).join(' · ');
     return `<section id="sched"><div class="sh-row"><h3 class="sh">לו״ז</h3>${M ? '<button class="more" id="dates">שינוי תאריכים</button>' : ''}</div>
       <div class="list">
-        <div class="lrow"><span class="mic">${icon('calendar', 19)}</span><span class="grow">${PL.length > 1 ? `<b class="pulsetxt">${PL.map(r => `<span>${pulseLbl(r)}</span>`).join(' · ')}</b><small>${PL.length} פעימות · ${pulseWd(PL)} ימי עבודה${done ? ` · ${done} בוצעו` : ''}</small>` : p.planned_from ? `<b>${dm(p.planned_from)} – ${dm(p.planned_to || p.planned_from)}</b><small>${(n => n === 1 ? 'יום שטח אחד' : n + ' ימי שטח')(D.days.filter(d => d.status !== 'cancelled' && !/יום טסטים/.test(d.notes || '')).length || wdays(p.planned_from, p.planned_to || p.planned_from))}${done ? ` · ${done} בוצעו` : ''}</small>` : '<b>אין תאריכים</b>'}</span>${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : p.dates_dirty && p.monday_item_id ? '<span class="pill">מתעדכן במאנדי</span>' : ''}</div>
+        <div class="lrow"><span class="mic">${icon('calendar', 19)}</span><span class="grow">${PL.length > 1 ? `<b class="pulsetxt">${PL.map(r => `<span>${pulseLbl(r)}</span>`).join(' · ')}</b><small>${PL.length} פעימות · ${pulseWd(PL)} ימי עבודה${done ? ` · ${done} בוצעו` : ''}</small>` : p.planned_from ? `<b>${dm(p.planned_from)} – ${dm(p.planned_to || p.planned_from)}</b><small>${(n => n === 1 ? 'יום שטח אחד' : n + ' ימי שטח')(live.length || wdays(p.planned_from, p.planned_to || p.planned_from))}${done ? ` · ${done} בוצעו` : ''}${oth ? ` · ${oth}` : ''}</small>` : '<b>אין תאריכים</b>'}</span>${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : p.dates_dirty && p.monday_item_id ? '<span class="pill">מתעדכן במאנדי</span>' : ''}</div>
         ${up.map(d => `<a class="lrow" href="#/day/${d.id}"><span class="datebox ${d.day === t ? 'now' : ''}"><b>${+d.day.slice(8)}</b><small>${d.day === t ? 'היום' : HE_D1[new Date(d.day + 'T12:00').getDay()]}</small></span>
-          <span class="grow"><b>${d.report_time ? 'יציאה ' + d.report_time.slice(0, 5) : 'יום שטח'}${d.is_last_day ? ' · יום אחרון' : ''}${nightTag(d)}</b><small>${isNight(d) ? esc(nightRange(d)) + ' · ' : d.site_arrival ? `באתר <bdi dir="ltr">${d.site_arrival.slice(0, 5)}${d.site_end ? '–' + d.site_end.slice(0, 5) : ''}</bdi> · ` : ''}${crewOf(d) || 'לא שובץ צוות'}</small></span>${M ? `<button class="chip" data-mv="${d.id}" data-day="${d.day}">עריכה</button>` : ''}</a>`).join('')}
+          <span class="grow"><b>${d.report_time ? 'יציאה ' + d.report_time.slice(0, 5) : 'יום שטח'}${d.is_last_day ? ' · יום אחרון' : ''}${dtTag(d)}${nightTag(d)}</b><small>${isNight(d) ? esc(nightRange(d)) + ' · ' : d.site_arrival ? `באתר <bdi dir="ltr">${d.site_arrival.slice(0, 5)}${d.site_end ? '–' + d.site_end.slice(0, 5) : ''}</bdi> · ` : ''}${crewOf(d) || 'לא שובץ צוות'}</small></span>${M ? `<button class="chip" data-mv="${d.id}" data-day="${d.day}">עריכה</button>` : ''}</a>`).join('')}
         ${M ? `<button class="addrow" id="schm">${icon('plus', 18)} ${up.length ? 'שיבוץ מחדש' : 'שיבוץ ימים'}</button>` : ''}
       </div></section>`;
   }
@@ -430,6 +433,7 @@ export async function renderProject(el, id, tab = 'o') {
       <label class="field">ראש צוות<select id="sl">${leads.map(x => `<option value="${x.id}" data-n="${esc(x.full_name)}" ${x.id === leadDef ? 'selected' : ''}>${esc(x.full_name)}</option>`).join('')}</select></label>
       <div class="field">צוות<div class="chips">${D.team.map(x => `<button class="chip" data-u="${x.id}" aria-pressed="${crewDef.has(x.id)}"><span>${esc(x.full_name)}</span><small class="why"></small></button>`).join('')}</div></div>
       <label class="field">רחפן<select id="sdr"><option value="">בלי רחפן</option>${D.drones.map(x => `<option value="${x.id}" data-n="${esc(x.name)}" data-w="${dTag(x)}" ${x.health === 'grounded' ? 'disabled' : x.id === droneDef ? 'selected' : ''}>${esc(x.name)}${dTag(x)}</option>`).join('')}</select></label>
+      ${dtPickHtml('sdt', 'work')}
       ${nightToggleHtml('snt', isNight(prev))}
       <div class="row"><label class="field grow" id="lsa">הגעה לאתר<input type="time" id="sa" value="${(prev?.site_arrival || '07:00').slice(0, 5)}"></label><label class="field grow" id="lse">סיום באתר<input type="time" id="se" value="${(prev?.site_end || '').slice(0, 5)}"></label></div>
       <label class="field">יציאה מהמשרד<small id="sthint">מחשב לפי מרחק…</small><input type="time" id="st" value="${(prev?.report_time || '06:00').slice(0, 5)}"></label>
@@ -508,6 +512,7 @@ export async function renderProject(el, id, tab = 'o') {
       $('#sa', s).onchange = () => { recalc(); drawWx(); }; $('#st', s).oninput = () => { touched = true; };
       // עבודת לילה: ההגעה בערב, הסיום למחרת. היציאה מחושבת אחורה מההגעה (recalc), התחזית — על שעות הלילה (wxFor)
       const nightOn = bindNight(s, { tog: '#snt', arr: '#sa', end: '#se', lblA: '#lsa', lblE: '#lse' });
+      const dtOf = bindDtPick(s, 'sdt');   // סוג היום — לכל הימים שמשובצים עכשיו (db/138)
       $('#snt', s).addEventListener('change', () => { if ($('#snt', s).checked) touched = false; recalc(); });
       sb.from('app_settings').select('value').eq('key', 'dispatch').maybeSingle().then(async ({ data }) => {
         Object.assign(Dp, data?.value || {}); recalc();
@@ -532,6 +537,7 @@ export async function renderProject(el, id, tab = 'o') {
         if (!days.length || !args.lead || $('#sl', s).selectedOptions[0]?.disabled) return toast(days.length ? 'אין ראש צוות פנוי בתאריכים האלה' : 'חסר תאריך');
         const go = $('#sgo', s); go.disabled = true;
         const { data, error } = await sb.rpc('schedule_work_days_multi', args); if (error) { go.disabled = false; return toast(errText(error, 'השיבוץ לא נשמר — נסו שוב'), 4000); }
+        if (dtOf() !== 'work') { const { error: e2 } = await sb.rpc('set_day_type', { t: dtOf(), p: id, days }); if (e2) toast(errText(e2, 'סוג היום לא נשמר'), 3000); }
         const np = mergePulses(pulses).length;
         close(); toast(np > 1 ? `שובצו ${data} ימי שטח ב-${np} פעימות` : `שובצו ${data} ימי שטח`); reload('o');
       };

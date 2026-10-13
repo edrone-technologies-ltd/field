@@ -4,6 +4,7 @@ import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$
 import { needsList, bindNeeds } from './attention.js';
 import { errText } from '../lib/audit.js';
 import { isNight, nightRange, nightTag, carryNight, isCurrent, wxKey } from '../lib/night.js';
+import { dtTag } from '../lib/daytype.js';
 
 const today = () => isoDay();
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
@@ -33,7 +34,7 @@ export async function load() {
     M ? q(sb.from('spec_visits').select('*')) : [],
     q(sb.from('equipment').select('id,name,health,health_detail,health_date').eq('kind', 'drone').order('name')),
     M ? q(sb.rpc('profiles_full').select('id,full_name,role,is_pilot,pilot_license_expiry,is_active')) : [],
-    q(sb.from('work_days').select('id,day,status,kind,night,report_time,site_arrival,site_end,project_id,crew_lead_id,is_last_day,day_goal,gust_max,wind_max,weather_alerted,departed_at,arrived_at,finished_at,work_day_crew(*,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
+    q(sb.from('work_days').select('id,day,status,kind,night,day_type,report_time,site_arrival,site_end,project_id,crew_lead_id,is_last_day,day_goal,gust_max,wind_max,weather_alerted,departed_at,arrived_at,finished_at,work_day_crew(*,profiles(full_name))').gte('day', addDays(t, -1)).lte('day', addDays(t, 13)).order('report_time')),
     M ? q(sb.from('sync_log').select('created_at').eq('entity', 'full_pull').order('created_at', { ascending: false }).limit(1)) : [],
     M ? q(sb.from('sync_log').select('entity,entity_id,error').eq('direction', 'to_monday').eq('status', 'error').gte('created_at', new Date(Date.now() - 864e5).toISOString()).limit(20)) : [],
     q(sb.rpc('my_inbox')),
@@ -248,7 +249,7 @@ function dayHero(w, pr, cover, L, next) {
   const nx = N.done && next ? `<a class="lrow nextup" href="#/day/${next.id}"><span class="grow"><small>הבא · ${esc(dayWord(next.day))}</small><b>${esc(next.pname || '')}</b></span>${next.report_time ? `<b class="nxt">${next.report_time.slice(0, 5)}</b>` : ''}<span class="chev">${icon('chev', 18)}</span></a>` : '';
   return `<div class="dhero nxh"><a class="photo-hero" href="#/day/${w.id}">
       <span class="img" style="background-image:url('${cover || ''}')"></span>
-      <span class="ph-top"><span class="chip-dark">${isNight(w) ? nightTag(w) + ' ' : ''}${isToday ? (isNight(w) ? 'הלילה' : 'היום') : esc(dayWord(w.day))}${w.is_last_day ? ' · יום אחרון' : ''}${ilead ? ' · ★' : ''}</span>${chip2 ? `<span class="chip-dark">${chip2}</span>` : ''}</span>
+      <span class="ph-top"><span class="chip-dark">${isNight(w) ? nightTag(w) + ' ' : ''}${isToday ? (isNight(w) ? 'הלילה' : 'היום') : esc(dayWord(w.day))}${w.is_last_day ? ' · יום אחרון' : ''}${ilead ? ' · ★' : ''}${dtTag(w)}</span>${chip2 ? `<span class="chip-dark">${chip2}</span>` : ''}</span>
       <span class="ph-bottom"><b>${esc(pr.name || '')}</b>
         <span class="hero-times">${w.report_time && N.s < 2 ? `<span><small>יציאה</small><b>${w.report_time.slice(0, 5)}</b></span>` : ''}${w.site_arrival && N.s < 3 ? `<span><small>באתר</small><b>${w.site_arrival.slice(0, 5)}</b></span>` : ''}${isNight(w) && w.site_end && N.s < 4 ? `<span><small>סיום${carryNight(w) ? '' : ' · למחרת'}</small><b>${w.site_end.slice(0, 5)}</b></span>` : ''}${N.s < 4 ? `<span class="wxg" data-wxg="${esc(pr.site_id || pr.id || '')}|${wxKey(w)}"></span>` : ''}</span>
         ${crew.length ? `<span class="hero-crew">${crew.slice(0, 4).map(c => `<span class="avatar xs">${esc(initials(c.profiles.full_name))}</span>`).join('')}<small>${esc(crew.map(c => c.profiles.full_name.split(' ')[0] + (c.user_id === w.crew_lead_id ? ' ★' : '')).join(', '))}</small></span>` : ''}
@@ -353,7 +354,7 @@ const dayRow = (w, byId, compact = false) => { const me = meOn(w), pr = byId.get
   const crew = (w.work_day_crew || []).filter(c => c.user_id !== state.user.id).map(c => (c.profiles?.full_name || '').split(' ')[0]).filter(Boolean);
   const st = no && w.status === 'planned' ? '<span class="pill bad">לא אגיע</span>' : w.status !== 'planned' ? `<span class="pill ${w.status === 'done' ? 'ok' : 'lime'}">${DAY_ST[w.status]}</span>` : okd ? '<span class="pill ok">אישרת ✓</span>' : '';
   return `<div class="dayrow"><a class="lrow" href="#/day/${w.id}"><span class="datebox ${w.day === today() ? 'now' : ''}"><b>${+w.day.slice(8)}</b><small>${w.day === today() ? 'היום' : 'יום ' + HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
-  <span class="grow"><b>${esc(pr.name || '')}${nightTag(w)}</b><small>${[w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : '', isNight(w) ? esc(nightRange(w)) : w.site_arrival ? 'באתר ' + w.site_arrival.slice(0, 5) : '', w.is_last_day ? 'יום אחרון' : '', w.crew_lead_id === state.user.id ? 'ראש צוות' : '', crew.length ? 'עם ' + esc(crew.join(', ')) : ''].filter(Boolean).join(' · ')}</small></span>
+  <span class="grow"><b>${esc(pr.name || '')}${dtTag(w)}${nightTag(w)}</b><small>${[w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) : '', isNight(w) ? esc(nightRange(w)) : w.site_arrival ? 'באתר ' + w.site_arrival.slice(0, 5) : '', w.is_last_day ? 'יום אחרון' : '', w.crew_lead_id === state.user.id ? 'ראש צוות' : '', crew.length ? 'עם ' + esc(crew.join(', ')) : ''].filter(Boolean).join(' · ')}</small></span>
   <span class="dr-end">${st}<span class="wxg" data-wxg="${esc(pr.site_id || pr.id || '')}|${wxKey(w)}"></span></span></a>
   ${needConfirm ? `<div class="${compact ? 'chips dr-mini' : 'row-btns dr-act'}" data-act="${w.id}"><button class="${compact ? 'chip' : 'btn ghost sm'}" data-cant="${w.id}">לא אוכל</button><button class="${compact ? 'chip on' : 'btn primary sm'}" data-confirm="${w.id}">אגיע ✓</button></div>` : ''}</div>`; };
 // נשלח דרך התור — עובד גם בלי קליטה
@@ -404,7 +405,7 @@ export async function renderSchedule(el) {
 // ---------- הלו״ז שלי (עובד שטח / ראש צוות): פס שבועיים במבט, ואז הימים לפי שבוע, עם מי ותחזית ----------
 const dowOf = s => new Date(s + 'T12:00').getDay();
 async function myDays(from, to) {
-  const me = state.user.id, sel = 'id,day,status,night,report_time,site_arrival,site_end,project_id,crew_lead_id,is_last_day,day_goal,kind,projects(id,name,site_id,lat,lng,sites(lat,lng)),work_day_crew(*,profiles(full_name))';
+  const me = state.user.id, sel = 'id,day,status,night,day_type,report_time,site_arrival,site_end,project_id,crew_lead_id,is_last_day,day_goal,kind,projects(id,name,site_id,lat,lng,sites(lat,lng)),work_day_crew(*,profiles(full_name))';
   const [a, b] = await Promise.all([
     sb.from('work_days').select(sel.replace('work_day_crew(*', 'mine:work_day_crew!inner(user_id),work_day_crew(*')).eq('mine.user_id', me).gte('day', from).lte('day', to),
     sb.from('work_days').select(sel).eq('crew_lead_id', me).gte('day', from).lte('day', to)]);

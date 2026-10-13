@@ -3,6 +3,7 @@ import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, HE_D1, isoDa
 import { errText } from '../lib/audit.js';
 import { availability } from '../lib/avail.js';
 import { nightTag, wxKey } from '../lib/night.js';
+import { dtTag } from '../lib/daytype.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const sunday = s => addDays(s, -new Date(s + 'T12:00:00').getDay());
@@ -23,7 +24,7 @@ export async function renderDispatch(el, start, o = {}) {
   $('#wn').onclick = () => replaceHash('#/dispatch/' + addDays(start, 7));
   const [{ data: people }, { data: wds }, { data: abs }, { data: projects }, { data: drones }] = await Promise.all([
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).order('full_name'),
-    sb.from('work_days').select('id,day,status,night,site_arrival,site_end,project_id,crew_lead_id,drone_id,report_time,gust_max,weather_alerted,projects(name,site_id),work_day_crew(user_id,confirmed_at,cant_come_at,cant_come_reason)').gte('day', start).lte('day', end).neq('status', 'cancelled'),
+    sb.from('work_days').select('id,day,status,night,day_type,site_arrival,site_end,project_id,crew_lead_id,drone_id,report_time,gust_max,weather_alerted,projects(name,site_id),work_day_crew(user_id,confirmed_at,cant_come_at,cant_come_reason)').gte('day', start).lte('day', end).neq('status', 'cancelled'),
     sb.from('absences').select('user_id,kind,date_from,date_to,status').neq('status', 'rejected').lte('date_from', end).gte('date_to', start),
     sb.from('projects').select('id,name,status_label,monday_group,closed_summary,planned_from,planned_to,pulses,site_id').or('monday_group.is.null,monday_group.neq.group_mm5052gw').order('name').then(r => ({ ...r, data: (r.data || []).filter(isOpenProject) })),
     sb.from('equipment').select('id,name,health').eq('kind', 'drone'),
@@ -32,7 +33,7 @@ export async function renderDispatch(el, start, o = {}) {
   // חור בין ימים משובצים = החלטה (יום שבוטל), לא "חסר". עמודות הימים מציגות רק ימי שטח אמיתיים
   const t0 = isoDay(), wk = d => new Date(d + 'T12:00').getDay() < 5;
   const cand = (projects || []).filter(x => days.some(d => d >= t0 && wk(d) && inPulse(x, d)));
-  const { data: cdays } = cand.length ? await sb.from('work_days').select('project_id,day,notes').in('project_id', cand.map(x => x.id)).neq('status', 'cancelled').then(r => ({ data: (r.data || []).filter(w => !/יום טסטים/.test(w.notes || '')) })) : { data: [] };
+  const { data: cdays } = cand.length ? await sb.from('work_days').select('project_id,day').in('project_id', cand.map(x => x.id)).neq('status', 'cancelled') : { data: [] };   // כל סוגי הימים (גם טסטים/תיאום) = ביצוע
   const needP = cand.map(x => {
     const ds = (cdays || []).filter(w => w.project_id === x.id).map(w => w.day).sort(), lo = ds[0], hi = ds.at(-1), miss = [];
     for (let d = x.planned_from >= t0 ? x.planned_from : t0; d <= (x.planned_to || x.planned_from); d = addDays(d, 1)) if (wk(d) && inPulse(x, d) && (!lo || d < lo || d > hi)) miss.push(d);
@@ -50,7 +51,7 @@ export async function renderDispatch(el, start, o = {}) {
     const conflict = mine.length > 1 || (mine.length && a);
     return `<td class="${conflict ? 'conf' : ''} ${d === isoDay() ? 'today' : ''}" data-u="${p.id}" data-d="${d}">${a ? `<span class="dchip abs ${a.status === 'pending' ? 'pend' : ''}">${ABS[a.kind]}${a.status === 'pending' ? '?' : ''}</span>` : ''}
       ${mine.map(w => { const no = w.status === 'planned' && noCome(w, p.id);
-        return `<span class="dchip ${w.status === 'done' ? 'done' : ''} ${w.weather_alerted ? 'wx' : ''} ${no ? 'no' : ''}" data-w="${w.id}" ${w.status === 'planned' ? `draggable="true" data-drag="${w.id}|${p.id}|${d}"` : ''} ${no ? 'data-da="1"' : ''} title="${esc(w.projects?.name || '')}${no ? ' · לא יכול להגיע' + (no.cant_come_reason ? ': ' + esc(no.cant_come_reason) : '') : ''}">${no ? 'לא יגיע · ' : ''}${esc((w.projects?.name || '').split(/[—–-]/)[0].trim().slice(0, 14))}${w.crew_lead_id === p.id ? leadMark() : ''}${nightTag(w)}</span>`; }).join('')}</td>`;
+        return `<span class="dchip ${w.status === 'done' ? 'done' : ''} ${w.weather_alerted ? 'wx' : ''} ${no ? 'no' : ''}" data-w="${w.id}" ${w.status === 'planned' ? `draggable="true" data-drag="${w.id}|${p.id}|${d}"` : ''} ${no ? 'data-da="1"' : ''} title="${esc(w.projects?.name || '')}${no ? ' · לא יכול להגיע' + (no.cant_come_reason ? ': ' + esc(no.cant_come_reason) : '') : ''}">${no ? 'לא יגיע · ' : ''}${esc((w.projects?.name || '').split(/[—–-]/)[0].trim().slice(0, 14))}${w.crew_lead_id === p.id ? leadMark() : ''}${dtTag(w)}${nightTag(w)}</span>`; }).join('')}</td>`;
   };
   // רענון אחרי שיבוץ: מריצים מחדש את המסך הנוכחי (לו״ז או לוח שיבוץ) — מוגדר לפני המסלול הצר, שגם הוא משתמש בו
   const reload = () => dispatchEvent(new HashChangeEvent('hashchange'));
@@ -115,7 +116,7 @@ export async function renderDispatch(el, start, o = {}) {
       return `<td class="${d === isoDay() ? 'today' : ''}" data-pd="${r.pid}|${d}">${ws.map(w => { const crew = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
         const nc = w.status === 'planned' ? crew.filter(u => noCome(w, u)) : [], un = w.status === 'planned' ? (w.work_day_crew || []).filter(c => c.user_id !== w.crew_lead_id && !c.confirmed_at && !c.cant_come_at).length : 0, dr = DR.get(w.drone_id);
         return `<button type="button" class="dpday ${w.status === 'done' ? 'done' : w.status !== 'planned' ? 'live' : ''} ${nc.length ? 'no' : ''}" data-pw="${w.id}" data-st="${w.status}" ${w.status === 'planned' ? `draggable="true" data-drag="${w.id}|${r.pid}|${d}"` : ''}>
-          <span class="row tight"><b class="grow">${w.report_time ? w.report_time.slice(0, 5) : w.status === 'done' ? 'בוצע' : '—'}${nightTag(w)}</b>${r.site && w.status === 'planned' ? `<span data-wx="${r.site}|${wxKey(w)}"></span>` : ''}</span>
+          <span class="row tight"><b class="grow">${w.report_time ? w.report_time.slice(0, 5) : w.status === 'done' ? 'בוצע' : '—'}${dtTag(w)}${nightTag(w)}</b>${r.site && w.status === 'planned' ? `<span data-wx="${r.site}|${wxKey(w)}"></span>` : ''}</span>
           <small>${crew.map(u => (noCome(w, u) ? `<s>${esc(NM.get(u) || '')}</s>` : esc(NM.get(u) || '')) + (u === w.crew_lead_id ? leadMark() : '')).join(' · ') || 'בלי צוות'}</small>
           ${dr ? `<small class="${dr.health === 'grounded' ? 'bad' : ''}">${esc(dr.name)}${dr.health === 'grounded' ? ' · מקורקע' : ''}</small>` : w.status === 'planned' ? '<small class="bad">בלי רחפן</small>' : ''}
           ${nc.length ? `<span class="pill bad">${nc.length > 1 ? nc.length + ' לא יגיעו' : 'לא יגיע'}</span>` : un ? `<span class="pill warn">${un} לא אישרו</span>` : ''}</button>`; }).join('')}</td>`;
@@ -144,7 +145,7 @@ export async function renderDispatch(el, start, o = {}) {
       return `<section class="dday ${d === isoDay() ? 'today' : ''} ${free ? 'free' : ''}"><div class="ddh"><b>${HE_D1[dow]} ${dm(d)}</b>${d === isoDay() ? '<span class="pill lime">היום</span>' : ''}${free ? '<span class="muted">פנוי</span>' : ''}<span class="grow"></span>${dow < 6 ? `<button class="hbtn" type="button" data-add="${d}" aria-label="שיבוץ">${icon('plus', 18)}</button>` : ''}</div>
         ${wd.map(w => { const crew = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
           const nc = w.status === 'planned' ? crew.filter(u => noCome(w, u)) : [], tag = nc.length ? 'button' : 'a';
-          return `<${tag} class="dline ${w.status === 'done' ? 'done' : ''}" ${nc.length ? `type="button" data-da="${w.id}"` : `href="#/day/${w.id}"`}><span class="grow"><b>${esc(w.projects?.name || '')}${nightTag(w)}</b><small>${crew.map(u => (noCome(w, u) ? `<s>${esc(NM.get(u) || '')}</s>` : esc(NM.get(u) || '')) + (u === w.crew_lead_id ? leadMark() : '') + ((busy.get(u) || 0) > 1 ? `<span class="dwarn" title="משובץ פעמיים" aria-label="משובץ פעמיים">${icon('alert', 14)}</span>` : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${nc.length ? `<span class="pill bad">${nc.length > 1 ? nc.length + ' לא יגיעו' : 'לא יגיע'}</span>` : w.status === 'done' ? '<span class="pill ok">בוצע</span>' : w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${d}"></span>` : ''}</${tag}>`; }).join('')}
+          return `<${tag} class="dline ${w.status === 'done' ? 'done' : ''}" ${nc.length ? `type="button" data-da="${w.id}"` : `href="#/day/${w.id}"`}><span class="grow"><b>${esc(w.projects?.name || '')}${dtTag(w)}${nightTag(w)}</b><small>${crew.map(u => (noCome(w, u) ? `<s>${esc(NM.get(u) || '')}</s>` : esc(NM.get(u) || '')) + (u === w.crew_lead_id ? leadMark() : '') + ((busy.get(u) || 0) > 1 ? `<span class="dwarn" title="משובץ פעמיים" aria-label="משובץ פעמיים">${icon('alert', 14)}</span>` : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${nc.length ? `<span class="pill bad">${nc.length > 1 ? nc.length + ' לא יגיעו' : 'לא יגיע'}</span>` : w.status === 'done' ? '<span class="pill ok">בוצע</span>' : w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${d}"></span>` : ''}</${tag}>`; }).join('')}
         ${ab.map(a => `<div class="dline abs"><span class="grow"><small>${esc(NM.get(a.user_id) || '')}: ${ABS[a.kind]}${a.status === 'pending' ? ' (ממתין לאישור)' : ''}</small></span></div>`).join('')}
 </section>`;
     }).join('');

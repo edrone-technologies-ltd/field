@@ -4,6 +4,7 @@
 import { sb, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, HE_DOW, toast, sheet, timeAgo, initials, shortName, backBtn, state, thumbUrls, zoom } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 import { isNight, isCurrent, endDay, nightTag, nightRange, wxKey } from '../lib/night.js';
+import { dtTag } from '../lib/daytype.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const first = n => (n || '').split(' ')[0];
@@ -97,7 +98,7 @@ async function load(c) {
   const soft = p => q(p).catch(() => []);
   try {
     const [days, people, drones, crit, miss, rdy, dd, nIss, nPh, nSh, set] = await Promise.all([
-      q(sb.from('work_days').select('id,day,kind,status,night,report_time,site_arrival,site_end,departed_at,arrived_at,opened_at,finished_at,closed_at,crew_lead_id,drone_id,project_id,lat,lng,address,weather_alerted,gust_max,air_minutes,flights,projects(id,name,site_id,lat,lng,sites(id,name,lat,lng)),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', addDays(t, -3)).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
+      q(sb.from('work_days').select('id,day,kind,status,night,day_type,report_time,site_arrival,site_end,departed_at,arrived_at,opened_at,finished_at,closed_at,crew_lead_id,drone_id,project_id,lat,lng,address,weather_alerted,gust_max,air_minutes,flights,projects(id,name,site_id,lat,lng,sites(id,name,lat,lng)),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', addDays(t, -3)).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
       soft(sb.from('profiles').select('id,full_name,phone,is_pilot').eq('is_active', true)),
       soft(sb.from('equipment').select('id,name,health').eq('kind', 'drone')),
       soft(sb.from('issues').select('id,body,kind,project_id,work_day_id,opened_by,created_at,projects(name)').eq('status', 'open').eq('severity', 'critical').gte('created_at', d14).order('created_at', { ascending: false })),
@@ -250,7 +251,7 @@ function row(c, w, now, isToday) {
   const steps = [['יציאה', w.departed_at, w.report_time], ['הגעה', w.arrived_at, w.site_arrival], ['עבודה', w.opened_at || (['working', 'issue', 'done'].includes(w.st) ? w.arrived_at : null), null], ['סגירה', w.finished_at || w.closed_at, null]], eta = isToday ? etaOf(w) : null;
   const fl = isToday ? lateOf(w, now) : [];
   return `<button class="lvrow s-${k}${c.focus === w.id ? ' sel' : ''}${isToday ? '' : ' later'}" type="button" data-f="${w.id}">
-    <span class="lvwho"><span class="lvav s-${k}">${esc(lead ? initials(lead.full_name) : '?')}</span><span class="grow"><b>${esc(nameOf(w))}${nightTag(w)}</b><small>${esc([lead ? first(lead.full_name) + ' ★' : 'אין ראש צוות', (w.work_day_crew || []).some(m => m.user_id !== w.crew_lead_id) ? `+${(w.work_day_crew || []).filter(m => m.user_id !== w.crew_lead_id).length}` : '', dr?.name].filter(Boolean).join(' · '))}</small></span>
+    <span class="lvwho"><span class="lvav s-${k}">${esc(lead ? initials(lead.full_name) : '?')}</span><span class="grow"><b>${esc(nameOf(w))}${dtTag(w)}${nightTag(w)}</b><small>${esc([lead ? first(lead.full_name) + ' ★' : 'אין ראש צוות', (w.work_day_crew || []).some(m => m.user_id !== w.crew_lead_id) ? `+${(w.work_day_crew || []).filter(m => m.user_id !== w.crew_lead_id).length}` : '', dr?.name].filter(Boolean).join(' · '))}</small></span>
       <span class="lvst s-${k}">${isToday ? ST[w.st][0] : whenOf(w.day, c.data.t)}</span></span>
     <span class="lvtrack">${w.report_time ? `<i class="lvmk" style="inset-inline-start:${pct(minOf(at(w.day, w.report_time)))}%" title="יציאה מתוכננת"></i>` : ''}${w.site_arrival ? `<i class="lvmk arr" style="inset-inline-start:${pct(minOf(at(w.day, w.site_arrival)))}%" title="הגעה מתוכננת"></i>` : ''}${w.site_end ? `<i class="lvmk end" style="inset-inline-start:${pct(minOf(at(endDay(w), w.site_end)))}%" title="סיום מתוכנן"></i>` : ''}${eta && !w.finished_at ? `<i class="lveta" style="inset-inline-start:${pct(minOf(at(isNight(w) && eta < t5(w.site_arrival) ? endDay(w) : w.day, eta)))}%"></i>` : ''}
       ${isToday && minOf(now) > H0 && minOf(now) < H1 ? `<i class="lvnowl" style="inset-inline-start:${pct(minOf(now))}%"></i>` : ''}${dep != null ? seg(dep, arr ?? end ?? dep, 'rt') : ''}${arr != null ? seg(arr, end ?? arr, w.st === 'issue' ? 'is' : w.st === 'done' ? 'dn' : 'wk') : ''}</span>
@@ -337,7 +338,7 @@ function drawWeek(c) {
   const { t, D, P } = c.data, cols = Array.from({ length: 7 }, (_, i) => addDays(t, i));
   const n = D.filter(w => w.day >= t).length;
   box.innerHTML = `<div class="lvsh"><h3>השבוע</h3>${n ? `<span class="lvcnt">${n}</span>` : ''}</div><div class="lvweek">${cols.map(d => { const ws = D.filter(w => w.day === d), off = [5, 6].includes(new Date(d + 'T12:00').getDay());
-    return `<div class="lvwd${d === t ? ' now' : ''}${off ? ' off' : ''}"><span class="lvwdh"><b>${d === t ? 'היום' : d === addDays(t, 1) ? 'מחר' : HE_D1[new Date(d + 'T12:00').getDay()]}</b><small>${dm(d)}</small></span><span class="lvwis">${ws.map(w => { const l = P.get(w.crew_lead_id); return `<button class="lvwi s-${ST[w.st][1]}" type="button" data-w="${w.id}"><i></i><span>${esc(nameOf(w))}${nightTag(w)}</span><small>${esc(l ? initials(l.full_name) : '?')}${w.report_time ? ' · ' + t5(w.report_time) : ''}</small></button>`; }).join('') || '<span class="lvwe">—</span>'}</span></div>`; }).join('')}</div>`;
+    return `<div class="lvwd${d === t ? ' now' : ''}${off ? ' off' : ''}"><span class="lvwdh"><b>${d === t ? 'היום' : d === addDays(t, 1) ? 'מחר' : HE_D1[new Date(d + 'T12:00').getDay()]}</b><small>${dm(d)}</small></span><span class="lvwis">${ws.map(w => { const l = P.get(w.crew_lead_id); return `<button class="lvwi s-${ST[w.st][1]}" type="button" data-w="${w.id}"><i></i><span>${esc(nameOf(w))}${dtTag(w)}${nightTag(w)}</span><small>${esc(l ? initials(l.full_name) : '?')}${w.report_time ? ' · ' + t5(w.report_time) : ''}</small></button>`; }).join('') || '<span class="lvwe">—</span>'}</span></div>`; }).join('')}</div>`;
   $$('[data-w]', box).forEach(b => b.onclick = () => { const w = D.find(x => x.id === b.dataset.w); if (!w) return; if (w.g && mapDays(c).some(x => x.id === w.id)) setFocus(c, w.id, true); else if (w.st === 'planned') adm(c, w.id); else location.hash = '#/day/' + w.id; });
 }
 

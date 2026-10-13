@@ -6,6 +6,7 @@ import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, dm, dayLabel
 import { errText } from '../lib/audit.js';
 import { availability } from '../lib/avail.js';
 import { isNight, nightRange, nightTag, nightToggleHtml, bindNight, wxKey } from '../lib/night.js';
+import { dtTag, dtPickHtml, bindDtPick, dtLabel } from '../lib/daytype.js';
 
 const RANK = { crew_lead: 0, crew: 1, ops_manager: 2, admin: 3 };
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
@@ -27,7 +28,7 @@ async function travelFrom(lat, lng) {
 export async function openDayAdmin(id, after) {
   if (!isManager()) return;
   const [{ data: w, error }, { data: people }, { data: drones }, { data: pre }] = await Promise.all([
-    sb.from('work_days').select('id,day,status,night,report_time,site_arrival,site_end,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,lat,lng,sites(lat,lng)),work_day_crew(user_id,role,cant_come_at,cant_come_reason)').eq('id', id).single(),
+    sb.from('work_days').select('id,day,status,night,day_type,report_time,site_arrival,site_end,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,lat,lng,sites(lat,lng)),work_day_crew(user_id,role,cant_come_at,cant_come_reason)').eq('id', id).single(),
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).in('role', ['crew', 'crew_lead', 'ops_manager', 'admin']).order('full_name'),
     sb.from('equipment').select('id,name,health').eq('kind', 'drone').order('name'),
     // חריג בבדיקה לפני עבודה (db/130): ממתין להחלטה · הופסק · רחפן שהושבת ועוד משובץ
@@ -69,8 +70,9 @@ export async function openDayAdmin(id, after) {
     + (preDr.length ? `<div class="lrow"><span class="mic">${icon('drone', 18)}</span><div class="chips grow">${preDr.map((d, i) => `<button type="button" class="chip ${i ? '' : 'primary'}" data-predr="${d.id}">${esc(d.name)} במקום</button>`).join('')}</div></div>` : '');
   const done = (msg, close) => { close(); toast(msg, 2200, 'success'); after?.(); };
   const again = (msg, close) => { done(msg, close); openDayAdmin(id, after); };   // נשארים בגיליון, מעודכן
-  sheet(`<div class="stack tight"><h3 class="sh">${esc(w.projects?.name || '')}</h3><small class="muted">${isNight(w) ? nightTag(w) + ' ' + esc(nightRange(w)) + (w.report_time ? ' · יציאה ' + w.report_time.slice(0, 5) : '') : `${dayLabel(w.day)}${w.report_time ? ' · יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) + (w.site_end ? '–' + w.site_end.slice(0, 5) : '') : ''}`}</small></div>
+  sheet(`<div class="stack tight"><h3 class="sh">${esc(w.projects?.name || '')}<span id="da-dtt">${dtTag(w)}</span></h3><small class="muted">${isNight(w) ? nightTag(w) + ' ' + esc(nightRange(w)) + (w.report_time ? ' · יציאה ' + w.report_time.slice(0, 5) : '') : `${dayLabel(w.day)}${w.report_time ? ' · יציאה ' + w.report_time.slice(0, 5) : ''}${w.site_arrival ? ' · באתר ' + w.site_arrival.slice(0, 5) + (w.site_end ? '–' + w.site_end.slice(0, 5) : '') : ''}`}</small></div>
     ${preHtml}${started ? '' : wx}
+    ${dtPickHtml('da-dt', w.day_type).replace('chips dtpick', 'chips dtpick mini')}
     ${started ? '' : `<div class="lrow da-mv"><span class="mic">${icon('calendar', 18)}</span><div class="chips grow">
       ${rest.length ? `<button type="button" class="chip ${w.weather_alerted ? 'primary' : ''}" data-shift="1">כל ${rest.length + 1} הימים · יום קדימה</button>` : ''}
       ${cand.map((d, i) => `<button type="button" class="chip ${w.weather_alerted && !rest.length && !i ? 'primary' : ''}" data-mvd="${d}">${sd(d)}<small class="why" data-wxd="${d}"></small></button>`).join('')}</div></div>`}
@@ -88,6 +90,10 @@ export async function openDayAdmin(id, after) {
     <label class="field">רחפן<select id="da-drone"><option value="">בלי רחפן</option>${(drones || []).map(d => { const why = av.drone(d.id); return `<option value="${d.id}" ${d.id === w.drone_id ? 'selected' : ''} ${why ? 'disabled' : ''}>${esc(d.name)}${why ? ' — ' + esc(why) : (d.health === 'warning' ? ' — במעקב' : '') + (av.droneWarn?.(d.id) ? ' · ⚠ ' + esc(av.droneWarn(d.id)) : '')}</option>`; }).join('')}</select></label>
     <div class="row-btns"><button class="btn ghost" id="da-cancel">ביטול היום</button><button class="btn primary" id="da-save">שמירת השינויים</button></div>`}`, (s, close) => {
     const busy = b => { b.disabled = true; return () => { b.disabled = false; }; };
+    // סוג היום — נשמר בלחיצה (db/138), גם ביום שהתחיל
+    bindDtPick(s, 'da-dt', async t => { const { error: e } = await sb.rpc('set_day_type', { t, w: id });
+      if (e) return toast(errText(e, 'לא נשמר — נסו שוב'));
+      w.day_type = t; $('#da-dtt', s).innerHTML = dtTag(w); toast(dtLabel(t), 1600, 'success'); after?.(); });
     // תחזית לימי ההזזה (וליום עצמו כשהשרת עוד לא סימן): "לא לטוס" מסומן על השבב — לא בוחרים יום גרוע במקרה
     const lat = w.projects?.sites?.lat || w.projects?.lat, lng = w.projects?.sites?.lng || w.projects?.lng;
     if (!started && lat) import('../lib/wx.js').then(async m => { const D = (await m.siteDays([{ id: 'x', lat, lng }])).x; if (!D || !s.isConnected) return;
