@@ -4,7 +4,7 @@
 import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, HE_DOW, toast, ask, confirmBox, timeAgo, can, initials, sheet, leadMark, shortName, dayLabel } from '../lib/core.js';
 import { attentionItems, sortNeeds, needsList, bindNeeds } from './attention.js';
 import { errText } from '../lib/audit.js';
-import { nightTag, wxKey } from '../lib/night.js';
+import { nightTag, wxKey, carryNight, isCurrent } from '../lib/night.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const first = n => (n || '').split(' ')[0];
@@ -26,8 +26,8 @@ export async function renderOps(el) {
   const t = isoDay(), tm = addDays(t, 1), y = addDays(t, -1), wk = addDays(t, 6);
   const q = async p => { try { const { data } = await p; return data || []; } catch { return []; } };
   const admin = state.profile.role === 'admin';
-  const [days, people, shifts, abs, sreq, oreq, preq, exq, drones, ended, pulls, rdy, crit, miss, lowStock] = await Promise.all([
-    q(sb.from('work_days').select('id,day,status,night,site_arrival,site_end,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,site_id,planned_from,planned_to,readiness),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', t).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
+  const [days0, people, shifts, abs, sreq, oreq, preq, exq, drones, ended, pulls, rdy, crit, miss, lowStock] = await Promise.all([
+    q(sb.from('work_days').select('id,day,status,night,site_arrival,site_end,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,site_id,planned_from,planned_to,readiness),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', y).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),   // גם אתמול — לילה שעוד בעיצומו
     q(sb.from('profiles').select('id,full_name,role,is_active,is_pilot').eq('is_active', true)),
     q(sb.from('shifts').select('id,user_id,start_at,end_at,status,start_dist_m,start_place,note').or(`status.eq.open,start_at.gte.${new Date(y + 'T00:00:00').toISOString()}`).order('start_at', { ascending: false }).limit(80)),
     q(sb.from('absences').select('id,user_id,kind,date_from,date_to,note,status').in('status', ['pending', 'approved']).gte('date_to', y)),
@@ -44,9 +44,12 @@ export async function renderOps(el) {
     q(sb.from('missing_items').select('id,item,qty,created_at,work_day_id,work_days(day,project_id,projects(name))').eq('status', 'open').gte('created_at', new Date(Date.now() - 14 * 864e5).toISOString()).order('created_at')),
     q(sb.from('catalog_items').select('name,stock,min_qty').eq('in_app', true).not('min_qty', 'is', null)).then(r => r.filter(c => c.stock != null && Number(c.stock) <= Number(c.min_qty))),
   ]);
+  // לילה שהתחיל אתמול ועוד פתוח (עד סוף החלון) = 'היום בשטח' גם אחרי חצות — כמו בבית הצוות (home.js)
+  const carried = days0.filter(w => carryNight(w, t)), days = days0.filter(w => w.day >= t);
   const P = new Map(people.map(p => [p.id, p])), name = id => first(P.get(id)?.full_name) || '—';
   const open = shifts.filter(s => s.status === 'open' && !s.end_at), openBy = new Map(open.map(s => [s.user_id, s]));
   const inToday = new Set(shifts.filter(s => isoDay(new Date(s.start_at)) === t).map(s => s.user_id));
+  const inY = new Set(shifts.filter(s => isoDay(new Date(s.start_at)) === y).map(s => s.user_id)), wasIn = (w, u) => (w.day === t ? inToday : inY).has(u);   // משמרת לילה נפתחה אתמול
   const absOn = (uid, day) => abs.find(a => a.user_id === uid && a.status === 'approved' && a.date_from <= day && a.date_to >= day);
   const D = new Map(drones.map(d => [d.id, d]));
 
@@ -145,22 +148,22 @@ export async function renderOps(el) {
   // ---- היום ומחר ----
   const dayCard = w => {
     const crew = (w.work_day_crew || []).slice().sort((a, b) => (a.user_id === w.crew_lead_id ? -1 : 0) - (b.user_id === w.crew_lead_id ? -1 : 0));
-    const chip = c => { const lead = c.user_id === w.crew_lead_id, onShift = openBy.has(c.user_id), was = inToday.has(c.user_id);
-      const st = c.cant_come_at ? ['off', 'לא יגיע'] : w.day === t ? (onShift ? ['on', 'במשמרת'] : was ? ['done', 'סיים'] : ['off', 'לא החתים']) : (c.confirmed_at || lead ? ['on', 'אישר'] : ['off', 'לא אישר']);
+    const chip = c => { const lead = c.user_id === w.crew_lead_id, onShift = openBy.has(c.user_id), was = wasIn(w, c.user_id);
+      const st = c.cant_come_at ? ['off', 'לא יגיע'] : isCurrent(w, t) ? (onShift ? ['on', 'במשמרת'] : was ? ['done', 'סיים'] : ['off', 'לא החתים']) : (c.confirmed_at || lead ? ['on', 'אישר'] : ['off', 'לא אישר']);
       return `<span class="opc ${st[0]}" title="${st[1]}"><i></i>${esc(name(c.user_id))}${lead ? leadMark() : ''}<small>${st[1]}</small></span>`; };
     const site = w.projects?.site_id;
     return `<a class="card opday" href="#/day/${w.id}"><div class="row"><b class="grow">${esc(w.projects?.name || '')}${nightTag(w)}</b>${site ? `<span data-wx="${site}|${wxKey(w)}"></span>` : ''}</div>
       <small class="muted">${w.report_time ? 'יציאה ' + w.report_time.slice(0, 5) + ' · ' : ''}${w.crew_lead_id ? 'ראש צוות ' + esc(name(w.crew_lead_id)) : 'אין ראש צוות'}${D.get(w.drone_id) ? ' · ' + esc(D.get(w.drone_id).name) : ''}</small>
       <div class="opcrew">${crew.map(chip).join('') || '<small class="muted">לא שובץ צוות</small>'}</div></a>`;
   };
-  const dToday = days.filter(w => w.day === t), dTom = days.filter(w => w.day === tm);
+  const dToday = [...carried, ...days.filter(w => w.day === t)], dTom = days.filter(w => w.day === tm);
   // בבית: שורה אחת לכל יום שטח (שעה · מקום · צוות · רק חריגים). הכרטיס המלא — בפירוט
   const dayRow = w => { const ppl = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
     const cc = u => (w.work_day_crew || []).find(c => c.user_id === u)?.cant_come_at, nc = ppl.filter(cc).length;
-    const miss = w.status === 'done' ? 0 : w.day === t ? ppl.filter(u => !cc(u) && !openBy.has(u) && !inToday.has(u)).length : ppl.filter(u => u !== w.crew_lead_id && !cc(u) && !(w.work_day_crew || []).find(c => c.user_id === u)?.confirmed_at).length;
+    const miss = w.status === 'done' ? 0 : isCurrent(w, t) ? ppl.filter(u => !cc(u) && !openBy.has(u) && !wasIn(w, u)).length : ppl.filter(u => u !== w.crew_lead_id && !cc(u) && !(w.work_day_crew || []).find(c => c.user_id === u)?.confirmed_at).length;
     const fixIt = nc && w.status === 'planned', tag = fixIt ? 'button' : 'a';   // מישהו לא יגיע → הלחיצה פותחת ישר את ניהול היום
     return `<${tag} class="lrow" ${fixIt ? `type="button" data-da="${w.id}"` : `href="#/day/${w.id}"`}><span class="timebox"><b>${w.report_time ? w.report_time.slice(0, 5) : '—'}</b></span><span class="grow"><b>${esc(shortName(w.projects?.name))}${nightTag(w)}</b><small>${ppl.map(u => (cc(u) ? `<s>${esc(name(u))}</s>` : esc(name(u))) + (u === w.crew_lead_id ? leadMark() : '')).join(' · ') || 'לא שובץ צוות'}</small>
-      <span class="tags">${LIVE[w.status] ? `<span class="pill ${w.status === 'done' ? 'ok' : w.status === 'issue' ? 'bad' : 'lime'}">${LIVE[w.status]}</span>` : ''}${w.projects?.site_id && w.status === 'planned' ? `<span data-wx="${w.projects.site_id}|${wxKey(w)}"></span>` : ''}${nc ? `<span class="pill bad">${nc > 1 ? nc + ' לא יגיעו' : 'לא יגיע'}</span>` : ''}${miss ? `<span class="pill warn">${miss} ${w.day === t ? 'לא החתימו' : 'לא אישרו'}</span>` : ''}</span></span></${tag}>`; };
+      <span class="tags">${LIVE[w.status] ? `<span class="pill ${w.status === 'done' ? 'ok' : w.status === 'issue' ? 'bad' : 'lime'}">${LIVE[w.status]}</span>` : ''}${w.projects?.site_id && w.status === 'planned' ? `<span data-wx="${w.projects.site_id}|${wxKey(w)}"></span>` : ''}${nc ? `<span class="pill bad">${nc > 1 ? nc + ' לא יגיעו' : 'לא יגיע'}</span>` : ''}${miss ? `<span class="pill warn">${miss} ${isCurrent(w, t) ? 'לא החתימו' : 'לא אישרו'}</span>` : ''}</span></span></${tag}>`; };
 
   // ---- השבוע במבט אחד: 7 ימים, כמה ימי שטח וצבע לפי הבעיה הכי חמורה. לחיצה = היום הזה (בעיות + ימי שטח + שיבוץ) ----
   const wkDays = [0, 1, 2, 3, 4, 5, 6].map(i => addDays(t, i));
@@ -216,7 +219,7 @@ export async function renderOps(el) {
   const crewToday = [...new Set(dToday.flatMap(w => [w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)]).filter(Boolean))];
   const KPI = {
     today: () => sheet(`${shead('היום בשטח', dToday.length)}${dToday.map(dayCard).join('') || none('אין ימי שטח היום', '')}<a class="btn ghost block" href="#/schedule">לו״ז ושיבוץ</a>`, s2 => import('../lib/wx.js').then(m => m.fillWx(s2)).catch(() => {})),
-    shift: () => { const missing = crewToday.filter(u => !openBy.has(u) && !inToday.has(u));
+    shift: () => { const missing = crewToday.filter(u => !openBy.has(u) && !inToday.has(u) && !inY.has(u));
       sheet(`${shead('במשמרת עכשיו', open.length)}${open.length ? `<div class="list">${open.map(x => `<a class="lrow" href="#/attendance/${x.user_id}"><span class="avatar sm">${esc(initials(P.get(x.user_id)?.full_name || ''))}</span><span class="grow"><b>${esc(P.get(x.user_id)?.full_name || '')}</b><small>מ-${hm(x.start_at)} · ${dur(x.start_at)} שעות${(x.start_dist_m || 0) > 800 ? ` · ${(x.start_dist_m / 1000).toFixed(1)} ק״מ מ${esc(x.start_place || 'המשרד')}` : x.start_place ? ' · ' + esc(x.start_place) : ''}</small></span></a>`).join('')}</div>` : none('אף אחד לא במשמרת', '')}
         ${missing.length ? `${shead('משובצים היום ולא החתימו', missing.length)}<div class="list">${missing.map(u => `<a class="lrow" href="#/attendance/${u}"><span class="avatar sm">${esc(initials(P.get(u)?.full_name || ''))}</span><span class="grow"><b>${esc(P.get(u)?.full_name || '')}</b><small>${esc(dToday.find(w => w.crew_lead_id === u || (w.work_day_crew || []).some(c => c.user_id === u))?.projects?.name || '')}</small></span></a>`).join('')}</div>` : ''}
         <a class="btn ghost block" href="#/attendance">נוכחות צוות</a>`); },

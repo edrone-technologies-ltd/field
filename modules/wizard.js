@@ -80,6 +80,7 @@ async function load() {
   if (!ctx || days.some(d => !AV[d])) toast('חלק מבדיקות הזמינות לא נטענו — השרת יבדוק שוב בהחלה', 3500);
   const LIC = new Map((lic || []).map(x => [x.id, x.pilot_license_expiry]));
   const BL = new Map(); (ctx?.blocks || []).forEach(x => BL.set(x.u + '|' + x.d, x.why));
+  const WN = new Map(); (ctx?.warns || []).forEach(x => WN.set(x.u + '|' + x.d, x.why));   // אחרי לילה (db/139) — אזהרה בלבד
   const BAN = new Map(); (bans || []).forEach(x => BAN.set(x.site_id + '|' + x.user_id, x.reason));
   const RD = new Map((rd || []).map(r => [r.project_id, r]));
   const byP = new Map(); (wds || []).forEach(w => { if (!byP.has(w.project_id)) byP.set(w.project_id, []); byP.get(w.project_id).push(w); });
@@ -88,7 +89,7 @@ async function load() {
   const allS = [...new Map([...uniqS, ...wkS].map(x => [x.id, x])).values()];
   const [[WX, TR], TT] = await Promise.all([extP, between(allS, Dp)]);
   if (my !== W) return;
-  Object.assign(W, { wdsAll: (week || []).filter(w => w.day >= a), wdsPrev: week || [], TT, siteName: new Map((week || []).map(w => [w.project_id, w.projects?.name || ''])), geoP: new Map(open.map(p => [p.id, geo(p)])), people: people || [], LIC, drones: drones || [], teams: (teams || []).filter(t => t.active !== false), AV, BL, BAN, RD, WX, TR, Dp, days, today, hist: ctx?.hist || {}, wds: wds || [], byP, geo,
+  Object.assign(W, { wdsAll: (week || []).filter(w => w.day >= a), wdsPrev: week || [], TT, siteName: new Map((week || []).map(w => [w.project_id, w.projects?.name || ''])), geoP: new Map(open.map(p => [p.id, geo(p)])), people: people || [], LIC, drones: drones || [], teams: (teams || []).filter(t => t.active !== false), AV, BL, WN, BAN, RD, WX, TR, Dp, days, today, hist: ctx?.hist || {}, wds: wds || [], byP, geo,
     projects: open.map(p => prepProject(p, byP.get(p.id) || [], days, today)) });
   W.PM = new Map(W.projects.map(p => [p.id, p]));
 }
@@ -167,6 +168,12 @@ function droneHard(id, d) {
   return W.AV[d]?.drone(id) || '';
 }
 
+// אחרי לילה: עבד לילה שנגמר הבוקר (קיים — avail.js, או מוצע אתמול בקוסם) ומשובץ למשמרת יום — אזהרה, לא חסימה
+function restWarn(u, slot, S) {
+  if (slotNight(slot)) return '';
+  const z = S.find(x => x.d === addDays(slot.d, -1) && slotNight(x) && [x.lead, ...x.crew].includes(u));
+  return W.AV[slot.d]?.rest?.(u) || W.WN?.get(u + '|' + slot.d) || (z ? `סיים לילה ב-${(z.end || '06:00').slice(0, 5)}` : '');
+}
 // ציון אדם בתא + הסיבות. role: lead | crew
 function personScore(u, slot, role, S) {
   const p = W.PM.get(slot.pid), d = slot.d, R = []; let s = 0;
@@ -188,7 +195,8 @@ function personScore(u, slot, role, S) {
   // קרוב לאתר של אתמול (מי שעבד אתמול באתר אחר)
   const y = S.find(z => z.d === addDays(d, -1) && z.pid !== slot.pid && [z.lead, ...z.crew].includes(u));
   if (y) { const a = W.geoP.get(y.pid), b = W.geoP.get(slot.pid), k = km(a, b); if (k != null && k < 25) { s += 4; R.push('קרוב לאתר של אתמול'); } }
-  const wn = W.AV[d]?.warn(u); if (wn) { s -= 3; R.push('⚠ ' + wn); }
+  const rw = restWarn(u, slot, S), ow = W.AV[d]?.warn(u), wn = rw || (ow && ow === W.AV[d]?.rest?.(u) ? '' : ow);   // תא לילה — לילה של אתמול לא מתנגש
+  if (wn) { s -= rw ? 8 : 3; R.push('⚠ ' + wn); }
   return { s, R };
 }
 function loadOf(u, S, except) {   // ימים השבוע: קיימים + מוצעים (בלי התא עצמו)
@@ -250,6 +258,7 @@ function grade(slot, S) {
   const short = c.size - (slot.lead ? 1 : 0) - slot.crew.length; if (slot.lead && short > 0) { warn.push(`חסר ${short} בצוות`); g -= 15 * short; }
   const x = wxOf(p, d); if (x?.L === 2) { bad.push(`לא לטוס · משבים ${Math.round(x.g)}`); g -= 40; } else if (x?.L === 1) { warn.push(`גבולי · משבים ${Math.round(x.g)}`); g -= 10; }
   if (p.from && !(p.from <= d && (p.to || p.from) >= d)) { warn.push('מחוץ לטווח מאנדי'); g -= 5; }
+  [slot.lead, ...slot.crew].filter(Boolean).forEach(u => { const rw = restWarn(u, slot, S); if (rw) { warn.push(first(NM(u)) + ': ' + rw); g -= 5; } });
   if (slot.drone && W.AV[d]?.droneWarn(slot.drone)) warn.push(DRN(slot.drone) + ': ' + W.AV[d].droneWarn(slot.drone));
   const sc = [slot.lead && personScore(slot.lead, slot, 'lead', S).s, ...slot.crew.map(u => personScore(u, slot, 'crew', S).s)].filter(v => v !== false);
   const fit = sc.length ? sc.reduce((a, b) => a + b, 0) / sc.length : 0;

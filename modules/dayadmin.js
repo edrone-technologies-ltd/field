@@ -37,7 +37,7 @@ export async function openDayAdmin(id, after) {
   if (w.status === 'done') { location.hash = '#/day/' + id; return; }   // יום שנסגר — מסך הביצוע
   const started = w.status !== 'planned';   // יום שהתחיל: רק צוות וראש צוות (אביחי 12/10 — ראש צוות לא נתקע)
   const [av, { data: pd }] = await Promise.all([
-    availability(w.day, w.day, { exceptDay: id, drones: drones || [] }).catch(() => ({ person: () => '', drone: id2 => (drones || []).find(d => d.id === id2)?.health === 'grounded' ? 'מקורקע' : '' })),
+    availability(w.day, w.day, { exceptDay: id, drones: drones || [], night: isNight(w) }).catch(() => ({ person: () => '', drone: id2 => (drones || []).find(d => d.id === id2)?.health === 'grounded' ? 'מקורקע' : '' })),
     sb.from('work_days').select('id,day,drone_id').eq('project_id', w.project_id).eq('status', 'planned').gte('day', isoDay()).order('day')]);
   const pdays = pd || [], rest = pdays.filter(x => x.day > w.day), taken = new Set(pdays.map(x => x.day));
   const no = u => (w.work_day_crew || []).find(c => c.user_id === u && c.cant_come_at);
@@ -77,10 +77,10 @@ export async function openDayAdmin(id, after) {
       ${rest.length ? `<button type="button" class="chip ${w.weather_alerted ? 'primary' : ''}" data-shift="1">כל ${rest.length + 1} הימים · יום קדימה</button>` : ''}
       ${cand.map((d, i) => `<button type="button" class="chip ${w.weather_alerted && !rest.length && !i ? 'primary' : ''}" data-mvd="${d}">${sd(d)}<small class="why" data-wxd="${d}"></small></button>`).join('')}</div></div>`}
     <div class="list">
-      ${crew.map(u => `<div class="lrow"><span class="avatar sm">${esc(nm(u).slice(0, 2))}</span><span class="grow"><b>${esc(P.get(u)?.full_name || '')}${u === w.crew_lead_id ? leadMark() : ''}</b>${why(u) ? `<small class="bad">${esc(why(u))}</small>` : P.get(u)?.is_pilot ? '<small>מטיס</small>' : ''}</span>
+      ${crew.map(u => `<div class="lrow"><span class="avatar sm">${esc(nm(u).slice(0, 2))}</span><span class="grow"><b>${esc(P.get(u)?.full_name || '')}${u === w.crew_lead_id ? leadMark() : ''}</b>${why(u) ? `<small class="bad">${esc(why(u))}</small>` : av.rest?.(u) ? `<small class="warn">⚠ ${esc(av.rest(u))}</small>` : P.get(u)?.is_pilot ? '<small>מטיס</small>' : ''}</span>
         ${u !== w.crew_lead_id && !why(u) ? `<button class="chip" data-lead="${u}">ראש צוות</button>` : ''}<button class="chip" data-rm="${u}">הסרה</button></div>
         ${why(u) && subsFor(u).length ? `<div class="lrow"><span class="mic">${icon('users', 18)}</span><div class="chips grow">${subsFor(u).map((x, i) => `<button type="button" class="chip ${i ? '' : 'primary'}" data-swap="${u}|${x.id}">${esc(nm(x.id) || x.full_name)} במקום${x.is_pilot ? ' · מטיס' : ''}</button>`).join('')}</div></div>` : ''}`).join('') || '<div class="empty-line">לא שובץ צוות</div>'}
-      ${quick.length ? `<div class="lrow"><span class="mic">${icon('plus', 18)}</span><div class="chips grow">${quick.map(x => `<button type="button" class="chip" data-addu="${x.id}">${esc(nm(x.id) || x.full_name)}${x.is_pilot && !pilotIn ? ' · מטיס' : ''}</button>`).join('')}</div></div>` : ''}
+      ${quick.length ? `<div class="lrow"><span class="mic">${icon('plus', 18)}</span><div class="chips grow">${quick.map(x => `<button type="button" class="chip" data-addu="${x.id}">${esc(nm(x.id) || x.full_name)}${x.is_pilot && !pilotIn ? ' · מטיס' : ''}${av.rest?.(x.id) ? ' · ⚠ אחרי לילה' : ''}</button>`).join('')}</div></div>` : ''}
       ${free.length > quick.length ? `<label class="lrow"><span class="mic">${icon('users', 18)}</span><select id="da-add" class="grow"><option value="">${quick.length ? 'עוד…' : 'הוספת אדם…'}</option>${free.map(p => { const why = av.person(p.id), wn = av.warn?.(p.id); return `<option value="${p.id}" ${why ? 'disabled' : ''}>${esc(p.full_name)}${p.is_pilot ? ' · מטיס' : ''}${why ? ' — ' + esc(why) : wn ? ' · ⚠ ' + esc(wn) : ''}</option>`; }).join('')}</select></label>` : ''}
     </div>
     ${swapDr ? `<button type="button" class="arow bad" id="da-dr"><span class="aic">${icon('drone', 18)}</span><span class="grow"><b>${esc((drones || []).find(d => d.id === w.drone_id)?.name || 'הרחפן')} ${esc(drWhy)}</b><small>החלפה ל${esc(swapDr.name)}${drAll.length > 1 ? ` בכל ${drAll.length} הימים` : ''}</small></span><span class="btn primary sm">החלפה</span></button>` : ''}

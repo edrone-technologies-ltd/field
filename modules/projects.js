@@ -457,7 +457,7 @@ export async function renderProject(el, id, tab = 'o') {
       const applyAv = async () => {
         // זמינות לכל פעימה בנפרד (לא לחסום מישהו שתפוס רק בהפסקה שבין הפעימות), ואיחוד: חוסם בפעימה אחת = חוסם
         const PLx = curPl(); if (!PLx.length) return;
-        const my = ++avSeq, avs = await Promise.all(PLx.map(([a, b]) => availability(a, b, { project: id, drones: D.drones }).catch(() => null))); if (avs.some(x => !x) || my !== avSeq) return;
+        const my = ++avSeq, avs = await Promise.all(PLx.map(([a, b]) => availability(a, b, { project: id, drones: D.drones, night: !!$('#snt', s)?.checked }).catch(() => null))); if (avs.some(x => !x) || my !== avSeq) return;
         const first = k => v => avs.map(x => x[k]?.(v) || '').find(Boolean) || '';
         const av = { person: first('person'), drone: first('drone') }; av.warn = u => av.person(u) ? '' : first('warn')(u); av.droneWarn = v => av.drone(v) ? '' : first('droneWarn')(v);
         $$('[data-u]', s).forEach(c => { const why = av.person(c.dataset.u), wn = av.warn?.(c.dataset.u) || ''; c.disabled = !!why; if (why) c.setAttribute('aria-pressed', 'false'); $('.why', c).textContent = why || wn; c.classList.toggle('cwarn', !why && !!wn); });
@@ -513,7 +513,7 @@ export async function renderProject(el, id, tab = 'o') {
       // עבודת לילה: ההגעה בערב, הסיום למחרת. היציאה מחושבת אחורה מההגעה (recalc), התחזית — על שעות הלילה (wxFor)
       const nightOn = bindNight(s, { tog: '#snt', arr: '#sa', end: '#se', lblA: '#lsa', lblE: '#lse' });
       const dtOf = bindDtPick(s, 'sdt');   // סוג היום — לכל הימים שמשובצים עכשיו (db/138)
-      $('#snt', s).addEventListener('change', () => { if ($('#snt', s).checked) touched = false; recalc(); });
+      $('#snt', s).addEventListener('change', () => { if ($('#snt', s).checked) touched = false; recalc(); applyAv(); });   // לילה ↔ יום: אזהרת 'אחרי לילה' משתנה
       sb.from('app_settings').select('value').eq('key', 'dispatch').maybeSingle().then(async ({ data }) => {
         Object.assign(Dp, data?.value || {}); recalc();
         if (!lat) return;

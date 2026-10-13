@@ -2552,3 +2552,5 @@ body.ws .xrow .stack.tight{flex-direction:row;gap:6px}
 .wztop .dttag{margin-inline-start:4px;padding:0 5px;font-size:10px}
 .dtpick{gap:6px}.dtpick .chip{min-height:34px;padding:5px 11px;font-size:.85rem}
 .dtpick.mini .chip{min-height:28px;padding:3px 9px;font-size:.8rem}
+/* אחרי לילה — אזהרה בשורת צוות (ניהול היום) */
+.lrow small.warn{color:var(--warn);font-weight:600}

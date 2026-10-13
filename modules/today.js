@@ -2,7 +2,7 @@
 import { coverArt, icon, leadMark, navButtons, thumbUrls } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
 import { isNight, nightRange, nightTag, isCurrent, wxKey } from '../lib/night.js';
-import { dtTag, isWorkDay, needsPreflight } from '../lib/daytype.js';
+import { dtTag, isWorkDay, needsPreflight, isCoord } from '../lib/daytype.js';
 import { loadZones, dayZones, zonePrefill, zonesHtml, bindZones, zonesPayload, zkey } from './zones.js';
 import { SEC, needsDrone, pulseRoles, mySection, decideSheet, afterDecide } from './prestart.js';
 import { sb, state, cache, enqueue, sendsLabel, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, haptic } from '../lib/core.js';
@@ -95,7 +95,7 @@ export async function renderDay(el, id) {
     if ((D.local.stage === 4 && canClose()) || d.finished_at) return 4;
     if (d.status === 'working' || (d.status === 'issue' && d.opened_at)) return 3;   // הופסק לפני שהתחילו (דופק לפני עבודה) — נשארים ב"באתר"
     if (d.arrived_at || d.status === 'on_site' || d.departed_at) return 2;
-    return D.local.stage === 1 ? 1 : 0;
+    return D.local.stage === 1 && !isCoord(d) ? 1 : 0;   // יום תיאום — בלי שלב העמסה
   }
   const P = D.day.projects || {}, site = P.sites || {};
   const photoUrls = {};
@@ -115,7 +115,7 @@ export async function renderDay(el, id) {
         <a class="back glass" href="#/" aria-label="חזרה">${icon('back', 20)}</a>
         <span class="ph-bottom"><span class="row"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${isNight(D.day) ? nightTag(D.day) + ' ' + esc(nightRange(D.day)) : dayLabel(D.day.day)}${dtTag(D.day)}</span>${statusPill(D.day)}</span>
         <b>${esc(P.name || '')}</b>${D.day.day_goal ? `<small>${esc(D.day.day_goal)}</small>` : ''}</span></div>
-      ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? icon('check', 16) : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`}`;
+      ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => [t, i]).filter(([, i]) => i !== 1 || !isCoord(D.day)).map(([t, i], n) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? icon('check', 16) : n + 1}</i><span>${t}</span></li>`).join('')}</ol>`}`;
   }
   function photoStrip(kind, label, min = 0) {
     const mine = D.photos.filter(p => p.kind === kind);
@@ -150,7 +150,7 @@ export async function renderDay(el, id) {
     return `<div class="card stack">
         <div class="kpis dayk"><div class="kpi"><b>${hhmm(D.day.report_time) || '—'}</b><span>יציאה מהמשרד</span></div>
           ${D.day.site_arrival ? `<div class="kpi"${isManager() && D.day.status !== 'done' ? ' data-dadm role="button" tabindex="0" aria-label="שינוי שעות היום"' : ''}><b><bdi dir="ltr">${hhmm(D.day.site_arrival)}${D.day.site_end ? `<small class="kend">–${hhmm(D.day.site_end)}</small>` : ''}</bdi></b><span>${isNight(D.day) ? 'באתר · לילה' : 'באתר'}</span></div>` : `<div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div>`}
-          <div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים</span></div></div>
+          ${isCoord(D.day) ? '' : `<div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים</span></div>`}</div>
         ${countdown()}
         ${D.day.gust_max != null && !P.site_id ? `<div class="alert ${D.day.weather_alerted ? 'bad' : ''}"><span class="dot ${D.day.weather_alerted ? '' : 'ok'}"></span><span class="grow"><b>רוח עד ${D.day.wind_max} קמ״ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ״מ` : ''}</b><small>תחזית לשעות העבודה</small></span></div>` : ''}
         <div class="opcrew">${isManager() && D.day.status !== 'done' ? `<button type="button" class="opc" onclick="import('./modules/dayadmin.js').then(m => m.openDayAdmin('${D.day.id}', () => dispatchEvent(new HashChangeEvent('hashchange'))))" aria-label="שינוי צוות ושעות">✎ צוות ושעות</button>` : ''}${crew.map(c => c.ph ? `<a class="opc ${c.st}" href="tel:${esc(c.ph)}" aria-label="חיוג ל${esc(c.n)}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</a>` : `<span class="opc ${c.st}"><i></i>${esc(c.n)}${c.lead ? leadMark() : ''}</span>`).join('')}${D.day.drone ? `<span class="opc">${icon('drone', 14)} ${esc(D.day.drone.name)}</span>` : ''}</div>
@@ -161,7 +161,7 @@ export async function renderDay(el, id) {
       ${site.access_notes && !(site.access_notes === site.access_auto && opsStrip()) ? `<div class="note">${esc(site.access_notes)}</div>` : ''}
       ${logi().length && !opsStrip() ? `<section><h3 class="sh">לפני היציאה</h3><div class="list">${logi().map(l => `<div class="lrow"><span class="grow">${esc(l)}</span></div>`).join('')}</div></section>` : ''}
       ${dayList().length ? `<section><h3 class="sh">משימות היום</h3><div class="list">${dayList().map(t => `<div class="lrow"><span class="grow"><b>${esc(t.title)}</b>${t.risk ? `<small class="issue">${esc(t.risk)}</small>` : ''}${t.instructions ? `<small>${esc(t.instructions)}</small>` : ''}</span>${t.phase ? `<span class="pill">${esc(t.phase)}</span>` : ''}</div>`).join('')}</div></section>` : ''}
-      ${canClose() ? sunCard() : ''}
+      ${canClose() && !isCoord(D.day) ? sunCard() : ''}
       ${contactCard(site.contact_name, site.contact_phone)}
       ${site.map_path ? '<div class="card sitemap compact" id="daymap"></div>' : ''}`;
   }
@@ -174,9 +174,9 @@ export async function renderDay(el, id) {
   // לפני היציאה / באתר: מה האפיון אמר על השטח + משימות ההכנה (סימון בלחיצה). onSite = רק מה שרלוונטי באתר
   function opsStrip(onSite = false) {
     const o = D.ops || {}, prep = D.prep || [];   // כולל הכנות של היום — מסמנים בבוקר, לפני היציאה
-    const items = [['water', 'מים'], ['power', 'חשמל'], ['access', 'גישה'], ['launch', 'המראה'], ['air', 'מרחב אווירי']].filter(([k]) => o[k]).filter(([k]) => !onSite || k !== 'access');
+    const items = [['water', 'מים'], ['power', 'חשמל'], ['access', 'גישה'], ['launch', 'המראה'], ['air', 'מרחב אווירי']].filter(([k]) => o[k]).filter(([k]) => !onSite || k !== 'access').filter(([k]) => !isCoord(D.day) || !['water', 'power'].includes(k));   // תיאום — לא שוטפים: בלי מים/חשמל
     if (!items.length && !o.hazards?.length && !o.permits?.length && !prep.length) return '';
-    const L = onSite ? [] : logi(o);
+    const L = onSite ? [] : logi(o).filter(l => !isCoord(D.day) || !/מים|הידרנט|חשמל|גנרטור|חומר|גלון/.test(l));
     const warn = { water: 'מכלית', power: 'גנרטור', air: ['נדרש תיאום', 'מוגבל'], access: 'רחוק — סחיבה' };
     const bad = (k, v) => [].concat(warn[k] || []).includes(v);
     return `<div class="card stack opsx"><b>${onSite ? 'באתר' : 'לפני היציאה'}</b>
@@ -361,9 +361,9 @@ export async function renderDay(el, id) {
     const inEdit = miss.some(([, s]) => s === '#gal' || s.includes('.hrs'));
     const fly = D.day.drone_id || D.day.method === 'רחפן';
     const edit = `<details class="cmore cedit" id="cedit" ${D.local.edit || inEdit ? 'open' : ''}><summary><span class="grow">${icon('pen', 18)} עריכה</span></summary>
-        <div class="sec"><b>חומר</b>${chips('material', D.S.materials || ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'])}
+        <div class="sec">${isCoord(D.day) ? '' : `<b>חומר</b>${chips('material', D.S.materials || ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'])}
           <b>גלונים</b><div class="stepper"><button type="button" data-g="-0.5">−</button><input class="days grow" id="gal" type="number" inputmode="decimal" step="0.5" min="0" value="${C.gallons ?? ''}" placeholder="${D.day.gallons_planned ? nf(D.day.gallons_planned) : ''}"><button type="button" data-g="0.5">+</button></div>
-          ${D.day.gallons_planned ? `<div class="chips"><button type="button" class="chip" id="galp" aria-pressed="${C.gallons != null && +C.gallons === +D.day.gallons_planned}">כמתוכנן · ${nf(D.day.gallons_planned)}</button></div>` : ''}
+          ${D.day.gallons_planned ? `<div class="chips"><button type="button" class="chip" id="galp" aria-pressed="${C.gallons != null && +C.gallons === +D.day.gallons_planned}">כמתוכנן · ${nf(D.day.gallons_planned)}</button></div>` : ''}`}
           <b>סוג העבודה</b>${chips('work', D.S.work_types || [], true)}</div>
         <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => { const v = C.hours[c.user_id], clk = D.clockH?.[c.user_id];
           return `<div class="row hrow"><span class="grow"><b>${esc(c.profiles?.full_name || '')}</b>${clk != null ? `<small class="muted">מהשעון ${nf(clk)}</small>` : ''}</span>
@@ -508,6 +508,7 @@ export async function renderDay(el, id) {
       dm0.innerHTML = `<button class="smimg" type="button"><img src="${esc(url)}" alt="מפת האתר"></button><b>מפת האתר</b>`; $('.smimg', dm0).onclick = () => zoom(url, 'מפת האתר'); }).catch(() => dm0.remove());
     const bar = document.createElement('div'); bar.className = 'bar';
     if (s === 0 && D.day.day > isoDay() && !isManager()) futureBar(bar);   // יום עתידי: לא מתחילים העמסה — רק אישור הגעה
+    else if (s === 0 && isCoord(D.day)) { bar.innerHTML = `<button class="btn primary" id="out">יוצאים לאתר</button>`; bar.querySelector('#out').onclick = e => depart(e.currentTarget, []); }   // תיאום / סיור — בלי העמסה
     else if (s === 0) { bar.innerHTML = `<button class="btn primary" id="nx">מתחילים העמסה</button>`; bar.querySelector('#nx').onclick = () => { D.local.stage = 1; keep(); draw(); }; }
     if (s === 1) bindLoad(bar);
     if (s === 2) bindSite(bar);
@@ -551,17 +552,20 @@ export async function renderDay(el, id) {
       const req = D.day.equip_required?.length ? D.day.equip_required : (D.S.equip_default || []);
       const miss = req.filter(x => !D.local.loaded.includes(x));
       if (miss.length && !(await confirmBox(`יוצאים בלי ${miss.length} פריטים?`, { body: miss.join(' · ') + ' — יירשם כחוסר ויעבור למשרד', ok: 'יוצאים' }))) return;
-      ob.disabled = true;
+      depart(ob, miss);
+    };
+  }
+  async function depart(ob, miss) {
+      if (ob.disabled) return; ob.disabled = true;
       for (const m of miss) { const row = { id: uid(), work_day_id: D.day.id, item: m, qty: 1, reported_by: state.user.id }; D.missing.push(row); await insert('missing_items', row); }
       const now = new Date().toISOString();
-      await save('work_days', { departed_at: now, status: 'en_route', equip_loaded: D.local.loaded, drone_ack: !!D.day.drone_ack });
+      await save('work_days', { departed_at: now, status: 'en_route', equip_loaded: D.local.loaded || [], drone_ack: !!D.day.drone_ack });
       for (const c of D.day.work_day_crew) if (!c.clock_in) c.clock_in = now;
       await enqueue({ kind: 'rpc', fn: 'crew_depart', args: { d: D.day.id, t: now } });
       nudged = false; toast('נסיעה טובה'); draw();
       // יציאה לאתר = גם כניסה למשמרת (אם עוד לא נכנס) — פעולה אחת במקום שתיים
       try { const A = await import('./attendance.js'); if (!(await A.myOpenShift())) await A.clockIn(null, { project_id: D.day.project_id }); } catch { /* */ }
       nudged = null; if (here()) clockNudge();   // ויתר על ההסכמה ("לא עכשיו") — יקבל את ההצעה בלחיצה
-    };
   }
   function bindSite(bar) {
     const a = $('#arrive'); if (a) a.onclick = async () => { if (a.disabled) return; a.disabled = true; stopGeo(); await save('work_days', { arrived_at: new Date().toISOString(), status: 'on_site' }); haptic('success'); draw(); };
