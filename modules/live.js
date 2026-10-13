@@ -3,6 +3,7 @@
 // בלי כסף בכלל (גם לא להנהלה).
 import { sb, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, HE_DOW, toast, sheet, timeAgo, initials, shortName, backBtn, state, thumbUrls, zoom } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
+import { isNight, isCurrent, endDay, nightTag, nightRange, wxKey } from '../lib/night.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const first = n => (n || '').split(' ')[0];
@@ -13,7 +14,9 @@ const ST = { planned: ['מתוכנן', 'pl'], en_route: ['בדרך', 'rt'], on_s
 const ACTIVE = new Set(['en_route', 'on_site', 'working', 'issue']);
 const WXW = ['טוב לטיסה', 'גבולי', 'לא לטוס'];
 const PREP = ['אפיון', 'תכנית עבודה', 'מקור מים', 'מכלית מים', 'תיאום כניסה לאתר', 'מרחב אווירי'];
-const REFRESH = 45e3, CYCLE = 9e3, H0 = 5 * 60, H1 = 19 * 60;
+const REFRESH = 45e3, CYCLE = 9e3;
+// ציר הזמן: דקות מחצות של יום הבסיס (TB). עבודת לילה — הציר נמשך עד הבוקר שלמחרת; אחרי חצות — מהערב של אתמול
+let H0 = 5 * 60, H1 = 19 * 60, TB = new Date(new Date().setHours(0, 0, 0, 0));
 let C = null;   // המסך הפתוח
 
 // מצב בפועל: לפי חותמות הזמן (גם אם הסטטוס לא עודכן)
@@ -94,7 +97,7 @@ async function load(c) {
   const soft = p => q(p).catch(() => []);
   try {
     const [days, people, drones, crit, miss, rdy, dd, nIss, nPh, nSh, set] = await Promise.all([
-      q(sb.from('work_days').select('id,day,kind,status,report_time,site_arrival,site_end,departed_at,arrived_at,opened_at,finished_at,closed_at,crew_lead_id,drone_id,project_id,lat,lng,address,weather_alerted,gust_max,air_minutes,flights,projects(id,name,site_id,lat,lng,sites(id,name,lat,lng)),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', addDays(t, -3)).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
+      q(sb.from('work_days').select('id,day,kind,status,night,report_time,site_arrival,site_end,departed_at,arrived_at,opened_at,finished_at,closed_at,crew_lead_id,drone_id,project_id,lat,lng,address,weather_alerted,gust_max,air_minutes,flights,projects(id,name,site_id,lat,lng,sites(id,name,lat,lng)),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', addDays(t, -3)).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),
       soft(sb.from('profiles').select('id,full_name,phone,is_pilot').eq('is_active', true)),
       soft(sb.from('equipment').select('id,name,health').eq('kind', 'drone')),
       soft(sb.from('issues').select('id,body,kind,project_id,work_day_id,opened_by,created_at,projects(name)').eq('status', 'open').eq('severity', 'critical').gte('created_at', d14).order('created_at', { ascending: false })),
@@ -131,14 +134,14 @@ async function loadWx(c) {
   if (!S.length) return;
   try { const { siteDays } = await import('../lib/wx.js'); c.wx = await siteDays(S); if (C === c) drawAll(c); } catch { c.wxAt = 0; }
 }
-const wxOf = (c, w) => (w.g && c.wx[gk(w.g)]?.[w.day]) || (w.gust_max != null ? { g: +w.gust_max, L: w.weather_alerted ? 2 : +w.gust_max >= 28 ? 1 : 0, saved: 1 } : null);
+const wxOf = (c, w) => (w.g && c.wx[gk(w.g)]?.[wxKey(w)]) || (w.gust_max != null ? { g: +w.gust_max, L: w.weather_alerted ? 2 : +w.gust_max >= 28 ? 1 : 0, saved: 1 } : null);
 const wxChip = x => x ? `<span class="lvwx l${x.L}">${icon('sun', 13)}<bdi>${Math.round(x.g)}</bdi> קמ״ש · ${WXW[x.L]}</span>` : '';
 
 function drawAll(c) { drawKpis(c); drawMap(c); drawTimeline(c); drawAlerts(c); drawWeek(c); if (c.focus) drawFocus(c); }
 
 // ---------- מדדים ----------
 function drawKpis(c) {
-  const { t, D, dd, nIss, nPh, nSh, crit } = c.data, T = D.filter(w => w.day === t);
+  const { t, D, dd, nIss, nPh, nSh, crit } = c.data, T = D.filter(w => isCurrent(w, t));
   const live = T.filter(w => ACTIVE.has(w.st)), sites = new Set(live.map(w => w.projects?.site_id || w.project_id));
   const mins = dd.length ? dd.reduce((s, x) => s + (+x.air_minutes || 0), 0) : T.reduce((s, w) => s + (+w.air_minutes || 0), 0);
   const fl = dd.length ? dd.reduce((s, x) => s + (+x.flights || 0), 0) : T.reduce((s, w) => s + (+w.flights || 0), 0);
@@ -177,7 +180,7 @@ function drawMap(c) {
     const k = ST[w.st][1], lead = c.data.P.get(w.crew_lead_id), x = wxOf(c, w);
     if (o && w.st === 'en_route') L.polyline([o.ll, w.g], { className: 'lvroute', weight: 3, interactive: false }).addTo(c.layer);
     const html = `<div class="lvpin s-${k}${w.day !== t ? ' later' : ''}${c.focus === w.id ? ' sel' : ''}">${ACTIVE.has(w.st) ? '<i class="ring"></i>' : ''}<b>${esc(lead ? initials(lead.full_name) : '?')}</b>${x && x.L === 2 && w.st === 'planned' ? '<i class="wxb"></i>' : ''}</div>
-      <span class="lvpl">${esc(nameOf(w).length > 26 ? nameOf(w).slice(0, 25) + '…' : nameOf(w))}${w.day !== t ? ` · ${whenOf(w.day, t)}` : ''}</span>`;
+      <span class="lvpl">${esc(nameOf(w).length > 26 ? nameOf(w).slice(0, 25) + '…' : nameOf(w))}${isNight(w) ? ' · לילה' : ''}${!isCurrent(w, t) ? ` · ${whenOf(w.day, t)}` : ''}</span>`;
     const m = L.marker(w.g, { icon: L.divIcon({ className: 'lvpw', html, iconSize: [40, 40], iconAnchor: [20, 20] }), zIndexOffset: ACTIVE.has(w.st) ? 500 : w.day === t ? 300 : 0, title: nameOf(w) }).addTo(c.layer);
     m.on('click', e => { L.DomEvent.stop(e); setFocus(c, w.id, true); });
     c.pins.set(w.id, m);
@@ -213,7 +216,7 @@ function drawFocus(c) {
     !w.site_arrival && w.arrived_at && ['הגעה', '', hm(w.arrived_at)], w.finished_at ? ['סיום', '', hm(w.finished_at)] : eta ? ['סיום משוער', w.site_end && eta !== t5(w.site_end) ? t5(w.site_end) : '', eta] : w.site_end && ['סיום', t5(w.site_end), '']].filter(Boolean);
   const ph = c.ph.get(w.project_id);
   box.hidden = false;
-  box.innerHTML = `${ph ? `<button class="lvph" type="button" style="background-image:url('${esc(ph.t)}')" aria-label="תמונה אחרונה"><small>${esc(timeAgo(ph.at))}</small></button>` : ''}<div class="lvfh"><span class="lvst s-${k}">${sl}</span><span class="lvwhen">${whenOf(w.day, t)}</span>${wxChip(x)}<button class="lvx" type="button" aria-label="סגירה">${icon('x', 16)}</button></div>
+  box.innerHTML = `${ph ? `<button class="lvph" type="button" style="background-image:url('${esc(ph.t)}')" aria-label="תמונה אחרונה"><small>${esc(timeAgo(ph.at))}</small></button>` : ''}<div class="lvfh"><span class="lvst s-${k}">${sl}</span><span class="lvwhen">${isNight(w) ? esc(nightRange(w)) : whenOf(w.day, t)}</span>${wxChip(x)}<button class="lvx" type="button" aria-label="סגירה">${icon('x', 16)}</button></div>
     <b class="lvft">${esc(nameOf(w))}</b>${w.projects?.sites?.name || w.address ? `<small class="lvfs">${esc(w.address || w.projects.sites.name)}</small>` : ''}
     <div class="lvcrew">${lead ? `${who(lead.id, 'lead')}<span class="lvln">${esc(first(lead.full_name))} ★</span>` : '<span class="lvst s-is">אין ראש צוות</span>'}${crew.map(m => who(m.user_id, m.cant_come_at ? 'no' : m.confirmed_at || w.st !== 'planned' ? 'ok' : '')).join('')}${dr ? `<span class="lvdr${dr.health === 'grounded' ? ' bad' : ''}">${icon('drone', 14)}${esc(dr.name)}</span>` : ''}</div>
     ${times.length ? `<div class="lvtimes">${times.map(([l, p, a]) => `<span><small>${l}</small><bdi>${a || p}</bdi>${a && p ? `<i>${p}</i>` : ''}</span>`).join('')}</div>` : ''}
@@ -227,7 +230,7 @@ const adm = (c, id) => import('./dayadmin.js').then(m => m.openDayAdmin(id, () =
 
 // ---------- ציר הזמן של היום ----------
 const pct = m => Math.max(0, Math.min(100, (m - H0) / (H1 - H0) * 100));
-const minOf = d => d.getHours() * 60 + d.getMinutes();
+const minOf = d => Math.round((d - TB) / 6e4);
 function lateOf(w, now) {
   const f = [], mn = ms => Math.round(ms / 6e4);
   if (w.report_time) { const r = at(w.day, w.report_time);
@@ -247,9 +250,9 @@ function row(c, w, now, isToday) {
   const steps = [['יציאה', w.departed_at, w.report_time], ['הגעה', w.arrived_at, w.site_arrival], ['עבודה', w.opened_at || (['working', 'issue', 'done'].includes(w.st) ? w.arrived_at : null), null], ['סגירה', w.finished_at || w.closed_at, null]], eta = isToday ? etaOf(w) : null;
   const fl = isToday ? lateOf(w, now) : [];
   return `<button class="lvrow s-${k}${c.focus === w.id ? ' sel' : ''}${isToday ? '' : ' later'}" type="button" data-f="${w.id}">
-    <span class="lvwho"><span class="lvav s-${k}">${esc(lead ? initials(lead.full_name) : '?')}</span><span class="grow"><b>${esc(nameOf(w))}</b><small>${esc([lead ? first(lead.full_name) + ' ★' : 'אין ראש צוות', (w.work_day_crew || []).some(m => m.user_id !== w.crew_lead_id) ? `+${(w.work_day_crew || []).filter(m => m.user_id !== w.crew_lead_id).length}` : '', dr?.name].filter(Boolean).join(' · '))}</small></span>
+    <span class="lvwho"><span class="lvav s-${k}">${esc(lead ? initials(lead.full_name) : '?')}</span><span class="grow"><b>${esc(nameOf(w))}${nightTag(w)}</b><small>${esc([lead ? first(lead.full_name) + ' ★' : 'אין ראש צוות', (w.work_day_crew || []).some(m => m.user_id !== w.crew_lead_id) ? `+${(w.work_day_crew || []).filter(m => m.user_id !== w.crew_lead_id).length}` : '', dr?.name].filter(Boolean).join(' · '))}</small></span>
       <span class="lvst s-${k}">${isToday ? ST[w.st][0] : whenOf(w.day, c.data.t)}</span></span>
-    <span class="lvtrack">${w.report_time ? `<i class="lvmk" style="inset-inline-start:${pct(minOf(at(w.day, w.report_time)))}%" title="יציאה מתוכננת"></i>` : ''}${w.site_arrival ? `<i class="lvmk arr" style="inset-inline-start:${pct(minOf(at(w.day, w.site_arrival)))}%" title="הגעה מתוכננת"></i>` : ''}${w.site_end ? `<i class="lvmk end" style="inset-inline-start:${pct(minOf(at(w.day, w.site_end)))}%" title="סיום מתוכנן"></i>` : ''}${eta && !w.finished_at ? `<i class="lveta" style="inset-inline-start:${pct(minOf(at(w.day, eta)))}%"></i>` : ''}
+    <span class="lvtrack">${w.report_time ? `<i class="lvmk" style="inset-inline-start:${pct(minOf(at(w.day, w.report_time)))}%" title="יציאה מתוכננת"></i>` : ''}${w.site_arrival ? `<i class="lvmk arr" style="inset-inline-start:${pct(minOf(at(w.day, w.site_arrival)))}%" title="הגעה מתוכננת"></i>` : ''}${w.site_end ? `<i class="lvmk end" style="inset-inline-start:${pct(minOf(at(endDay(w), w.site_end)))}%" title="סיום מתוכנן"></i>` : ''}${eta && !w.finished_at ? `<i class="lveta" style="inset-inline-start:${pct(minOf(at(isNight(w) && eta < t5(w.site_arrival) ? endDay(w) : w.day, eta)))}%"></i>` : ''}
       ${isToday && minOf(now) > H0 && minOf(now) < H1 ? `<i class="lvnowl" style="inset-inline-start:${pct(minOf(now))}%"></i>` : ''}${dep != null ? seg(dep, arr ?? end ?? dep, 'rt') : ''}${arr != null ? seg(arr, end ?? arr, w.st === 'issue' ? 'is' : w.st === 'done' ? 'dn' : 'wk') : ''}</span>
     <span class="lvsteps">${steps.map(([l, a, p], j) => `<span class="${a ? 'on' : ''}"><i></i>${j === 3 && !a && eta ? 'סיום' : l}<bdi>${a ? hm(a) : j === 3 && eta ? '~' + eta : p ? t5(p) : ''}</bdi></span>`).join('')}</span>
     ${fl.length ? `<span class="lvflags">${fl.map(([x, tone]) => `<span class="lvflag ${tone}">${esc(x)}</span>`).join('')}</span>` : ''}</button>`;
@@ -257,9 +260,13 @@ function row(c, w, now, isToday) {
 function drawTimeline(c) {
   const box = $('#lvtl', c.el); if (!box || !c.data) return;
   const { t, D } = c.data, now = new Date(), tm = addDays(t, 1);
-  const T = D.filter(w => w.day === t).sort((a, b) => (ACTIVE.has(b.st) - ACTIVE.has(a.st)) || String(a.report_time || '99').localeCompare(String(b.report_time || '99')));
+  const T = D.filter(w => isCurrent(w, t)).sort((a, b) => (ACTIVE.has(b.st) - ACTIVE.has(a.st)) || String(a.report_time || '99').localeCompare(String(b.report_time || '99')));
   const N = T.length ? [] : D.filter(w => w.day > t); const nd = N[0]?.day, NX = N.filter(w => w.day === nd);
-  const axis = `<div class="lvaxis"><i></i><div class="lvax">${[6, 8, 10, 12, 14, 16, 18].map(h => `<span style="inset-inline-start:${pct(h * 60)}%">${h}</span>`).join('')}${T.length && minOf(now) > H0 && minOf(now) < H1 ? `<i class="lvnow" style="inset-inline-start:${pct(minOf(now))}%"><b>${hm(now.toISOString())}</b></i>` : ''}</div></div>`;
+  // עבודת לילה: אחרי חצות (לילה של אתמול) — 17:00 אתמול עד 19:00; ערב עם לילה — 05:00 עד 07:00 מחר; אחרת 05–19
+  const R = T.length ? T : NX, carry = R.some(w => w.day < t), nightR = R.some(isNight);
+  TB = new Date((carry ? addDays(t, -1) : R[0]?.day || t) + 'T00:00:00'); [H0, H1] = carry ? [17 * 60, 43 * 60] : nightR ? [5 * 60, 31 * 60] : [5 * 60, 19 * 60];
+  const ticks = []; for (let m = H0 + 60; m < H1; m += (H1 - H0 > 900 ? 180 : 120)) ticks.push(m);
+  const axis = `<div class="lvaxis"><i></i><div class="lvax">${ticks.map(m => `<span style="inset-inline-start:${pct(m)}%">${Math.floor(m / 60) % 24}</span>`).join('')}${T.length && minOf(now) > H0 && minOf(now) < H1 ? `<i class="lvnow" style="inset-inline-start:${pct(minOf(now))}%"><b>${hm(now.toISOString())}</b></i>` : ''}</div></div>`;
   const head = T.length ? `<div class="lvsh"><h3>היום בשטח</h3><span class="lvcnt">${T.filter(w => w.st === 'done').length}/${T.length}</span></div>`
     : `<div class="lvsh"><h3>${nd ? (nd === tm ? 'מחר בשטח' : `הבא · ${whenOf(nd, t)}`) : 'היום בשטח'}</h3>${nd ? '<span class="lvquiet">היום אין ימי שטח</span>' : ''}</div>`;
   box.innerHTML = head + (T.length || NX.length ? `<div class="lvtlw${T.length ? '' : ' later'}">${axis}${(T.length ? T : NX).map(w => row(c, w, now, !!T.length)).join('')}</div>`
@@ -276,8 +283,8 @@ function alertsOf(c) {
   for (const w of D) {
     const pn = nameOf(w), when = whenOf(w.day, t), crew = w.work_day_crew || [], ppl = [...new Set([w.crew_lead_id, ...crew.map(m => m.user_id)].filter(Boolean))];
     const fix = () => adm(c, w.id), go = `#/day/${w.id}`;
-    if (w.day < t) { if (ACTIVE.has(w.st)) A.push({ tone: 'warn', ic: 'clock', t: `יום שטח לא נסגר · ${when}`, s: pn, href: go }); continue; }
-    if (w.day === t) for (const [x, tone] of lateOf(w, now)) if (tone === 'bad') A.push({ tone, ic: 'clock', t: `${x} · ${pn}`, s: P.get(w.crew_lead_id)?.full_name || '', act: () => setFocus(c, w.id, true) });
+    if (w.day < t && !isCurrent(w, t)) { if (ACTIVE.has(w.st)) A.push({ tone: 'warn', ic: 'clock', t: `יום שטח לא נסגר · ${when}`, s: pn, href: go }); continue; }
+    if (isCurrent(w, t)) for (const [x, tone] of lateOf(w, now)) if (tone === 'bad') A.push({ tone, ic: 'clock', t: `${x} · ${pn}`, s: P.get(w.crew_lead_id)?.full_name || '', act: () => setFocus(c, w.id, true) });
     if (w.st !== 'planned' || w.day > wk) continue;
     crew.filter(m => m.cant_come_at).forEach(m => A.push({ tone: 'bad', ic: 'users', t: `${nm(m.user_id)} לא יכול להגיע · ${when}`, s: [pn, m.cant_come_reason].filter(Boolean).join(' · '), act: fix }));
     if (!w.crew_lead_id) A.push({ tone: 'bad', ic: 'users', t: `אין ראש צוות · ${when}`, s: pn, act: fix });
@@ -330,7 +337,7 @@ function drawWeek(c) {
   const { t, D, P } = c.data, cols = Array.from({ length: 7 }, (_, i) => addDays(t, i));
   const n = D.filter(w => w.day >= t).length;
   box.innerHTML = `<div class="lvsh"><h3>השבוע</h3>${n ? `<span class="lvcnt">${n}</span>` : ''}</div><div class="lvweek">${cols.map(d => { const ws = D.filter(w => w.day === d), off = [5, 6].includes(new Date(d + 'T12:00').getDay());
-    return `<div class="lvwd${d === t ? ' now' : ''}${off ? ' off' : ''}"><span class="lvwdh"><b>${d === t ? 'היום' : d === addDays(t, 1) ? 'מחר' : HE_D1[new Date(d + 'T12:00').getDay()]}</b><small>${dm(d)}</small></span><span class="lvwis">${ws.map(w => { const l = P.get(w.crew_lead_id); return `<button class="lvwi s-${ST[w.st][1]}" type="button" data-w="${w.id}"><i></i><span>${esc(nameOf(w))}</span><small>${esc(l ? initials(l.full_name) : '?')}${w.report_time ? ' · ' + t5(w.report_time) : ''}</small></button>`; }).join('') || '<span class="lvwe">—</span>'}</span></div>`; }).join('')}</div>`;
+    return `<div class="lvwd${d === t ? ' now' : ''}${off ? ' off' : ''}"><span class="lvwdh"><b>${d === t ? 'היום' : d === addDays(t, 1) ? 'מחר' : HE_D1[new Date(d + 'T12:00').getDay()]}</b><small>${dm(d)}</small></span><span class="lvwis">${ws.map(w => { const l = P.get(w.crew_lead_id); return `<button class="lvwi s-${ST[w.st][1]}" type="button" data-w="${w.id}"><i></i><span>${esc(nameOf(w))}${nightTag(w)}</span><small>${esc(l ? initials(l.full_name) : '?')}${w.report_time ? ' · ' + t5(w.report_time) : ''}</small></button>`; }).join('') || '<span class="lvwe">—</span>'}</span></div>`; }).join('')}</div>`;
   $$('[data-w]', box).forEach(b => b.onclick = () => { const w = D.find(x => x.id === b.dataset.w); if (!w) return; if (w.g && mapDays(c).some(x => x.id === w.id)) setFocus(c, w.id, true); else if (w.st === 'planned') adm(c, w.id); else location.hash = '#/day/' + w.id; });
 }
 
@@ -359,7 +366,7 @@ function etaOf(w) {
   if (!['on_site', 'working', 'issue'].includes(w.st) || w.finished_at || !w.arrived_at) return '';
   const arr = new Date(w.arrived_at);
   let end = null;
-  if (w.site_end) { end = at(w.day, w.site_end); if (w.site_arrival) end = new Date(+end + (arr - at(w.day, w.site_arrival))); }
+  if (w.site_end) { end = at(endDay(w), w.site_end); if (w.site_arrival) end = new Date(+end + (arr - at(w.day, w.site_arrival))); }
   else if (w.site_arrival) return '';
   if (!end) return '';
   if (end < new Date()) end = new Date(Date.now() + 15 * 6e4);   // עבר הזמן ועדיין עובדים — לא "בעבר"

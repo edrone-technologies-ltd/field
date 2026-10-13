@@ -1,6 +1,7 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
 import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir, skeleton, freshReads, replaceHash } from './lib/core.js';
 import { errText } from './lib/audit.js';
+import './lib/photo.js';   // בכל בחירת תמונה: צילום או מהגלריה
 
 const app = $('#app');
 // מחשב (מסך ≥1100, מנהל תפעול ומעלה): סרגל צד במקום הבר התחתון, חיפוש מהיר, רשימה + פירוט — lib/ws.js. בטלפון לא נטען

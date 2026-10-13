@@ -2,6 +2,7 @@
 import { navButtons, replaceHash, thumbUrls , stLabel } from '../lib/core.js';
 import { availability } from '../lib/avail.js';
 import { facadeOrder } from '../lib/sun.js';
+import { isNight, nightRange, nightTag, nightToggleHtml, bindNight } from '../lib/night.js';
 import { errText } from '../lib/audit.js';
 import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, folderGrid, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, backBtn, HE_D1, leadMark, coverFor, skeleton } from '../lib/core.js';
 
@@ -165,7 +166,7 @@ export async function renderProject(el, id, tab = 'o') {
       <div class="list">
         <div class="lrow"><span class="mic">${icon('calendar', 19)}</span><span class="grow">${PL.length > 1 ? `<b class="pulsetxt">${PL.map(r => `<span>${pulseLbl(r)}</span>`).join(' · ')}</b><small>${PL.length} פעימות · ${pulseWd(PL)} ימי עבודה${done ? ` · ${done} בוצעו` : ''}</small>` : p.planned_from ? `<b>${dm(p.planned_from)} – ${dm(p.planned_to || p.planned_from)}</b><small>${(n => n === 1 ? 'יום עבודה אחד' : n + ' ימי עבודה')(wdays(p.planned_from, p.planned_to || p.planned_from))}${done ? ` · ${done} בוצעו` : ''}</small>` : '<b>אין תאריכים</b>'}</span>${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : p.dates_dirty && p.monday_item_id ? '<span class="pill">מתעדכן במאנדי</span>' : ''}</div>
         ${up.map(d => `<a class="lrow" href="#/day/${d.id}"><span class="datebox ${d.day === t ? 'now' : ''}"><b>${+d.day.slice(8)}</b><small>${d.day === t ? 'היום' : HE_D1[new Date(d.day + 'T12:00').getDay()]}</small></span>
-          <span class="grow"><b>${d.report_time ? 'יציאה ' + d.report_time.slice(0, 5) : 'יום שטח'}${d.is_last_day ? ' · יום אחרון' : ''}</b><small>${d.site_arrival ? `באתר <bdi dir="ltr">${d.site_arrival.slice(0, 5)}${d.site_end ? '–' + d.site_end.slice(0, 5) : ''}</bdi> · ` : ''}${crewOf(d) || 'לא שובץ צוות'}</small></span>${M ? `<button class="chip" data-mv="${d.id}" data-day="${d.day}">עריכה</button>` : ''}</a>`).join('')}
+          <span class="grow"><b>${d.report_time ? 'יציאה ' + d.report_time.slice(0, 5) : 'יום שטח'}${d.is_last_day ? ' · יום אחרון' : ''}${nightTag(d)}</b><small>${isNight(d) ? esc(nightRange(d)) + ' · ' : d.site_arrival ? `באתר <bdi dir="ltr">${d.site_arrival.slice(0, 5)}${d.site_end ? '–' + d.site_end.slice(0, 5) : ''}</bdi> · ` : ''}${crewOf(d) || 'לא שובץ צוות'}</small></span>${M ? `<button class="chip" data-mv="${d.id}" data-day="${d.day}">עריכה</button>` : ''}</a>`).join('')}
         ${M ? `<button class="addrow" id="schm">${icon('plus', 18)} ${up.length ? 'שיבוץ מחדש' : 'שיבוץ ימים'}</button>` : ''}
       </div></section>`;
   }
@@ -385,8 +386,8 @@ export async function renderProject(el, id, tab = 'o') {
   function dayBrief(wd, ts) {
     const exec = ts.filter(t => t.phase === 'ביצוע' && t.status !== 'done');
     const out = [];
-    const night = wd?.site_arrival && (+wd.site_arrival.slice(0, 2) >= 18 || +wd.site_arrival.slice(0, 2) < 5);
-    if (night) out.push(`<small><b>משמרת לילה</b> · באתר ${wd.site_arrival.slice(0, 5)}${wd.site_end ? '–' + wd.site_end.slice(0, 5) : ''}</small>`);
+    const night = isNight(wd) || (wd?.site_arrival && (+wd.site_arrival.slice(0, 2) >= 18 || +wd.site_arrival.slice(0, 2) < 5));
+    if (night) out.push(`<small><b>עבודת לילה</b> · ${esc(isNight(wd) ? nightRange(wd) : 'באתר ' + wd.site_arrival.slice(0, 5))}</small>`);
     if (wd && exec.length && !night) {
       const fac = [...new Set(exec.flatMap(t => t.facades || []))];
       const ord = facadeOrder(wd.day, p.sites?.lat || p.lat, p.sites?.lng || p.lng, fac);
@@ -429,7 +430,8 @@ export async function renderProject(el, id, tab = 'o') {
       <label class="field">ראש צוות<select id="sl">${leads.map(x => `<option value="${x.id}" data-n="${esc(x.full_name)}" ${x.id === leadDef ? 'selected' : ''}>${esc(x.full_name)}</option>`).join('')}</select></label>
       <div class="field">צוות<div class="chips">${D.team.map(x => `<button class="chip" data-u="${x.id}" aria-pressed="${crewDef.has(x.id)}"><span>${esc(x.full_name)}</span><small class="why"></small></button>`).join('')}</div></div>
       <label class="field">רחפן<select id="sdr"><option value="">בלי רחפן</option>${D.drones.map(x => `<option value="${x.id}" data-n="${esc(x.name)}" data-w="${dTag(x)}" ${x.health === 'grounded' ? 'disabled' : x.id === droneDef ? 'selected' : ''}>${esc(x.name)}${dTag(x)}</option>`).join('')}</select></label>
-      <div class="row"><label class="field grow">הגעה לאתר<input type="time" id="sa" value="${(prev?.site_arrival || '07:00').slice(0, 5)}"></label><label class="field grow">סיום באתר<input type="time" id="se" value="${(prev?.site_end || '').slice(0, 5)}"></label></div>
+      ${nightToggleHtml('snt', isNight(prev))}
+      <div class="row"><label class="field grow" id="lsa">הגעה לאתר<input type="time" id="sa" value="${(prev?.site_arrival || '07:00').slice(0, 5)}"></label><label class="field grow" id="lse">סיום באתר<input type="time" id="se" value="${(prev?.site_end || '').slice(0, 5)}"></label></div>
       <label class="field">יציאה מהמשרד<small id="sthint">מחשב לפי מרחק…</small><input type="time" id="st" value="${(prev?.report_time || '06:00').slice(0, 5)}"></label>
       <label class="tog"><span>כולל שישי</span><span class="sw"><input type="checkbox" id="sfr"><i></i></span></label>
       <div class="field">תחזית<div id="wxs" class="wxs"><div class="small muted">בודק תחזית…</div></div></div>
@@ -504,6 +506,9 @@ export async function renderProject(el, id, tab = 'o') {
         $('#sthint', s).textContent = travelMin != null ? `מומלץ: נסיעה ${Math.floor(travelMin / 60)}:${String(travelMin % 60).padStart(2, '0')} מ${Dp.office_name} + ${Dp.load_min} דק׳ העמסה` : lat ? 'מחשב מרחק…' : `${Dp.load_min} דק׳ העמסה`;
       };
       $('#sa', s).onchange = () => { recalc(); drawWx(); }; $('#st', s).oninput = () => { touched = true; };
+      // עבודת לילה: ההגעה בערב, הסיום למחרת. היציאה מחושבת אחורה מההגעה (recalc), התחזית — על שעות הלילה (wxFor)
+      const nightOn = bindNight(s, { tog: '#snt', arr: '#sa', end: '#se', lblA: '#lsa', lblE: '#lse' });
+      $('#snt', s).addEventListener('change', () => { if ($('#snt', s).checked) touched = false; recalc(); });
       sb.from('app_settings').select('value').eq('key', 'dispatch').maybeSingle().then(async ({ data }) => {
         Object.assign(Dp, data?.value || {}); recalc();
         if (!lat) return;
@@ -520,6 +525,8 @@ export async function renderProject(el, id, tab = 'o') {
         const days = plan().filter(x => !x.skip).map(x => x.d), PLx = curPl();
         // פעימה אחרונה שהתארכה בגלל דילוג תחזית — נשמרת עם היום האחרון בפועל
         const pulses = PLx.map(r => [...r]); if (days.length && pulses.length && days.at(-1) > pulses.at(-1)[1]) pulses.at(-1)[1] = days.at(-1);
+        if (nightOn() && !$('#se', s).value) $('#se', s).value = '06:00';
+        if (!nightOn() && $('#se', s).value && $('#sa', s).value && $('#se', s).value < $('#sa', s).value) return toast('הסיום לפני ההגעה — עבודת לילה?');
         const args = { p: id, days, lead: $('#sl', s).value, crew, drone: $('#sdr', s).value || null, report: $('#st', s).value || '06:00',
           arrive: $('#sa', s).value || null, shift_end: $('#se', s).value || null, pulses };
         if (!days.length || !args.lead || $('#sl', s).selectedOptions[0]?.disabled) return toast(days.length ? 'אין ראש צוות פנוי בתאריכים האלה' : 'חסר תאריך');

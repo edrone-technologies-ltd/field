@@ -212,7 +212,7 @@ function serviceSheet(r, C, done, pre = {}) {
     $$('[data-k]', s).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('[data-k]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#scomp', s).hidden = kind !== 'component'; });
     $$('[data-t]', s).forEach(b => b.onclick = () => { const t = b.dataset.t; tags.has(t) ? tags.delete(t) : tags.add(t); b.setAttribute('aria-pressed', tags.has(t)); });
     $$('[data-cp]', s).forEach(b => b.onclick = () => { comp = b.dataset.cp; $$('[data-cp]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#sns', s).focus(); });
-    $('#sf', s).onchange = e => { file = e.target.files[0] || null; $('#spn', s).textContent = file ? 'צולם ✓' : 'תמונה'; };
+    $('#sf', s).onchange = e => { file = e.target.files[0] || null; $('#spn', s).textContent = file ? (file.__ph?.src === 'gallery' ? 'נבחרה ✓' : 'צולם ✓') : 'תמונה'; };
     $('#sgo', s).onclick = async () => {
       const go = $('#sgo', s); if (go.disabled) return;
       const sn = $('#sns', s)?.value.trim() || null, day = $('#sd', s).value || isoDay();

@@ -17,7 +17,7 @@ export async function renderExpenses(el) {
   const urls = await signedUrls('field', (rows || []).map(r => r.receipt_path).filter(Boolean)).catch(() => ({}));
   const row = (r, decide) => { const [t, c] = ST[r.status];
     return `<div class="lrow xrow"${decide ? ` data-bk="${r.id}"` : ''}>${r.receipt_path && urls[r.receipt_path] ? `<img src="${esc(urls[r.receipt_path])}" alt="קבלה" data-z="${esc(urls[r.receipt_path])}">` : `<span class="rep-ph">${icon('report', 20)}</span>`}
-      <span class="grow"><b>${nis(r.amount)} · ${CATS[r.category]}</b><small>${dm(r.day)}${r.vendor ? ' · ' + esc(r.vendor) : ''}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}${decide ? ' · ' + esc(r.profiles?.full_name || '') : ''}</small>
+      <span class="grow"><b>${nis(r.amount)} · ${CATS[r.category]}</b><small>${dm(r.day)}${r.vendor ? ' · ' + esc(r.vendor) : ''}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}${decide ? ' · ' + esc(r.profiles?.full_name || '') : ''}${M && r.receipt_source === 'gallery' ? ' · <span class="phsrc">🖼️ קבלה מהגלריה</span>' : ''}</small>
       ${r.note ? `<small>${esc(r.note)}</small>` : ''}${r.manager_reply ? `<small class="mreply">תגובה: ${esc(r.manager_reply)}</small>` : ''}${M && r.morning_status === 'sent' ? `<small class="ok">במורנינג ${icon('check', 12)}</small>` : M && r.morning_error && r.morning_tries >= 5 ? '<small class="err">לא נשלח למורנינג</small>' : ''}</span>
       ${decide ? `<span class="stack tight"><button class="chip" data-ok="${r.id}">אישור</button><button class="chip" data-no="${r.id}">דחייה</button></span>` : `<span class="pill ${c}">${t}</span>`}</div>`; };
   const monthTot = mine.filter(r => r.day.slice(0, 7) === isoDay().slice(0, 7) && r.status !== 'rejected').reduce((t, r) => t + Number(r.amount), 0);
@@ -71,7 +71,7 @@ export async function newExpense(projectId, done, back, file0 = null) {
     <label class="field">הערה<input type="text" id="xn"></label>
     <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="xgo">שליחה לאישור</button></div>`, (s, close) => {
     const pic = () => { const i = $('#rci', s); if (prevUrl) URL.revokeObjectURL(prevUrl); prevUrl = file ? URL.createObjectURL(file) : null; i.hidden = !file; if (file) i.src = prevUrl;
-      $('#rcn', s).innerHTML = file ? `${icon('check', 18)} הקבלה צולמה · החלפה` : `${icon('photo', 22)} צילום קבלה`; $('#rcl', s).classList.toggle('on', !!file);
+      $('#rcn', s).innerHTML = file ? `${icon('check', 18)} ${file.__ph?.src === 'gallery' ? 'הקבלה נבחרה' : 'הקבלה צולמה'} · החלפה` : `${icon('photo', 22)} צילום קבלה`; $('#rcl', s).classList.toggle('on', !!file);
       $('#xgo', s).textContent = file ? 'שליחה' : 'שליחה בלי קבלה'; };
     pic(); setTimeout(() => $('#xa', s)?.focus(), 120);
     const sync = () => { $('#fuel', s).hidden = cat !== 'fuel'; const v = $('#veh', s); if (v) v.hidden = cat !== 'fuel'; };
@@ -83,7 +83,7 @@ export async function newExpense(projectId, done, back, file0 = null) {
       const id = uid(); let receipt_path = null;
       if (file) { receipt_path = `${state.user.id}/receipts/${id}.jpg`; await enqueue({ kind: 'file', path: receipt_path, blob: await shrink(file, 1800, 0.8), type: 'image/jpeg' }); }
       await enqueue({ kind: 'insert', table: 'expenses', row: { id, user_id: state.user.id, category: cat, amount, day: $('#xd', s).value, vendor: $('#xv', s).value.trim() || null, note: $('#xn', s).value.trim() || null,
-        project_id: $('#xp', s).value || null, vehicle_id: $('#xr', s)?.value || null, liters: cat === 'fuel' ? (+$('#xl', s).value || null) : null, odometer: cat === 'fuel' ? (+$('#xo', s).value || null) : null, receipt_path } });
+        project_id: $('#xp', s).value || null, vehicle_id: $('#xr', s)?.value || null, liters: cat === 'fuel' ? (+$('#xl', s).value || null) : null, odometer: cat === 'fuel' ? (+$('#xo', s).value || null) : null, receipt_path, ...(file?.__ph?.src ? { receipt_source: file.__ph.src } : {}) } });
       try { localStorage.setItem(LAST, JSON.stringify({ cat, veh: $('#xr', s)?.value || L.veh || '' })); } catch { /* */ }
       if (prevUrl) URL.revokeObjectURL(prevUrl);
       close(); toast('ההוצאה נשלחה לאישור'); await flush(); done && done();

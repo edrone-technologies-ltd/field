@@ -1,6 +1,7 @@
 // יום שטח: בוקר ← העמסה ← באתר ← בעבודה ← סיום. השלב נגזר ממה שכבר נשמר, כל פעולה נכנסת לתור ונשלחת כשיש קליטה.
 import { coverArt, icon, leadMark, navButtons, thumbUrls } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
+import { isNight, nightRange, nightTag, isCurrent, wxKey } from '../lib/night.js';
 import { loadZones, dayZones, zonePrefill, zonesHtml, bindZones, zonesPayload, zkey } from './zones.js';
 import { SEC, needsDrone, pulseRoles, mySection, decideSheet, afterDecide } from './prestart.js';
 import { sb, state, cache, enqueue, sendsLabel, pendingPhotos, signedUrls, addFieldPhoto, sheet, uid, isManager, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, haptic } from '../lib/core.js';
@@ -111,7 +112,7 @@ export async function renderDay(el, id) {
     const s = stage();
     return `<div class="phero sm"><span class="img" style="background-image:url('${coverUrl || coverArt(P.name || '')}')"></span>
         <a class="back glass" href="#/" aria-label="חזרה">${icon('back', 20)}</a>
-        <span class="ph-bottom"><span class="row"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${dayLabel(D.day.day)}</span>${statusPill(D.day)}</span>
+        <span class="ph-bottom"><span class="row"><span class="chip-dark">${REPORT ? 'דוח יומי · ' : ''}${isNight(D.day) ? nightTag(D.day) + ' ' + esc(nightRange(D.day)) : dayLabel(D.day.day)}</span>${statusPill(D.day)}</span>
         <b>${esc(P.name || '')}</b>${D.day.day_goal ? `<small>${esc(D.day.day_goal)}</small>` : ''}</span></div>
       ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => `<li class="${i < s ? 'done' : i === s ? 'now' : ''}"><i>${i < s ? icon('check', 16) : i + 1}</i><span>${t}</span></li>`).join('')}</ol>`}`;
   }
@@ -147,7 +148,7 @@ export async function renderDay(el, id) {
     // סדר המסך = סדר הבוקר: מתי ולאן → מה המשרד ביקש → מה לקחת → מה עושים היום → איך (שמש) → מי ואיפה (איש קשר, מפה)
     return `<div class="card stack">
         <div class="kpis dayk"><div class="kpi"><b>${hhmm(D.day.report_time) || '—'}</b><span>יציאה מהמשרד</span></div>
-          ${D.day.site_arrival ? `<div class="kpi"${isManager() && D.day.status !== 'done' ? ' data-dadm role="button" tabindex="0" aria-label="שינוי שעות היום"' : ''}><b><bdi dir="ltr">${hhmm(D.day.site_arrival)}${D.day.site_end ? `<small class="kend">–${hhmm(D.day.site_end)}</small>` : ''}</bdi></b><span>באתר</span></div>` : `<div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div>`}
+          ${D.day.site_arrival ? `<div class="kpi"${isManager() && D.day.status !== 'done' ? ' data-dadm role="button" tabindex="0" aria-label="שינוי שעות היום"' : ''}><b><bdi dir="ltr">${hhmm(D.day.site_arrival)}${D.day.site_end ? `<small class="kend">–${hhmm(D.day.site_end)}</small>` : ''}</bdi></b><span>${isNight(D.day) ? 'באתר · לילה' : 'באתר'}</span></div>` : `<div class="kpi"><b>${nTasks}</b><span>משימות היום</span></div>`}
           <div class="kpi"><b>${D.day.gallons_planned ? nf(D.day.gallons_planned) : '—'}</b><span>גלונים</span></div></div>
         ${countdown()}
         ${D.day.gust_max != null && !P.site_id ? `<div class="alert ${D.day.weather_alerted ? 'bad' : ''}"><span class="dot ${D.day.weather_alerted ? '' : 'ok'}"></span><span class="grow"><b>רוח עד ${D.day.wind_max} קמ״ש · משבים ${D.day.gust_max}${D.day.rain_mm ? ` · גשם ${D.day.rain_mm} מ״מ` : ''}</b><small>תחזית לשעות העבודה</small></span></div>` : ''}
@@ -194,7 +195,7 @@ export async function renderDay(el, id) {
   function sunCard() {
     const lat = site.lat || P.lat, lng = site.lng || P.lng;
     const a = D.day.site_arrival ? +D.day.site_arrival.slice(0, 2) : null;
-    if (a != null && (a >= 18 || a < 5)) return '';  // משמרת לילה — אין שיקול שמש
+    if (isNight(D.day) || (a != null && (a >= 18 || a < 5))) return '';  // משמרת לילה — אין שיקול שמש
     const pl = sunPlan(D.day.day, lat || 31.9, lng || 34.9), adv = sunAdvice(pl), hrs = pl.hours.filter(h => h.h >= 7 && h.h < 17);
     const hh = h => String(h).padStart(2, '0') + ':00';
     const fac = [...new Set(D.tasks.filter(t => t.phase === 'ביצוע').flatMap(t => t.facades || []))];
@@ -293,7 +294,7 @@ export async function renderDay(el, id) {
     const L = dayList(), done = L.filter(t => t.status === 'done').length, tot = L.filter(t => t.status !== 'dropped').length;
     // סדר החזיתות לפי השמש — בשורה אחת מעל המשימות, כי בזמן העבודה זה מה שקובע מאיפה מתחילים
     const fac = [...new Set(D.tasks.filter(t => t.phase === 'ביצוע' && t.status !== 'done').flatMap(t => t.facades || []))];
-    const a0 = D.day.site_arrival ? +D.day.site_arrival.slice(0, 2) : 7, night = a0 >= 18 || a0 < 5;
+    const a0 = D.day.site_arrival ? +D.day.site_arrival.slice(0, 2) : 7, night = isNight(D.day) || a0 >= 18 || a0 < 5;
     const ord = fac.length > 1 && !night ? facadeOrder(D.day.day, site.lat || P.lat, site.lng || P.lng, fac) : [];
     return `${ord.length ? `<div class="lrow">${icon('sun', 20)}<span class="grow"><b>סדר לפי השמש</b><small>${ord.map(o => `${esc(o.name)} ${esc(o.when)}`).join(' · ')}</small></span></div>` : ''}
       <div class="row"><h3 class="grow">משימות היום</h3><span class="pill ${done === tot && tot ? 'ok' : 'lime'}">${done}/${tot}</span></div>
@@ -317,7 +318,7 @@ export async function renderDay(el, id) {
       hours: Object.fromEntries(D.day.work_day_crew.map(c => [c.user_id, c.hours ?? D.clockH?.[c.user_id] ?? null])),
       tomorrow: D.day.tomorrow ?? D.tasks.filter(t => !['done', 'dropped'].includes(t.status) && t.phase !== 'הכנה').map(t => t.title).join(' · '),   // הכנות לפני יציאה אינן "עבודה למחר"
       sign: { name: site.contact_name || '', role: '', satisfied: true, notes: '' },
-      start: D.day.arrived_at ? hm(D.day.arrived_at) : '07:00', end: D.day.finished_at ? hm(D.day.finished_at) : (D.day.day === isoDay() ? hm(new Date().toISOString()) : '15:00'),
+      start: D.day.arrived_at ? hm(D.day.arrived_at) : isNight(D.day) ? (D.day.site_arrival || '22:00').slice(0, 5) : '07:00', end: D.day.finished_at ? hm(D.day.finished_at) : (isCurrent(D.day) ? hm(new Date().toISOString()) : isNight(D.day) ? '06:00' : '15:00'),
       crew: D.day.work_day_crew.map(c => c.user_id),
       zones: zonePrefill(D.zones, D.tasks, D.day.id),   // אילו חזיתות הושלמו היום — לפי המשימות שבוצעו
     };
@@ -483,7 +484,7 @@ export async function renderDay(el, id) {
     if (!REPORT) {
       const top = $('#dtop', el), pb = document.createElement('div'); pb.id = 'dayplan'; top.appendChild(pb);
       import('./plan.js').then(m => m.planForDay(pb, D.day, D.plan)).then(r => { if (r !== undefined && r !== D.plan) { D.plan = r; keep(); } }).catch(() => {});   // תכנית היום: טקסט + תמונות מהאפיון
-      if (D.day.projects?.site_id) { const wb = document.createElement('div'); wb.id = 'daywx'; wb.innerHTML = `<span data-wxcard="${D.day.projects.site_id}|${D.day.day}|תחזית לשעות העבודה"></span>`; top.appendChild(wb); import('../lib/wx.js').then(m => m.fillWx(wb)).catch(() => {}); }
+      if (D.day.projects?.site_id) { const wb = document.createElement('div'); wb.id = 'daywx'; wb.innerHTML = `<span data-wxcard="${D.day.projects.site_id}|${wxKey(D.day)}|${isNight(D.day) ? 'תחזית לשעות הלילה' : 'תחזית לשעות העבודה'}"></span>`; top.appendChild(wb); import('../lib/wx.js').then(m => m.fillWx(wb)).catch(() => {}); }
     }
     if (isManager()) { const sg = document.createElement('div'); sg.className = 'sigline'; sg.id = 'daysig'; el.appendChild(sg);
       import('../lib/audit.js').then(m => m.signature(sg, { work_day_id: D.day.id })); }

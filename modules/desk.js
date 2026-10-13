@@ -4,6 +4,9 @@
 // קריאה אחת לשרת (desk_week, db/121) + תחזית. בלי כסף.
 import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, toast, sheet, timeAgo, shortName, backBtn, stLabel, replaceHash, nf } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
+import { wxKey } from '../lib/night.js';
+// עבודת לילה (db/136c): ימי השולחן מגיעים עם night/arr/end — מוצב בתאריך ההתחלה, עם סימון לילה
+const ND = d => ({ day: d.day, night: d.night, site_arrival: d.arr, site_end: d.end }), nl = d => d.night ? ' · לילה' : '';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const sunday = s => addDays(s, -new Date(s + 'T12:00:00').getDay());
@@ -123,7 +126,7 @@ function prep() {
 }
 function wxLevel(r) {
   const W = D.wx[r.id]; let L = null, worst = null;
-  for (const d of r.wxDays) { const x = W?.[d.day]; const l = Math.max(d.wx ? 2 : 0, x?.L ?? (d.wx ? 2 : -1)); if (l > (L ?? -1)) { L = l; worst = d; } }
+  for (const d of r.wxDays) { const x = W?.[wxKey(ND(d))]; const l = Math.max(d.wx ? 2 : 0, x?.L ?? (d.wx ? 2 : -1)); if (l > (L ?? -1)) { L = l; worst = d; } }
   return { L: L < 0 ? null : L, d: worst };
 }
 async function weather() {
@@ -278,9 +281,9 @@ const row = (main, small, act = '', tone = '', attr = '') => `<div class="dkr ${
 function sec(k, r) {
   const C = !!D.S.closed, t = D.data.today;
   switch (k) {
-    case 'days': return r.days.map(d => row(`${sd(d.day)} · ${ST[d.status] || d.status}`, esc([first(d.lead_name) || 'בלי ראש צוות', `${(d.crew || []).length} בצוות`, Array.isArray(d.zones) && d.zones.length ? d.zones.length + ' חזיתות' : ''].filter(Boolean).join(' · ')),
+    case 'days': return r.days.map(d => row(`${sd(d.day)}${nl(d)} · ${ST[d.status] || d.status}`, esc([first(d.lead_name) || 'בלי ראש צוות', `${(d.crew || []).length} בצוות`, Array.isArray(d.zones) && d.zones.length ? d.zones.length + ' חזיתות' : ''].filter(Boolean).join(' · ')),
       d.status === 'done' || d.closed ? `<a class="btn ghost sm" href="#/day/${d.id}">הדוח</a>` : dayBtn(d.id), d.status === 'done' || d.closed ? 'ok' : '')).join('');
-    case 'crew': return r.days.map(d => row(`${sd(d.day)}`, (d.crew || []).map(c => `<span class="${c.no ? 'bad' : ''}">${esc(first(c.n))}${c.u === d.lead ? ' ★' : ''}${c.no ? ' · לא יגיע' : ''}</span>`).join(' · ') || 'לא שובץ צוות',
+    case 'crew': return r.days.map(d => row(`${sd(d.day)}${nl(d)}`, (d.crew || []).map(c => `<span class="${c.no ? 'bad' : ''}">${esc(first(c.n))}${c.u === d.lead ? ' ★' : ''}${c.no ? ' · לא יגיע' : ''}</span>`).join(' · ') || 'לא שובץ צוות',
       d.status === 'done' ? '' : dayBtn(d.id, (d.crew || []).some(c => c.no) ? 'מחליף' : 'ניהול'), (d.crew || []).some(c => c.no) ? 'bad' : '')).join('');
     case 'm2': return r.days.filter(d => Array.isArray(d.zones) && d.zones.length).map(d => row(`${sd(d.day)} · ${nf(Math.round(d.zones.reduce((a, z) => a + Number(z.m2 || 0), 0))) || d.zones.length} ${d.zones.some(z => z.m2) ? 'מ״ר' : 'חזיתות'}`,
       esc(d.zones.map(z => (z.bn ? z.bn + ' · ' : '') + String(z.t || '').replace(/^חזית /, '')).join(' · ')), `<a class="btn ghost sm" href="#/day/${d.id}">היום</a>`)).join('');
@@ -319,7 +322,7 @@ function sec(k, r) {
     case 'unc': return r.unc.map(d => row(`${sd(d.day)} · ${d.status === 'planned' ? 'לא התחיל' : 'לא נסגר'}`, esc([first(d.lead_name) || 'בלי ראש צוות', ST[d.status]].filter(Boolean).join(' · ')),
       d.status === 'planned' ? dayBtn(d.id, 'להעביר / לבטל') : `<a class="btn primary sm" href="#/day/${d.id}">סגירת היום</a>`, 'bad')).join('');
     case 'next': return r.next ? row(`${r.next.day === t ? 'היום' : sd(r.next.day)}`, esc(first(r.next.lead_name) || 'בלי ראש צוות'), `<a class="btn ghost sm" href="#/dispatch/${r.next.day}">לוח שיבוץ</a>${dayBtn(r.next.id)}`) : '';
-    case 'wx': return r.wxDays.map(d => { const x = D.wx[r.id]?.[d.day], L = Math.max(d.wx ? 2 : 0, x?.L ?? 0), known = x || d.wx;
+    case 'wx': return r.wxDays.map(d => { const x = D.wx[r.id]?.[wxKey(ND(d))], L = Math.max(d.wx ? 2 : 0, x?.L ?? 0), known = x || d.wx;
       return known && (C || L) ? row(`${sd(d.day)} · ${WXW[L]}`, x ? `רוח ${Math.round(x.w)} · משבים ${Math.round(x.g)} קמ״ש${x.p != null ? ` · גשם ${x.p}%` : ''}` : d.gust ? `משבים עד ${d.gust} קמ״ש` : '', L ? dayBtn(d.id, 'להזיז') : '', ['ok', 'warn', 'bad'][L]) : ''; }).join('')
       || (r.wxDays.length ? `<div class="dkok">${icon('sun', 18)}<span>טוב לטיסה בכל הימים בתחזית</span></div>` : '');
   }

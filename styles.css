@@ -2517,3 +2517,24 @@ body.ws .xrow .stack.tight{flex-direction:row;gap:6px}
 .tabs button .cub{position:absolute;top:-4px;inset-inline-end:-2px;min-width:18px;height:18px;font-size:.66rem;padding:0 5px;margin:0;box-shadow:0 0 0 2px var(--bg2)}
 .wctabs button .cub{position:static;box-shadow:none;margin-inline-start:6px}
 .phead .muted a{color:inherit;font-weight:700;text-decoration:underline}
+/* בחירת מקור תמונה — צילום / מהגלריה (lib/photo.js) */
+.phpk{position:fixed;inset:0;z-index:2000;background:rgba(10,14,12,.42);display:flex;align-items:flex-end;justify-content:center;animation:fadeIn .15s ease-out}
+.phpk-in{width:100%;max-width:520px;background:var(--bg);border-radius:22px 22px 0 0;padding:16px 16px calc(14px + var(--safe-b));display:grid;grid-template-columns:1fr 1fr;gap:10px;box-shadow:0 -8px 30px rgba(0,0,0,.18);animation:sheetUp .22s cubic-bezier(.2,.9,.25,1)}
+.phpk-b{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 8px;border-radius:var(--r);border:1px solid var(--line);background:var(--card);color:var(--ink);font:600 1.02rem var(--f-body);cursor:pointer}
+.phpk-b span{font-size:1.9rem;line-height:1}
+.phpk-b:active{transform:scale(.97);background:var(--card2)}
+.phpk-b[data-s=camera]{border-color:var(--lime);background:var(--limebg)}
+.phpk-x{grid-column:1/-1;padding:12px;border:0;background:none;color:var(--muted);font:500 .95rem var(--f-body);cursor:pointer}
+.phsrc{color:var(--warn);font-weight:600;white-space:nowrap}
+.viewer .vsrc{position:absolute;top:calc(var(--safe-t) + 64px);left:50%;transform:translateX(-50%);z-index:3;background:rgba(0,0,0,.6);color:#ffd28a;padding:4px 12px;border-radius:999px;font:600 .82rem var(--f-body);white-space:nowrap;pointer-events:none}
+
+/* עבודת לילה (lib/night.js) — סימון ירח בשורות/כרטיסים, ומתג בטפסי שיבוץ */
+.ntag{display:inline-flex;align-items:center;gap:3px;margin-inline-start:6px;padding:1px 7px 1px 6px;border-radius:99px;font-size:11px;font-weight:600;line-height:1.5;vertical-align:middle;white-space:nowrap;
+  background:#26244a;color:#cfd0ff;border:1px solid #3b3a6e}
+.ntag svg{flex:none}
+:root[data-theme="light"] .ntag{background:#ecebff;color:#3b3891;border-color:#d4d2fb}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]) .ntag{background:#ecebff;color:#3b3891;border-color:#d4d2fb}}
+.chip-dark .ntag,.phero .ntag,.photo-hero .ntag{background:rgba(30,28,70,.75);color:#e4e4ff;border-color:rgba(160,160,255,.35);margin-inline-start:0}
+.ntog span:first-child{display:inline-flex;align-items:center;gap:6px}
+.isnight .ntog span:first-child{color:#a9a8ff}
+.wztop .ntag{margin-inline-start:4px;padding:0 5px;font-size:10px}

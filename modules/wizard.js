@@ -7,6 +7,7 @@ import { sb, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, toast, sheet, backB
 import { errText } from '../lib/audit.js';
 import { availability } from '../lib/avail.js';
 import { siteDays } from '../lib/wx.js';
+import { isNight, nightTag, nightToggleHtml, bindNight, wxKey } from '../lib/night.js';
 
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
 const sunday = s => addDays(s, -new Date(s + 'T12:00:00').getDay());
@@ -67,7 +68,7 @@ async function load() {
   // תחזית ונסיעה — במקביל לשאר, עם תקרת זמן (בלי תחזית — לא מדלגים)
   const extP = Promise.all([Promise.race([siteDays(uniqS), new Promise(r => setTimeout(() => r({}), 4500))]).catch(() => ({})), travel(uniqS, Dp)]);
   const [{ data: wds }, { data: bans }, { data: week }] = await Promise.all([
-    ids.length ? sb.from('work_days').select('id,day,status,kind,project_id,crew_lead_id,drone_id,report_time,site_arrival,created_at,work_day_crew(user_id,cant_come_at)').in('project_id', ids).neq('status', 'cancelled').order('day') : { data: [] },
+    ids.length ? sb.from('work_days').select('id,day,status,kind,project_id,crew_lead_id,drone_id,report_time,site_arrival,site_end,night,created_at,work_day_crew(user_id,cant_come_at)').in('project_id', ids).neq('status', 'cancelled').order('day') : { data: [] },
     q(sb.from('site_bans').select('site_id,user_id,reason')),
     sb.from('work_days').select('day,crew_lead_id,project_id,projects(name,site_id,lat,lng,sites(lat,lng)),work_day_crew(user_id,cant_come_at)').gte('day', addDays(a, -1)).lte('day', b).neq('status', 'cancelled'),
   ]);
@@ -140,7 +141,7 @@ function prepProject(p, ws, days, today) {
   const team = last ? [...new Set([last.crew_lead_id, ...(last.work_day_crew || []).filter(c => !c.cant_come_at).map(c => c.user_id)].filter(Boolean))] : [];
   const lastDrone = [...real].reverse().find(w => w.drone_id)?.drone_id || null;
   return { id: p.id, name: p.name, site: p.site_id, siteName: p.sites?.name || '', monday: !!p.monday_item_id, status: p.status_label || '', pilot: p.engagement === 'פיילוט',
-    from: p.planned_from, to: p.planned_to, inR: inRange, expected, done, planned, rem, rangeDays, taken, team, lastDrone, lastArr: last?.site_arrival || null, lastRep: last?.report_time || null,
+    from: p.planned_from, to: p.planned_to, inR: inRange, expected, done, planned, rem, rangeDays, taken, team, lastDrone, lastArr: last?.site_arrival || null, lastEnd: last?.site_end || (isNight(last) ? '06:00' : null), lastRep: last?.report_time || null,
     fresh: !ws.length, ws, needDrone: real.length ? real.some(w => w.drone_id) || !real.some(w => w.status === 'done') : true,
     defWant: rangeDays.length ? (rem == null ? rangeDays.length : Math.min(rangeDays.length, rem)) : 0 };
 }
@@ -149,7 +150,8 @@ function prepProject(p, ws, days, today) {
 const cfg = p => ({ want: p.defWant, size: Math.max(2, Math.min(4, p.team.length || 2)), ...(W.P[p.id] || {}) });
 const inPlan = p => W.extra.includes(p.id) || p.ws.some(w => w.day >= W.start && w.day <= W.days.at(-1) && w.kind !== 'report') || (p.rangeDays.length > 0 && cfg(p).want > 0) || Object.keys(W.locks).some(k => k.startsWith(p.id + '|'));
 const candDays = p => W.days.filter(d => d > W.today && dow(d) !== 6 && (dow(d) !== 5 || W.fri) && !p.taken.has(d) && !W.out.includes(p.id + '|' + d));
-const wxOf = (p, d) => p.site ? W.WX?.[p.site]?.[d] || null : null;
+const slotNight = s => !!s && isNight({ site_arrival: s.arr, site_end: s.end });   // עבודת לילה בתא: הסיום למחרת
+const wxOf = (p, d, s) => p.site ? W.WX?.[p.site]?.[slotNight(s) ? wxKey({ day: d, site_arrival: s.arr, site_end: s.end }) : d] || null : null;
 const licOk = (u, d) => { const x = W.people.find(y => y.id === u); if (!x?.is_pilot) return false; const e = W.LIC.get(u); return !e || e >= d; };
 const NM = u => W.people.find(x => x.id === u)?.full_name || '';
 const DRN = id => W.drones.find(x => x.id === id)?.name || '';
@@ -260,7 +262,7 @@ function solve() {
   const plan = W.projects.filter(inPlan);
   // 1. נעילות קודם — כמו שהמנהל קבע
   for (const [k, v] of Object.entries(W.locks)) { const [pid, d] = k.split('|'); const p = W.PM.get(pid); if (!p || !candDays(p).includes(d)) continue;
-    S.push({ pid, d, lead: v.lead || null, crew: [...(v.crew || [])], drone: v.drone || null, arr: v.arr || null, dep: v.dep || null, locked: true }); }
+    S.push({ pid, d, lead: v.lead || null, crew: [...(v.crew || [])], drone: v.drone || null, arr: v.arr || null, end: v.end || null, dep: v.dep || null, locked: true }); }
   // 2. בחירת ימים לכל פרויקט: טווח מאנדי קודם, יום "לא לטוס" מדולג (אלא אם ננעל), עד הכמות שצריך
   const order = [...plan].sort((a, b) => ((b.rangeDays.length ? 1 : 0) - (a.rangeDays.length ? 1 : 0)) || ((a.to || '9') < (b.to || '9') ? -1 : (a.to || '9') > (b.to || '9') ? 1 : 0) || (a.id < b.id ? -1 : 1));
   for (const p of order) {
@@ -283,7 +285,8 @@ function solve() {
   // 4. סבב שיפור: החלפת שני אנשים באותו תפקיד בין שני פרויקטים באותו יום, או אדם פנוי במקום מישהו — אם הציון הכולל עולה
   improve(S);
   // 5. ציון וסיבות
-  for (const s of S) { Object.assign(s, grade(s, S)); const t = times(s, S); s.arr = s.arr || t.arr; s.depAuto = t.dep; s.tr = t.tr; }
+  for (const s of S) { Object.assign(s, grade(s, S)); const t = times(s, S); if (!s.arr && !s.end) s.end = W.PM.get(s.pid)?.lastEnd || null; s.arr = s.arr || t.arr;   // לילה ממשיך כמו הימים הקודמים
+    s.depAuto = t.dep; s.tr = t.tr; }
   W.S = S; W.skipped = skipped; W.unfilled = unfilled;
   store.put('wz:' + W.start, { fri: W.fri, P: W.P, locks: W.locks, extra: W.extra, out: W.out });
   draw();
@@ -362,13 +365,13 @@ function row(p, cols) {
 
 function cell(p, d, s) {
   const ex = p.ws.filter(w => w.day === d && w.status !== 'cancelled');
-  if (ex.length) return `<div class="wzc ex">${ex.map(w => `<a class="wzex" href="#/day/${w.id}"><small>קיים</small><b>${esc(first(NM(w.crew_lead_id)) || '—')}${leadMark()}</b><small>${(w.work_day_crew || []).filter(c => c.user_id !== w.crew_lead_id).map(c => esc(first(NM(c.user_id)))).join(' · ')}</small></a>`).join('')}</div>`;
+  if (ex.length) return `<div class="wzc ex">${ex.map(w => `<a class="wzex" href="#/day/${w.id}"><small>קיים${nightTag(w)}</small><b>${esc(first(NM(w.crew_lead_id)) || '—')}${leadMark()}</b><small>${(w.work_day_crew || []).filter(c => c.user_id !== w.crew_lead_id).map(c => esc(first(NM(c.user_id)))).join(' · ')}</small></a>`).join('')}</div>`;
   const x = wxOf(p, d), canAdd = d > W.today && (dow(d) !== 5 || W.fri);
   const inR = p.from && p.from <= d && (p.to || p.from) >= d;
   if (!s) return `<div class="wzc empty ${inR && canAdd ? 'inr' : ''} ${x?.L === 2 ? 'nofly' : ''}">${canAdd ? `<button type="button" class="wzadd" data-addd="${p.id}|${d}" aria-label="הוספת יום">${x?.L ? `<small class="${x.L === 2 ? 'bad' : 'mid'}">${x.L === 2 ? 'לא לטוס' : 'גבולי'} · ${Math.round(x.g)}</small>` : icon('plus', 16)}</button>` : ''}</div>`;
   const tone = s.g >= 80 ? 'ok' : s.g >= 55 ? 'mid' : 'bad';
   return `<div class="wzc"><button type="button" class="wzcard ${tone} ${s.locked ? 'locked' : ''}" data-wslot="${p.id}|${d}">
-    <span class="wztop"><b>${s.dep || s.depAuto}</b>${s.locked ? `<span class="wzlock" aria-label="נעול">${icon(LOCK, 13)}</span>` : ''}<span class="grow"></span><span class="wzg">${s.g}</span></span>
+    <span class="wztop"><b>${s.dep || s.depAuto}</b>${slotNight(s) ? nightTag({ day: d, site_arrival: s.arr, site_end: s.end }) : ''}${s.locked ? `<span class="wzlock" aria-label="נעול">${icon(LOCK, 13)}</span>` : ''}<span class="grow"></span><span class="wzg">${s.g}</span></span>
     ${s.lead ? `<span class="wzlead">${esc(first(NM(s.lead)))}${leadMark()}</span>` : '<span class="wzlead bad">אין ראש צוות</span>'}
     ${s.crew.length ? `<small class="wzcrew">${s.crew.map(u => esc(first(NM(u))) + (licOk(u, d) ? ' <i class="wzpl">מטיס</i>' : '')).join(' · ')}</small>` : ''}
     ${W.PM.get(s.pid).needDrone ? `<small class="wzdr ${s.drone ? '' : 'bad'}">${icon('drone', 12)} ${s.drone ? esc(DRN(s.drone).split('(')[0].trim()) : 'בלי רחפן'}</small>` : ''}
@@ -408,7 +411,7 @@ function openSlot(pid, d) {
   const opts = (role, cur) => W.people.filter(x => x.id === cur || !hard(x.id, d, p)).map(x => ({ x, sc: personScore(x.id, s, role, W.S).s })).sort((a, b) => b.sc - a.sc)
     .map(({ x }) => `<option value="${x.id}" ${x.id === cur ? 'selected' : ''}>${esc(x.full_name)}${licOk(x.id, d) ? ' · מטיס' : ''}${where(x.id) ? ' · עובר מ' + esc(where(x.id)) : ''}</option>`).join('');
   const blocked = W.people.filter(x => hard(x.id, d, p)).map(x => `${first(x.full_name)} — ${hard(x.id, d, p)}`);
-  const x = wxOf(p, d), tr = s.tr;
+  const x = wxOf(p, d, s), tr = s.tr;
   sheet(`<h3>${esc(pname(p.name))} · ${sd(d)}</h3>
     <div class="wzwhy">${[s.g + ' · ' + (s.g >= 80 ? 'התאמה טובה' : s.g >= 55 ? 'סביר' : 'בעייתי'), x ? (x.L === 2 ? 'לא לטוס' : x.L === 1 ? 'גבולי' : 'טוב לטיסה') + ` · משבים ${Math.round(x.g)}` : 'אין תחזית עדיין',
       tr?.min != null ? `נסיעה${tr.from ? ' מ' + tr.from : ''} ${Math.floor(tr.min / 60)}:${String(tr.min % 60).padStart(2, '0')}${tr.km ? ` · ${tr.km} ק״מ` : ''}${tr.est ? ' (הערכה)' : ''}` : null, ...s.bad, ...s.warn].filter(Boolean).map(t => `<span class="pill">${esc(t)}</span>`).join('')}</div>
@@ -417,19 +420,24 @@ function openSlot(pid, d) {
     <label class="field">הוספה לצוות<select id="wadd"><option value="">—</option>${opts('crew', null)}</select></label>
     ${p.needDrone ? `<label class="field">רחפן<small>${esc(s.drone ? droneScore(s.drone, s, W.S).R.join(' · ') : '')}</small><select id="wdr"><option value="">בלי רחפן</option>${W.drones.map(x2 => { const w = droneHard(x2.id, d), o = others.find(y => y.drone === x2.id);
       return `<option value="${x2.id}" ${x2.id === s.drone ? 'selected' : ''} ${w && x2.id !== s.drone ? 'disabled' : ''}>${esc(x2.name)}${w ? ' — ' + esc(w) : o ? ' · עובר מ' + esc(pname(W.PM.get(o.pid).name)) : ''}</option>`; }).join('')}</select></label>` : ''}
-    <div class="row"><label class="field grow">הגעה לאתר<input type="time" id="warr" value="${esc(s.arr || '07:00')}"></label><label class="field grow">יציאה<small>${tr?.min != null ? 'מחושב: ' + s.depAuto : ''}</small><input type="time" id="wdep" value="${esc(s.dep || s.depAuto)}"></label></div>
+    ${nightToggleHtml('wnt', slotNight(s))}
+    <div class="row"><label class="field grow" id="wlsa">הגעה לאתר<input type="time" id="warr" value="${esc(s.arr || '07:00')}"></label><label class="field grow" id="wlse">סיום<input type="time" id="wend" value="${esc(s.end || '')}"></label></div>
+    <div class="row"><label class="field grow">יציאה<small>${tr?.min != null ? 'מחושב: ' + s.depAuto : ''}</small><input type="time" id="wdep" value="${esc(s.dep || s.depAuto)}"></label></div>
     ${blocked.length ? `<details class="wzblk"><summary>לא פנויים (${blocked.length})</summary><small>${blocked.map(esc).join('<br>')}</small></details>` : ''}
     <div class="row-btns"><button class="btn ghost" id="wdrop">הסרת היום</button>${s.locked ? '<button class="btn ghost" id="wunl">שחרור נעילה</button>' : ''}<button class="btn primary" id="wok">${s.locked ? 'שמירה' : 'נעילה'}</button></div>`, (sh, close) => {
+    const nightOn = bindNight(sh, { tog: '#wnt', arr: '#warr', end: '#wend', lblA: '#wlsa', lblE: '#wlse', day: () => d });
     $('#wdrop', sh).onclick = () => { close(); delete W.locks[pid + '|' + d]; W.out.push(pid + '|' + d); const c = cfg(p); W.P[pid] = { ...(W.P[pid] || {}), want: Math.max(0, c.want - 1), size: c.size }; solve(); toast('היום הוסר', 1500); };
     const un = $('#wunl', sh); if (un) un.onclick = () => { close(); delete W.locks[pid + '|' + d]; solve(); };
     $('#wok', sh).onclick = () => {
       const lead = $('#wl', sh).value || null, crew = [...$$('[data-cr]', sh).map(x2 => x2.value), $('#wadd', sh).value].filter(u => u && u !== lead);
       const drone = $('#wdr', sh)?.value || null, arr = $('#warr', sh).value || null, dep = $('#wdep', sh).value || null;
+      if (nightOn() && !$('#wend', sh).value) $('#wend', sh).value = '06:00';
+      const end = $('#wend', sh).value || null; if (!nightOn() && end && arr && end < arr) return toast('הסיום לפני ההגעה — עבודת לילה?');
       // מי שעבר מתא אחר באותו יום — יוצא משם (התא ההוא נבנה מחדש, אלא אם הוא נעול)
       const moved = [lead, ...crew].filter(Boolean);
       for (const o of others) { const lk = W.locks[o.pid + '|' + d];
         if (lk) { lk.crew = (lk.crew || []).filter(u => !moved.includes(u)); if (moved.includes(lk.lead)) lk.lead = null; if (drone && lk.drone === drone) lk.drone = null; } }
-      W.locks[pid + '|' + d] = { lead, crew: [...new Set(crew)], drone, arr, dep: dep !== s.depAuto ? dep : null };
+      W.locks[pid + '|' + d] = { lead, crew: [...new Set(crew)], drone, arr, end, dep: dep !== s.depAuto ? dep : null };
       close(); solve(); toast('ננעל — השאר סודר מחדש סביבו', 1800);
     };
   });
@@ -458,13 +466,13 @@ async function apply() {
   const items = [];
   for (const pid of projs) {
     const p = W.PM.get(pid), xs = S.filter(s => s.pid === pid).sort((a, b) => a.d < b.d ? -1 : 1);
-    const k = s => [s.lead, [...s.crew].sort().join(','), s.drone || '', s.dep || s.depAuto, s.arr || ''].join('|');
+    const k = s => [s.lead, [...s.crew].sort().join(','), s.drone || '', s.dep || s.depAuto, s.arr || '', s.end || ''].join('|');
     // פרויקט בלי אף יום עד עכשיו וצוות זהה בכל הימים → schedule_work_days (תכנית, חומר, לוגיסטיקה); אחרת יום-יום
     if (p.fresh && xs.every(s => k(s) === k(xs[0]))) {
       const s0 = xs[0], skip = []; for (let d = s0.d; d < xs.at(-1).d; d = addDays(d, 1)) if (dow(d) !== 6 && !xs.some(s => s.d === d)) skip.push(d);
       items.push({ kind: 'range', p: pid, start_day: s0.d, lead: s0.lead, crew: s0.crew, drone: s0.drone, report: s0.dep || s0.depAuto, ndays: xs.length, skip,
-        arrive: s0.arr || null, fridays: xs.some(s => dow(s.d) === 5), days: xs.map(s => s.d), need_pilot: p.needDrone });
-    } else xs.forEach(s => items.push({ kind: 'day', p: pid, d: s.d, lead: s.lead, crew: s.crew, drone: s.drone, report: s.dep || s.depAuto, arrive: s.arr || null, need_pilot: p.needDrone }));
+        arrive: s0.arr || null, ...(s0.end ? { end: s0.end } : {}), fridays: xs.some(s => dow(s.d) === 5), days: xs.map(s => s.d), need_pilot: p.needDrone });
+    } else xs.forEach(s => items.push({ kind: 'day', p: pid, d: s.d, lead: s.lead, crew: s.crew, drone: s.drone, report: s.dep || s.depAuto, arrive: s.arr || null, ...(s.end ? { end: s.end } : {}), need_pilot: p.needDrone }));
   }
   const { data: r, error } = await sb.rpc('wizard_apply', { items });
   const fails = error ? [errText(error, 'לא נשמר')] : (r?.fails || []).map(f => `${pname(W.PM.get(f.p)?.name || '')}${f.d ? ' ' + sd(f.d) : ''}: ${errText({ message: f.why }, 'לא נשמר')}`);
