@@ -128,7 +128,13 @@ export async function renderOps(el) {
   shifts.filter(s => isoDay(new Date(s.start_at)) === t && (s.start_dist_m || 0) > 800).forEach(s => issues.push({ tone: 'warn', ic: 'pin', t: `${name(s.user_id)} החתים ${s.start_dist_m >= 1000 ? (s.start_dist_m / 1000).toFixed(1) + ' ק״מ' : s.start_dist_m + ' מ׳'} מ${s.start_place || 'המשרד'}`, s: s.note ? `"${s.note}"` : 'לא במשרד ולא באתר שלו', href: `#/attendance/${s.user_id}` }));
   // יום אחרון נסגר בלי חתימת לקוח — החתימה היא מה שמעביר את הפרויקט להנהלה (סיכום + חשבונית), אז חייבים להשיג אותה
   [...new Map(ended.filter(w => !w.signoff && w.projects?.monday_group !== 'group_mm5052gw').map(w => [w.project_id, w])).values()]
-    .forEach(w => issues.push({ tone: 'bad', ic: 'report', t: `חסרה חתימת לקוח · ${(w.projects.name || '').replace(/^[^—]*—\s*/, '') || w.projects.name}`, s: `היום האחרון נסגר ב-${dm(w.day)}`, href: `#/signoff/${w.project_id}/${w.id}` }));
+    .forEach(w => issues.push({ tone: 'bad', ic: 'report', t: `חסרה חתימת לקוח · ${(w.projects.name || '').replace(/^[^—]*—\s*/, '') || w.projects.name}`, s: `היום האחרון נסגר ב-${dm(w.day)}`, href: `#/signoff/${w.project_id}/${w.id}`,
+      // הנהלה (admin) בלבד: גם סגירה בלי חתימה, עם סיבה. מנהל תפעול — רק "להחתמה"
+      ...(state.profile.role === 'admin' ? { act: () => sheet(`<h3 class="sh">חסרה חתימת לקוח</h3><div class="stack"><a class="btn primary block" href="#/signoff/${w.project_id}/${w.id}" data-close>להחתמת הלקוח</a><button class="btn ghost block" id="nsclose">סגירה בלי חתימת לקוח</button></div>`, (s2, close) => {
+        $('#nsclose', s2).onclick = async () => { close(); const reason = await ask('סגירה בלי חתימת לקוח — למה?', { placeholder: 'למשל: הלקוח אישר בטלפון / במייל', ok: 'סגירת פרויקט' });
+          if (reason == null) return; if (!reason.trim()) return toast('חובה לכתוב סיבה');
+          const { error } = await sb.rpc('close_project', { p: w.project_id, reason }); if (error) return toast(errText(error, 'הפרויקט לא נסגר — נסו שוב'));
+          toast('הפרויקט נסגר · עובר להנהלה לחשבונית', 2400, 'success'); renderOps(el); }; }) } : {}) }));
   shifts.filter(s => /נסגרה אוטומטית/.test(s.note || '')).forEach(s => issues.push({ tone: 'warn', ic: 'clock', t: `יציאה אוטומטית · ${name(s.user_id)}`, s: `${dm(isoDay(new Date(s.start_at)))} · נרשמו 12 שעות — לוודא`, href: `#/attendance/${s.user_id}` }));
   // הסנכרון עם מאנדי הוא מה שמחזיק את הכל — אם הוא נתקע, זה הדבר הראשון שצריך לדעת
   const lastOk = pulls.find(x => x.status === 'ok');

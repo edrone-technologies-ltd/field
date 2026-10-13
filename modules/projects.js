@@ -567,7 +567,7 @@ export async function renderProject(el, id, tab = 'o') {
     ];
     // דוח מוכן (יש חתימה) → שיתוף בלחיצה מכאן, בלי להיכנס לדוח (אותו קישור לקוח פעיל, או חדש)
     const shareBtn = M && SG.length ? `<button class="btn primary block" id="crshare">${icon('send', 18)} שיתוף הדוח ללקוח</button>` : '';
-    const closeBtn = M && !cs && (pilot || (state.profile.role === 'admin' && !SG.length)) ? `<button class="btn ghost block" id="cls">${pilot ? 'סיום הפיילוט' : 'סגירה בלי חתימה'}</button>` : '';
+    const closeBtn = M && !cs && (pilot || (state.profile.role === 'admin' && !SG.length)) ? `<button class="btn ghost block" id="cls">${pilot ? 'סיום הפיילוט' : 'סגירה בלי חתימת לקוח'}</button>` : '';
     return `<section><h3 class="sh">${cs ? 'אחרי הסגירה' : 'סגירת הפרויקט'}</h3><div class="rdylist">${rows.join('')}</div></section>${shareBtn}${closeBtn}`;
   }
   // ----- סיכום -----
@@ -621,8 +621,10 @@ export async function renderProject(el, id, tab = 'o') {
       if (p.engagement === 'פיילוט') { if (!(await confirmBox('סיום הפיילוט?', { ok: 'סיום הפיילוט' }))) return;
         const { error } = await sb.rpc('close_pilot', { p: id, ok: true }); if (error) return toast(errText(error, 'לא נסגר — נסו שוב')); toast('הפיילוט הסתיים'); return reload('s'); }
       const openDays = D.days.some(d => d.status !== 'done');
-      if (!(await confirmBox(openDays ? 'יש ימים שלא נסגרו' : 'לסגור את הפרויקט?', { body: openDays ? 'לסגור את הפרויקט בכל זאת?' : '', ok: 'סגירת פרויקט' }))) return;
-      const { error } = await sb.rpc('close_project', { p: id }); if (error) return toast(errText(error, 'הפרויקט לא נסגר — נסו שוב'));
+      // בלי חתימת לקוח — רק הנהלה (admin), עם סיבה שנשמרת (אביחי 13/10, db/142)
+      const reason = await ask('סגירה בלי חתימת לקוח — למה?', { placeholder: openDays ? 'יש ימים שלא נסגרו · למשל: הלקוח אישר בטלפון' : 'למשל: הלקוח אישר בטלפון / במייל', ok: 'סגירת פרויקט' });
+      if (reason == null) return; if (!reason.trim()) return toast('חובה לכתוב סיבה');
+      const { error } = await sb.rpc('close_project', { p: id, reason }); if (error) return toast(errText(error, 'הפרויקט לא נסגר — נסו שוב'));
       toast('הפרויקט נסגר'); reload('s');
     };
   }
