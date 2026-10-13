@@ -26,6 +26,7 @@ export async function renderOps(el) {
   const t = isoDay(), tm = addDays(t, 1), y = addDays(t, -1), wk = addDays(t, 6);
   const q = async p => { try { const { data } = await p; return data || []; } catch { return []; } };
   const admin = state.profile.role === 'admin';
+  const CRm = import('./closereq.js'), crCards = CRm.then(m => m.approvalCards()).catch(() => []);   // סגירה בלי חתימה — בקשות לאישור ההנהלה (db/143)
   const [days0, people, shifts, abs, sreq, oreq, preq, exq, drones, ended, pulls, rdy, crit, miss, lowStock] = await Promise.all([
     q(sb.from('work_days').select('id,day,status,night,site_arrival,site_end,report_time,crew_lead_id,drone_id,project_id,weather_alerted,gust_max,projects(name,site_id,planned_from,planned_to,readiness),work_day_crew(user_id,role,confirmed_at,cant_come_at,cant_come_reason)').gte('day', y).lte('day', wk).neq('status', 'cancelled').order('day').order('report_time')),   // גם אתמול — לילה שעוד בעיצומו
     q(sb.from('profiles').select('id,full_name,role,is_active,is_pilot').eq('is_active', true)),
@@ -127,6 +128,7 @@ export async function renderOps(el) {
   }
   shifts.filter(s => isoDay(new Date(s.start_at)) === t && (s.start_dist_m || 0) > 800).forEach(s => issues.push({ tone: 'warn', ic: 'pin', t: `${name(s.user_id)} החתים ${s.start_dist_m >= 1000 ? (s.start_dist_m / 1000).toFixed(1) + ' ק״מ' : s.start_dist_m + ' מ׳'} מ${s.start_place || 'המשרד'}`, s: s.note ? `"${s.note}"` : 'לא במשרד ולא באתר שלו', href: `#/attendance/${s.user_id}` }));
   // יום אחרון נסגר בלי חתימת לקוח — החתימה היא מה שמעביר את הפרויקט להנהלה (סיכום + חשבונית), אז חייבים להשיג אותה
+  const CR = await CRm, crPend = await CR.pendingSet([...new Set(ended.map(w => w.project_id))]);
   [...new Map(ended.filter(w => !w.signoff && w.projects?.monday_group !== 'group_mm5052gw').map(w => [w.project_id, w])).values()]
     .forEach(w => issues.push({ tone: 'bad', ic: 'report', t: `חסרה חתימת לקוח · ${(w.projects.name || '').replace(/^[^—]*—\s*/, '') || w.projects.name}`, s: `היום האחרון נסגר ב-${dm(w.day)}`, href: `#/signoff/${w.project_id}/${w.id}`,
       // הנהלה (admin) בלבד: גם סגירה בלי חתימה, עם סיבה. מנהל תפעול — רק "להחתמה"
@@ -134,7 +136,11 @@ export async function renderOps(el) {
         $('#nsclose', s2).onclick = async () => { close(); const reason = await ask('סגירה בלי חתימת לקוח — למה?', { placeholder: 'למשל: הלקוח אישר בטלפון / במייל', ok: 'סגירת פרויקט' });
           if (reason == null) return; if (!reason.trim()) return toast('חובה לכתוב סיבה');
           const { error } = await sb.rpc('close_project', { p: w.project_id, reason }); if (error) return toast(errText(error, 'הפרויקט לא נסגר — נסו שוב'));
-          toast('הפרויקט נסגר · עובר להנהלה לחשבונית', 2400, 'success'); renderOps(el); }; }) } : {}) }));
+          toast('הפרויקט נסגר · עובר להנהלה לחשבונית', 2400, 'success'); renderOps(el); }; }) }
+        // מנהל תפעול: להחתמה, או בקשה לסגירה בלי חתימה — עולה לאישור ההנהלה (db/143)
+        : { ...(crPend.has(w.project_id) ? { s: 'סגירה בלי חתימה · ממתין לאישור הנהלה' } : {}),
+          act: () => sheet(`<h3 class="sh">חסרה חתימת לקוח</h3><div class="stack"><a class="btn primary block" href="#/signoff/${w.project_id}/${w.id}" data-close>להחתמת הלקוח</a>${crPend.has(w.project_id) ? CR.pendingPill() : `<button class="btn ghost block" id="nsreq">בקשה לסגירה בלי חתימת לקוח</button>`}</div>`, (s2, close) => {
+            const b = $('#nsreq', s2); if (b) b.onclick = async () => { close(); if (await CR.requestClose(w.project_id, w.id)) renderOps(el); }; }) }) }));
   shifts.filter(s => /נסגרה אוטומטית/.test(s.note || '')).forEach(s => issues.push({ tone: 'warn', ic: 'clock', t: `יציאה אוטומטית · ${name(s.user_id)}`, s: `${dm(isoDay(new Date(s.start_at)))} · נרשמו 12 שעות — לוודא`, href: `#/attendance/${s.user_id}` }));
   // הסנכרון עם מאנדי הוא מה שמחזיק את הכל — אם הוא נתקע, זה הדבר הראשון שצריך לדעת
   const lastOk = pulls.find(x => x.status === 'ok');
@@ -200,6 +206,7 @@ export async function renderOps(el) {
       <small>${esc((r.body || '').slice(0, 160))}</small>
       <div class="row-btns"><a class="btn ghost sm" href="#/requests">פתיחה</a><button class="btn primary sm" data-or="${r.id}">סימון כטופל</button></div></div>`),
   ];
+  approvals.push(...await crCards);
   const pHref = preq.length === 1 && preq[0].monday_item_id ? `https://edroneil-force.monday.com/boards/5099908084/pulses/${preq[0].monday_item_id}" target="_blank" rel="noopener` : '#/purchase';
   if (exq.length) approvals.push(`<a class="lrow card" href="#/expenses"><span class="mic">${icon('receipt', 19)}</span><span class="grow"><b>${exq.length > 1 ? exq.length + ' הוצאות לאישור' : 'הוצאה לאישור'}</b></span><span class="chev">${icon('chev', 18)}</span></a>`);
   if (preq.length) approvals.push(`<a class="lrow card" href="${pHref}"><span class="mic">${icon('cart', 19)}</span><span class="grow"><b>${preq.length > 1 ? preq.length + ' בקשות רכש ממתינות' : 'בקשת רכש ממתינה'}</b><small>לאישור ושליחה לספק</small></span><span class="chev">${icon('chev', 18)}</span></a>`);
@@ -257,6 +264,10 @@ export async function renderOps(el) {
       const { error } = await sb.from('absences').update({ status: ok ? 'approved' : 'rejected', manager_id: state.user.id, manager_reply: (reply || '').trim() || null, decided_at: new Date().toISOString() }).eq('id', b.dataset.ab);
       if (error) return fail(b, error); done(b, ok ? 'אושר' : 'נדחה — העובד קיבל הודעה');
       if (ok && b.dataset.swapday) setTimeout(() => import('./dayadmin.js').then(m => m.openDayAdmin(b.dataset.swapday, () => renderOps(el))), 350); });
+    $$('[data-crq]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; const ok = b.dataset.ok === '1';
+      if (ok && !(await confirmBox('לסגור את הפרויקט בלי חתימת לקוח?', { ok: 'אישור וסגירה' }))) return;
+      const r = await CR.decide(b.dataset.crq, ok); if (r === null) return; if (r !== true) return fail(b, r); lock(b, true);
+      done(b, ok ? 'הפרויקט נסגר · עובר לחשבונית' : 'נדחה — המבקש קיבל הודעה'); });
     $$('[data-or]', root).forEach(b => b.onclick = async () => { if (b.disabled) return; const r = await ask('מה נעשה?', { optional: true, ok: 'סגירת הבקשה' }); if (r === null) return; lock(b, true);
       const { error } = await sb.from('office_requests').update({ status: 'done', reply: (r || '').trim() || 'טופל', handled_by: state.user.id }).eq('id', b.dataset.or); if (error) return fail(b, error); done(b, 'נסגר — העובד קיבל מענה'); });
   }

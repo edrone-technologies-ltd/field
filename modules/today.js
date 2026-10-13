@@ -443,6 +443,7 @@ export async function renderDay(el, id) {
       <div class="kpis opk"><div class="kpi"><b>${nD}/${nT}</b><span>משימות</span></div><div class="kpi"><b>${d.gallons != null ? nf(d.gallons) : '—'}</b><span>גלונים</span></div><div class="kpi"><b>${nPh || '—'}</b><span>תמונות</span></div><div class="kpi"><b>${hrs ? nf(hrs) : '—'}</b><span>שעות צוות</span></div></div>
       <div id="dnext"></div>
       ${d.report_text ? `<details class="fold"><summary><span class="sh">הדוח שנשלח</span></summary><div class="note rsent">${esc(d.report_text).replace(/\n/g, '<br>')}</div></details>` : d.tomorrow ? `<div class="note"><b>${d.is_last_day ? 'נשאר פתוח:' : 'למחר:'}</b> ${esc(d.tomorrow)}</div>` : ''}
+      ${d.is_last_day && !d.signoff && isManager() && state.profile.role !== 'admin' ? '<div id="dnsreq"></div>' : ''}
       ${d.signoff ? `<div class="card"><div class="eyebrow">חתימת לקוח</div><b>${esc(d.signoff.name || '')}</b> ${d.signoff.role ? '· ' + esc(d.signoff.role) : ''}<div class="small muted">${d.signoff.satisfied ? 'מרוצה' : 'לא מרוצה'}${d.signoff.notes ? ' · ' + esc(d.signoff.notes) : ''}</div></div>` : ''}
       <div class="photos">${D.photos.filter(p => ['before', 'after'].includes(p.kind)).map(p => `<button class="ph" data-z="${esc(p.url || photoUrls[p.storage_path]?.f || '')}"><img src="${esc(p.url || photoUrls[p.storage_path]?.t || '')}" data-full="${esc(p.url || photoUrls[p.storage_path]?.f || '')}" alt=""><span class="q">${p.kind === 'before' ? 'לפני' : 'אחרי'}</span></button>`).join('')}</div>
       <a class="btn ghost block" href="#/p/${d.project_id}">לפרויקט</a>`;
@@ -457,7 +458,15 @@ export async function renderDay(el, id) {
       const tick = async () => { if (!box.isConnected) return; const n = (await outbox.all()).filter(mineQ).length;
         box.textContent = n ? `ממתין לקליטה · ${n} פריטים — ${sendsLabel()}` : D.day.monday_item_id && D.day.monday_item_id !== 'none' ? 'הדוח התקבל במשרד' : 'נשלח למשרד'; if (n) setTimeout(tick, 4000); };
       tick(); }
-    nextUp(); shiftOut();
+    nextUp(); shiftOut(); noSignReq();
+  }
+  // יום אחרון בלי חתימת לקוח (מנהל תפעול): בקשה לסגירה בלי חתימה — לאישור ההנהלה (db/143)
+  async function noSignReq() {
+    const box = $('#dnsreq', el); if (!box) return;
+    const CR = await import('./closereq.js'), r = await CR.lastRequest(D.day.project_id); if (!box.isConnected) return;
+    if (r?.status === 'approved') return box.remove();
+    box.innerHTML = r?.status === 'pending' ? CR.pendingPill() : `<div class="stack tight"><a class="btn primary block" href="#/signoff/${D.day.project_id}/${D.day.id}">להחתמת הלקוח</a><button class="btn ghost block" id="nsreq">בקשה לסגירה בלי חתימת לקוח</button></div>`;
+    const b = $('#nsreq', box); if (b) b.onclick = async () => { if (await CR.requestClose(D.day.project_id, D.day.id)) noSignReq(); };
   }
   // יציאה מהמשמרת בלחיצה (סוף היום לצוות) — רק כשיש משמרת פתוחה
   async function shiftOut() {

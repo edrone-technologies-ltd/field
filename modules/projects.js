@@ -272,9 +272,11 @@ export async function renderProject(el, id, tab = 'o') {
         ${M ? `<button class="lrow kv" id="share" type="button"><span class="mic">${icon('send', 19)}</span><span class="grow"><b>קישור התקדמות ללקוח</b></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
       </div>
       ${s?.lat || p.lat ? navButtons(s?.lat || p.lat, s?.lng || p.lng) : ''}
+      <div id="pfiles"></div>
       ${D.reps.length || D.days.some(d => d.status === 'done') ? `<button class="lrow" id="toRep" type="button"><span class="mic">${icon('photo', 19)}</span><span class="grow"><b>דוחות ותמונות מהשטח</b><small>${D.reps.length} דוחות${D.reps[0] ? ' · אחרון ' + dm(D.reps[0].report_date) : ''}</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
       ${M ? `<div class="row pfoot"><div class="sigline grow" id="sig"></div>${p.monday_item_id ? `<a class="more" href="https://edroneil-force.monday.com/boards/5099780041/pulses/${esc(p.monday_item_id)}" target="_blank" rel="noopener">מאנדי</a>` : ''}</div>` : ''}`;
     if (M) import('../lib/audit.js').then(m => m.signature($('#sig'), { project_id: id }));
+    if (M) import('./pfiles.js').then(m => m.filesSection($('#pfiles', box), p)).catch(() => {});   // תיק הפרויקט — מנהל תפעול ומעלה בלבד (db/144)
     const tr = $('#toRep', box); if (tr) tr.onclick = () => $('#pt [data-t="d"]')?.click();
     $$('[data-x]', box).forEach(b => b.onclick = () => closeIssue(b.dataset.x, () => overview(box)));
     $$('[data-act]', box).forEach(r => r.onclick = () => r.dataset.act === 'site' ? siteSheet() : notesSheet());
@@ -552,7 +554,7 @@ export async function renderProject(el, id, tab = 'o') {
   }
 
   // ----- סגירה: ימים נסגרו → חתימת לקוח (סוגרת את הפרויקט) → דוח ללקוח. הצעד הבא תמיד בולט -----
-  function closeFlow(SG, cs) {
+  function closeFlow(SG, cs, crq) {
     const lead = state.profile.role === 'crew_lead'; if (!M && !lead) return '';
     const open = D.days.filter(d => d.status !== 'done'), live = D.days.find(d => !['done', 'planned', 'cancelled'].includes(d.status));
     const daysOk = (D.days.length || D.reps.length) && !open.length;
@@ -567,7 +569,9 @@ export async function renderProject(el, id, tab = 'o') {
     ];
     // דוח מוכן (יש חתימה) → שיתוף בלחיצה מכאן, בלי להיכנס לדוח (אותו קישור לקוח פעיל, או חדש)
     const shareBtn = M && SG.length ? `<button class="btn primary block" id="crshare">${icon('send', 18)} שיתוף הדוח ללקוח</button>` : '';
-    const closeBtn = M && !cs && (pilot || (state.profile.role === 'admin' && !SG.length)) ? `<button class="btn ghost block" id="cls">${pilot ? 'סיום הפיילוט' : 'סגירה בלי חתימת לקוח'}</button>` : '';
+    const closeBtn = M && !cs && (pilot || (state.profile.role === 'admin' && !SG.length)) ? `<button class="btn ghost block" id="cls">${pilot ? 'סיום הפיילוט' : 'סגירה בלי חתימת לקוח'}</button>`
+      // מנהל תפעול: בקשה לסגירה בלי חתימה — לאישור ההנהלה (db/143)
+      : M && !cs && !pilot && !SG.length && crq?.status !== 'pending' ? `<button class="btn ghost block" id="clsreq">בקשה לסגירה בלי חתימת לקוח</button>` : '';
     return `<section><h3 class="sh">${cs ? 'אחרי הסגירה' : 'סגירת הפרויקט'}</h3><div class="rdylist">${rows.join('')}</div></section>${shareBtn}${closeBtn}`;
   }
   // ----- סיכום -----
@@ -583,6 +587,7 @@ export async function renderProject(el, id, tab = 'o') {
       : legacy ? [{ name: legacy.name, role: legacy.role, ok: legacy.satisfied, notes: legacy.notes, path: legacy.signature_path, at: legacy.at, days: [] }] : [];
     const daysTxt = ds => { const x = [...ds].sort(); return !x.length ? '' : x.length === 1 ? dm(x[0]) : x.length <= 4 ? x.map(dm).join(', ') : `${x.length} ימים · ${dm(x[0])}–${dm(x.at(-1))}`; };
     const cs = p.closed_summary;
+    const CR = M ? await import('./closereq.js') : null, crq = CR ? await CR.lastRequest(id) : null;
     box.innerHTML = `${cs ? `<div class="card row"><span class="dot ok"></span><b class="grow">הפרויקט נסגר ${new Date(cs.closed_at).toLocaleDateString('he-IL')}</b></div>` : ''}
       ${kpiRow([[hrs && nf(hrs), 'שעות צוות'], [gal && nf(gal), 'גלונים'], [D.issues.length, 'תקלות'], [D.tasks.filter(t => t.is_extra).length, 'תוספות מהלקוח']])}
       ${M ? '<div id="zrate"></div>' : ''}
@@ -593,7 +598,8 @@ export async function renderProject(el, id, tab = 'o') {
         <small class="muted">${[g.at ? new Date(g.at).toLocaleDateString('he-IL') : '', g.days.length ? 'ימים: ' + daysTxt(g.days) : '', g.rating ? `שביעות רצון ${g.rating}/5` : ''].filter(Boolean).join(' · ')}</small>
         ${g.notes ? `<small>${esc(g.notes)}</small>` : ''}<div data-sg="${i}"></div></div>`).join('')}</section>` : ''}
       <section id="galsec" hidden><h3 class="sh">לפני / אחרי</h3><div class="photos" id="gal"></div></section>
-      ${closeFlow(SG, cs)}`;
+      ${CR ? CR.statusCard(crq) : ''}
+      ${closeFlow(SG, cs, crq)}`;
     if (M) laborBlock();
     if (M) import('./clientreport.js').then(m => m.weeklyCard($('#wkup', box), p, D.days)).catch(() => {});   // עדכון שבועי ללקוח (פרויקט ארוך)
     if (can('finance') || state.profile.role === 'admin') import('./costs.js').then(m => m.projectCost($('#costx', box), id)).catch(() => {});   // עלות בפועל — כספים בלבד (db/129)
@@ -616,6 +622,7 @@ export async function renderProject(el, id, tab = 'o') {
         try { if (navigator.share) await navigator.share({ title: `E-Drone · ${p.sites?.name || p.name}`, url: u }); else { await navigator.clipboard.writeText(u); toast('הקישור הועתק'); } } catch { /* בוטל */ }
       } finally { cr.disabled = false; }
     };
+    const cq = $('#clsreq'); if (cq) cq.onclick = async () => { if (await CR.requestClose(id)) reload('s'); };
     const c = $('#cls'); if (c) c.onclick = async () => {
       // פיילוט: האפליקציה רק מדווחת שבוצע. ההחלטה אם להמשיך להצעה — ניהולית, במאנדי (הליד עובר ל"פיילוט בוצע — ממתין להצעה")
       if (p.engagement === 'פיילוט') { if (!(await confirmBox('סיום הפיילוט?', { ok: 'סיום הפיילוט' }))) return;

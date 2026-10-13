@@ -99,6 +99,7 @@ function renderMenu() {
       isManager() && ['#/compliance', 'shield', 'תוקף ותעודות', 'רישיונות, תעודות, ביטוח וטיפולים'],
       isManager() && ['#/clients', 'folder', 'לקוחות', 'תיק לקוח והיסטוריית עבודות'],
       (can('finance') || state.profile.role === 'admin') && ['#/costs', 'cash', 'עלויות', 'עלות לכל יום שטח ולפרויקט'],
+      state.profile.role === 'admin' && ['#/decks', 'send', 'מצגות', 'מי פתח, מתי ובאילו שקפים'],
       state.profile.role === 'admin' && ['#/activity', 'clock', 'פעילות', 'מי מחובר ומה קורה'],
       state.profile.role === 'admin' && ['#/onboarding/launch', 'activity', 'השקה', 'מי נכנס, התקין והפעיל התראות'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
@@ -315,7 +316,7 @@ async function routeInner() {
   const guard = m => can(m) || deny();
   const MGR = { attendance: 1, dispatch: 1, clients: 1, client: 1, staff: 1, files: 1 };   // client-report: הבדיקה במודול (מנהל או ראש צוות)
   if (MGR[h[0]] && !isManager()) return deny();
-  if (h[0] === 'activity' && state.profile.role !== 'admin') return deny();
+  if (['activity', 'decks'].includes(h[0]) && state.profile.role !== 'admin') return deny();   // admin = שלושת השותפים
   const home = () => import('./modules/home.js');
   switch (h[0]) {
     case '': return (await home()).renderHome(app);
@@ -344,6 +345,7 @@ async function routeInner() {
     case 'clients': return (await import('./modules/clients.js')).renderClients(app);
     case 'client': return (await import('./modules/clients.js')).renderClient(app, h[1]);
     case 'activity': return (await import('./modules/activity.js')).renderActivity(app, h[1] || '');
+    case 'decks': return (await import('./modules/decks.js')).renderDecks(app, h[1] || '');   // מעקב מצגות — #/decks/<link> נפתח מהתראה
     case 'tour': return (await import('./modules/tour.js')).renderTour(app, h[1] || 'ops');
     case 'plan': if (guard('projects')) return (await import('./modules/plan.js')).renderPlan(app, h[1], h[2] === 'print'); return;
     case 'visit': { const m = await import('./modules/visits.js'); return h[1] === 'new' ? m.renderVisitForm(app, h[2]) : h[1] === 'edit' ? m.renderVisitForm(app, h[2], h[3]) : h[2] === 'report' ? m.renderVisitReport(app, h[1]) : h[2] === 'fix' ? m.renderRepairProtocol(app, h[1]) : m.renderVisit(app, h[1]); }
