@@ -130,10 +130,7 @@ export function schedule(d, from, n) {
   const days = []; for (let i = 0; i < n; i++) days.push({ date: addDays(from, i), items: [] });
   const by = new Map((d.projects || []).map(p => [p.id, p]));
   (d.wdays || []).forEach(w => { const x = days.find(y => y.date === w.day); if (x) x.items.push({ kind: 'w', w, p: by.get(w.project_id) }); });
-  (d.projects || []).filter(isOpen).forEach(p => {
-    const f = p.planned_from || p.actual_from, to = p.planned_to || p.actual_to || f; if (!f) return;
-    days.forEach(x => { if (x.date >= f && x.date <= to && !x.items.some(it => it.p?.id === p.id)) x.items.push({ kind: 'p', p }); });
-  });
+  // טווח מאנדי לא נפרש ככרטיס בכל יום — רק ימי שטח אמיתיים (פרויקטים לשיבוץ: בפס "לשבץ" בלוח השיבוץ)
   (d.visits || []).filter(v => v.visit_date).forEach(v => { const x = days.find(y => y.date === v.visit_date); if (x) x.items.push({ kind: 'v', v }); });
   return days;
 }

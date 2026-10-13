@@ -153,18 +153,18 @@ export async function renderProject(el, id, tab = 'o') {
   }
 
   // ----- סקירה -----
-  // לו״ז דו-כיווני: מה שמתוכנן במאנדי מול מה ששובץ באפליקציה
+  // לו״ז דו-כיווני: הטווח = מהיום הראשון עד האחרון שמשובצים (נדחף למאנדי). רק ימי שטח אמיתיים מוצגים — בלי ימים "מתוכננים" ריקים
   const wdays = (a, b) => { let n = 0; for (let d = new Date(a + 'T12:00'); isoDay(d) <= b; d.setDate(d.getDate() + 1)) if (d.getDay() < 5) n++; return n || 1; };
   // לו״ז הפרויקט: הטווח (מסונכרן עם מאנדי בשני הכיוונים) + ימי השטח. מנהל: שינוי תאריכים, שיבוץ, העברת יום
   function schedSection() {
-    const t = isoDay(), up = D.days.filter(d => d.status !== 'done' && d.day >= t).sort((a, b) => a.day < b.day ? -1 : 1), done = D.days.filter(d => d.status === 'done').length;
+    const t = isoDay(), up = D.days.filter(d => d.status !== 'done' && d.status !== 'cancelled' && d.day >= t).sort((a, b) => a.day < b.day ? -1 : 1), done = D.days.filter(d => d.status === 'done' && !/יום טסטים/.test(d.notes || '')).length;
     const PL = projPulses(p), out = up.length && PL.length && up.some(d => !PL.some(([f, t]) => d.day >= f && d.day <= t));
     if (!M && !up.length) return '';
     const crewOf = d => [...new Map([[d.crew_lead_id, null], ...(d.work_day_crew || []).map(c => [c.user_id, c])]).keys()].filter(Boolean)
       .map(u => { const c = (d.work_day_crew || []).find(x => x.user_id === u); return esc((c?.profiles?.full_name || D.team.find(x => x.id === u)?.full_name || '').split(' ')[0]) + (u === d.crew_lead_id ? leadMark() : ''); }).join(' · ');
     return `<section id="sched"><div class="sh-row"><h3 class="sh">לו״ז</h3>${M ? '<button class="more" id="dates">שינוי תאריכים</button>' : ''}</div>
       <div class="list">
-        <div class="lrow"><span class="mic">${icon('calendar', 19)}</span><span class="grow">${PL.length > 1 ? `<b class="pulsetxt">${PL.map(r => `<span>${pulseLbl(r)}</span>`).join(' · ')}</b><small>${PL.length} פעימות · ${pulseWd(PL)} ימי עבודה${done ? ` · ${done} בוצעו` : ''}</small>` : p.planned_from ? `<b>${dm(p.planned_from)} – ${dm(p.planned_to || p.planned_from)}</b><small>${(n => n === 1 ? 'יום עבודה אחד' : n + ' ימי עבודה')(wdays(p.planned_from, p.planned_to || p.planned_from))}${done ? ` · ${done} בוצעו` : ''}</small>` : '<b>אין תאריכים</b>'}</span>${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : p.dates_dirty && p.monday_item_id ? '<span class="pill">מתעדכן במאנדי</span>' : ''}</div>
+        <div class="lrow"><span class="mic">${icon('calendar', 19)}</span><span class="grow">${PL.length > 1 ? `<b class="pulsetxt">${PL.map(r => `<span>${pulseLbl(r)}</span>`).join(' · ')}</b><small>${PL.length} פעימות · ${pulseWd(PL)} ימי עבודה${done ? ` · ${done} בוצעו` : ''}</small>` : p.planned_from ? `<b>${dm(p.planned_from)} – ${dm(p.planned_to || p.planned_from)}</b><small>${(n => n === 1 ? 'יום שטח אחד' : n + ' ימי שטח')(D.days.filter(d => d.status !== 'cancelled' && !/יום טסטים/.test(d.notes || '')).length || wdays(p.planned_from, p.planned_to || p.planned_from))}${done ? ` · ${done} בוצעו` : ''}</small>` : '<b>אין תאריכים</b>'}</span>${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : p.dates_dirty && p.monday_item_id ? '<span class="pill">מתעדכן במאנדי</span>' : ''}</div>
         ${up.map(d => `<a class="lrow" href="#/day/${d.id}"><span class="datebox ${d.day === t ? 'now' : ''}"><b>${+d.day.slice(8)}</b><small>${d.day === t ? 'היום' : HE_D1[new Date(d.day + 'T12:00').getDay()]}</small></span>
           <span class="grow"><b>${d.report_time ? 'יציאה ' + d.report_time.slice(0, 5) : 'יום שטח'}${d.is_last_day ? ' · יום אחרון' : ''}${nightTag(d)}</b><small>${isNight(d) ? esc(nightRange(d)) + ' · ' : d.site_arrival ? `באתר <bdi dir="ltr">${d.site_arrival.slice(0, 5)}${d.site_end ? '–' + d.site_end.slice(0, 5) : ''}</bdi> · ` : ''}${crewOf(d) || 'לא שובץ צוות'}</small></span>${M ? `<button class="chip" data-mv="${d.id}" data-day="${d.day}">עריכה</button>` : ''}</a>`).join('')}
         ${M ? `<button class="addrow" id="schm">${icon('plus', 18)} ${up.length ? 'שיבוץ מחדש' : 'שיבוץ ימים'}</button>` : ''}
