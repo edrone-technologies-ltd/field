@@ -1,6 +1,7 @@
 // משימות אישיות (מעקב): מנהל פותח לעובד משימה — לרוב מקושרת לליד/אתר — והעובד רואה אותה בראש מסך הבית,
 // עם חיוג / וואטסאפ / מייל לאיש הקשר וסימון "בוצע". כל פעולה נחתמת ביומן הפעולות.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, isoDay, dm, initials, ask, signedUrls, zoom, addFieldPhoto, enqueue, flush, cache, haptic } from '../lib/core.js';
+import { hideMoneyText as noMoney$ } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
 const SEL = 'id,title,instructions,due,status,review,review_note,assignee_id,created_by,site_id,project_id,done_at,photos,sites(name,slug,contact_name,contact_phone),projects(name)';
@@ -38,7 +39,7 @@ export async function myTasks(box) {
       <div class="row"><span class="grow"><b>${esc(t.title)}</b><small>${[s?.name && !t.project_id ? esc(s.name) : '', dueTxt(t.due), !mineRow ? 'אצל ' + esc((names.get(t.assignee_id) || '').split(' ')[0]) : ''].filter(Boolean).join(' · ')}</small></span>
         ${t.review === 'pending' ? '<span class="pill warn">ממתין לאישור</span>' : mineRow ? `<button class="btn primary sm" data-done="${t.id}">${t.project_id && t.photos?.before?.length ? `${icon('photo', 16)} טיפלתי` : 'בוצע'}</button>` : ''}</div>
       ${t.review === 'returned' && t.review_note && t.status !== 'done' ? `<div class="small err">${icon('alert', 14)} הוחזר: ${esc(t.review_note)}</div>` : ''}
-      ${t.instructions ? `<div class="small">${esc(t.instructions).replace(/\n/g, '<br>')}</div>` : ''}
+      ${t.instructions ? `<div class="small">${esc(noMoney$(t.instructions)).replace(/\n/g, '<br>')}</div>` : ''}
       ${mineRow && t.photos?.before?.length ? `<div class="fphs sm">${t.photos.before.map(ph => urls[ph] ? `<img class="fph" src="${esc(urls[ph])}" alt="">` : '').join('')}</div>` : ''}
       ${mineRow && (ph || em || s) ? `<div class="chips tacts">${s?.contact_name ? `<span class="small muted grow">${esc(s.contact_name)}</span>` : '<span class="grow"></span>'}
         ${ph ? `<a class="chip" href="tel:${tel(ph)}">חיוג</a><a class="chip" href="${wa(ph)}" target="_blank" rel="noopener">וואטסאפ</a>` : ''}

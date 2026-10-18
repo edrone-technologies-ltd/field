@@ -1,11 +1,12 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
 import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls , folderGrid, coverArt, coverFor, backBtn, confirmBox } from '../lib/core.js';
+import { mon } from '../lib/core.js';
+import { hideMoneyText } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { airBtn } from '../lib/wx.js';
 import { errText } from '../lib/audit.js';
 // כסף לא מוצג למי שאין לו כספים (מנהל תפעול): משפטים בטקסט חופשי ממאנדי עם סכום/מע״מ/חשבונית/תנאי תשלום יורדים
-const MONEY_RE = /₪|ש["״]ח|שקל|מע["״]מ|חשבוני|קבל[הות]\s*\d|תשלום|תשלומ|משלמ|כספים|חשבון בנק|ניכוי מס|\d[\d,.]*\s*(?:אלף|K\b)/;
-const noMoney = t => !t || can('finance') ? t : String(t).split(/(?<=[.!?\n])\s+|\s+(?=⚠)/).filter(x => !MONEY_RE.test(x)).join(' ').trim() || null;
+const noMoney = t => hideMoneyText(t) || null;   // core.js — אותו כלל בכל האפליקציה
 
 const WASHED = ['עד חצי שנה', 'חצי שנה עד שנה', 'שנה עד שנתיים', 'מעל שנתיים', 'לא נשטף מעולם', 'לא ידוע'];
 const DENS = ['נמוכה', 'בינונית', 'גבוהה'];
@@ -167,7 +168,7 @@ function bindSiteTools(s, opts = {}) {
           if (!(await confirmBox(`לאחד את הליד עם "${r.dataset.n}"?`, { ok: 'איחוד' }))) return;
           r.disabled = true; const { error } = await sb.rpc('merge_lead', { lead: s.id, target: r.dataset.to });
           if (error) { r.disabled = false; return toast(errText(error, 'האיחוד נכשל — נסו שוב')); }
-          close(); toast('אוחד — הליד יתעדכן במאנדי'); location.hash = '#/site/' + r.dataset.slug; });
+          close(); toast(mon('אוחד — הליד יתעדכן במאנדי', 'אוחד')); location.hash = '#/site/' + r.dataset.slug; });
       });
     }
     if (k === 'task') return (await import('./tasks.js')).newTask({ site: s, title: s.kind === 'lead' ? `ליצור קשר${s.contact_name ? ' עם ' + s.contact_name : ''} ולתאם פגישת אפיון` : '' });
@@ -621,7 +622,7 @@ export async function renderBuilding(el, slug, bid) {
     const up = () => goUp(s.kind === 'lead' && s.buildings.length === 1 ? '#/specs' : '#/site/' + slug);
     const fac = (form.facade_days || []).filter(x => x.d > 0), dirs = [...new Set(fac.map(x => x.dir).filter(Boolean))];
     const pushed = !!s.spec_pushed_at && +new Date(s.spec_pushed_at) > at;
-    const push = !navigator.onLine ? 'יישלח כשתחזור קליטה' : pushed ? 'נשלח למאנדי' : 'יישלח אוטומטית';
+    const push = !navigator.onLine ? 'יישלח כשתחזור קליטה' : pushed ? mon('נשלח למאנדי', 'נשלח למשרד') : 'יישלח אוטומטית';
     // המבנה הבא שעוד לא הושלם — ממשיכים אליו בלחיצה, בלי לחזור לרשימה
     const nx = s.buildings.length > 1 ? [...s.buildings.slice(s.buildings.indexOf(b) + 1), ...s.buildings.slice(0, s.buildings.indexOf(b))].find(x => x.spec?.status !== 'done') : null;
     sheet(`<h3>האפיון הושלם</h3>

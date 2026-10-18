@@ -1,6 +1,7 @@
 // תכנית עבודה כמסמך: יום אחרי יום — מה עושים (כתוב) + תמונות מהאפיון, מדוחות קודמים ומהשטח.
 // המנהל כותב ומשבץ תמונות; הצוות רואה את אותו מסמך (ובמסך היום — את היום שלו). ניתן להדפסה כ-PDF מטעם E-Drone.
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, signedUrls, zoom, dm, dayLabel, isoDay, confirmBox } from '../lib/core.js';
+import { hideMoneyText as noMoney$, moneyPart } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
 import { errText } from '../lib/audit.js';
 import { shareIcon, sharePrint } from '../lib/share.js';
@@ -53,7 +54,7 @@ export async function renderPlan(el, pid, print = false) {
     return P.filter(x => x.b && bs.has(x.b) && x.kind === 'facade').slice(0, 4).map(x => x.ref); };
   const U = await urlsFor([...new Set(nums.flatMap(photosOf))]);
   const s = p.sites;
-  const notes = [...new Set((tasks || []).map(t => t.instructions).filter(Boolean))], risks = [...new Set((tasks || []).map(t => t.risk).filter(Boolean))];
+  const notes = [...new Set((tasks || []).map(t => noMoney$(t.instructions)).filter(Boolean))], risks = [...new Set((tasks || []).map(t => t.risk).filter(Boolean))];
   const load = await loadout(p, nums.length, days || []).catch(() => '');
   const brief = load + (notes.length || risks.length ? `<section class="pbrief"><b>דגשים מהאפיון</b>${notes.map(x => `<div>${esc(x).replace(/\n/g, '<br>')}</div>`).join('')}${risks.map(x => `<div class="warn">${icon('alert', 14)} ${esc(x)}</div>`).join('')}</section>` : '');
 
@@ -62,8 +63,8 @@ export async function renderPlan(el, pid, print = false) {
     return `<section class="pday" data-n="${n}">
       <div class="pdh"><span class="pdn">${n}</span><div class="grow"><b>יום ${n}</b><small>${wd ? `${dayLabel(wd.day)}${wd.report_time ? ' · יציאה ' + wd.report_time.slice(0, 5) : ''}` : 'עוד לא שובץ'}</small></div>
         ${M && !print ? `<button class="chip sm" data-pick="${n}">${icon('photo', 16)} תמונות</button>` : ''}</div>
-      ${M && !print ? `<textarea class="pbody" data-body="${n}" rows="${Math.max(3, body.split('\n').length + 1)}" placeholder="מה עושים ביום הזה">${esc(body)}</textarea>`
-        : `<div class="ptext">${esc(body).replace(/\n/g, '<br>') || '<span class="muted">—</span>'}</div>`}
+      ${M && !print ? `<textarea class="pbody" data-body="${n}" rows="${Math.max(3, body.split('\n').length + 1)}" placeholder="מה עושים ביום הזה">${esc(noMoney$(body))}</textarea>`
+        : `<div class="ptext">${esc(noMoney$(body)).replace(/\n/g, '<br>') || '<span class="muted">—</span>'}</div>`}
       ${ph.length ? `<div class="pphotos">${ph.map(r => U[r] ? `<img src="${esc(U[r])}" alt="" data-z>` : '').join('')}</div>` : M && !print ? `<button class="pempty" data-pick="${n}">${icon('photo', 22)}<span>שיבוץ תמונות</span></button>` : ''}
     </section>`;
   };
@@ -88,7 +89,8 @@ export async function renderPlan(el, pid, print = false) {
   // הטקסט נשמר תוך כדי הקלדה (השהיה קצרה) ובעזיבת השדה; התיבה גדלה עם הטקסט
   const grow = t => { t.style.height = 'auto'; t.style.height = t.scrollHeight + 2 + 'px'; };
   $$('[data-body]', el).forEach(t => { grow(t); let tm;
-    const go = () => { clearTimeout(tm); const n = +t.dataset.body; return save(n, { body: t.value, photos: R.get(n)?.photos?.length ? R.get(n).photos : photosOf(n) }); };
+    const hid = moneyPart(R.get(+t.dataset.body)?.body ?? '');   // משפט כספי שהוסתר — חוזר לסוף בשמירה
+    const go = () => { clearTimeout(tm); const n = +t.dataset.body; return save(n, { body: t.value + (hid ? '\n' + hid : ''), photos: R.get(n)?.photos?.length ? R.get(n).photos : photosOf(n) }); };
     t.oninput = () => { grow(t); clearTimeout(tm); tm = setTimeout(go, 900); addEventListener('hashchange', () => tm && go(), { once: true }); }; t.onchange = go; });
   $$('[data-pick]', el).forEach(b => b.onclick = () => picker(+b.dataset.pick));
   $('#padd').onclick = async e => { const b = e.currentTarget; if (b.disabled) return; b.disabled = true; const n = (nums.at(-1) || 0) + 1; if (await save(n, { body: '', photos: [] })) renderPlan(el, pid); else b.disabled = false; };
@@ -191,7 +193,7 @@ export async function planForDay(box, day, r) {
   if (!r) { box.innerHTML = ''; return r; }
   const U = await urlsFor(r.photos || []).catch(() => ({}));
   box.innerHTML = `<section class="stack"><div class="sh-row"><h3 class="sh">תכנית היום</h3><a class="more" href="#/plan/${day.project_id}">כל התכנית</a></div>
-    <div class="card stack">${r.body ? `<div class="ptext">${esc(r.body).replace(/\n/g, '<br>')}</div>` : ''}
+    <div class="card stack">${r.body ? `<div class="ptext">${esc(noMoney$(r.body)).replace(/\n/g, '<br>')}</div>` : ''}
     ${(r.photos || []).some(x => U[x]) ? `<div class="pphotos">${r.photos.map(x => U[x] ? `<img src="${esc(U[x])}" alt="" data-z>` : '').join('')}</div>` : ''}</div></section>`;
   $$('[data-z]', box).forEach(i => i.onclick = () => zoom(i.src, ''));
   return r;

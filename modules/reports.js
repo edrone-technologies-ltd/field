@@ -1,6 +1,6 @@
 // מערכת הדוחות: כל דוח נפתח מתוך פרויקט (או מהבית ← בחירת פרויקט).
 // יומי (מסך יום השטח במצב דוח) · תקלה / אירוע בטיחות · החתמת לקוח · סיכום פרויקט פנימי · אפיון.
-import { sb, state, isManager, can, cache, enqueue, signedUrls, addFieldPhoto, sheet, uid, icon, coverArt, $, $$, esc, nf, toast, zoom, isoDay, dayLabel, dm, confirmBox, goUp, thumbUrls, backBtn } from '../lib/core.js';
+import { last, sb, state, isManager, can, cache, enqueue, signedUrls, addFieldPhoto, sheet, uid, icon, coverArt, $, $$, esc, nf, toast, zoom, isoDay, dayLabel, dm, confirmBox, goUp, thumbUrls, backBtn } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 
 const ROLE_CAN_SIGN = () => isManager() || state.profile.role === 'crew_lead';
@@ -8,7 +8,7 @@ const rating = n => `<span class="rating" aria-label="${n} מתוך 5">${icon('s
 const thumb = (url, ic, cls = '') => url ? `<span class="mic"><img src="${esc(url)}" alt=""></span>` : `<span class="mic ${cls}">${icon(ic, 20)}</span>`;
 export const TYPES = [
   { k: 'spec', ic: 'clipboard', t: 'אפיון', s: 'סיור אפיון לליד או לאתר', ok: () => can('specs'), noProject: true },
-  { k: 'daily', ic: 'report', t: 'דוח ביצוע יומי', s: 'מה בוצע, שעות, צוות, חומר ותמונות', ok: () => state.profile.role !== 'crew' },   // הדוח היומי = ראש הצוות ומעלה
+  { k: 'daily', ic: 'report', t: 'סיכום היום', s: 'מה בוצע, שעות, צוות, חומר ותמונות', ok: () => state.profile.role !== 'crew' },   // הדוח היומי = ראש הצוות ומעלה
   { k: 'issue', ic: 'alert', t: 'תקלה / אירוע בטיחות', s: 'רחפן, ציוד, אתר, כמעט תאונה', ok: () => true },
   { k: 'expense', ic: 'report', t: 'הוצאה', s: 'דלק, חניה, אגרה, אוכל, לינה — עם צילום קבלה', ok: () => true },
   { k: 'signoff', ic: 'clipboard', t: 'החתמת לקוח — אישור ביצוע', s: 'הלקוח מאשר וחותם באצבע', ok: ROLE_CAN_SIGN },
@@ -29,7 +29,7 @@ export async function newReport(projectId, links = [], type = null) {
   }
   if (projectId) return pickType(projectId);
   // מהבית: קודם סוג הדוח, ואז (אם צריך) הפרויקט
-  sheet(`<h3>${links.length ? 'חדש' : 'דוח חדש'}</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}${links.map(([h, ic, t, d]) => `<a class="lrow" href="${h}" data-close><span class="mic">${icon(ic, 20)}</span><span class="grow"><b>${t}</b><small>${d}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>
+  sheet(`<h3>חדש</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}${links.map(([h, ic, t, d]) => `<a class="lrow" href="${h}" data-close><span class="mic">${icon(ic, 20)}</span><span class="grow"><b>${t}</b><small>${d}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>
     <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
     $$('[data-t]', s).forEach(b => b.onclick = async () => { close(); const t = TYPES.find(x => x.k === b.dataset.t); if (t.noProject) return open(t.k);
       if (t.k === 'issue') { const w = await myDayNow(); if (w) return issueSheet(w.project_id, null, null, w.id); }
@@ -46,7 +46,7 @@ async function pickProject(then, back) {
   }, { back });
 }
 function pickType(pid) {
-  sheet(`<h3>איזה דוח?</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}</div>
+  sheet(`<h3>מה חדש?</h3><div class="menu">${TYPES.filter(t => t.ok()).map(t => `<button class="lrow" data-t="${t.k}"><span class="mic">${icon(t.ic, 20)}</span><span class="grow"><b>${t.t}</b><small>${t.s}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}</div>
     <button class="btn ghost block" data-close>ביטול</button>`, (s, close) => {
     $$('[data-t]', s).forEach(b => b.onclick = () => { close(); open(b.dataset.t, pid, () => pickType(pid)); });
   });
@@ -62,14 +62,14 @@ export function open(k, pid, back) {
 }
 function dailyDate(pid, back) {
   const t = isoDay(), y = isoDay(new Date(Date.now() - 864e5));
-  sheet(`<h3>דוח ביצוע יומי · לאיזה יום?</h3><div class="chips"><button class="chip" data-d="${t}" aria-pressed="true">היום</button><button class="chip" data-d="${y}">אתמול</button></div>
+  sheet(`<h3>סיכום היום · לאיזה יום?</h3><div class="chips"><button class="chip" data-d="${t}" aria-pressed="true">היום</button><button class="chip" data-d="${y}">אתמול</button></div>
     <label class="field">או תאריך אחר<input type="date" id="dd" max="${t}" value="${t}"></label>
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="dgo">פתיחת הדוח</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="dgo">פתיחת סיכום היום</button></div>`, (s, close) => {
     $$('[data-d]', s).forEach(c => c.onclick = () => { $('#dd', s).value = c.dataset.d; $$('[data-d]', s).forEach(x => x.setAttribute('aria-pressed', x === c)); });
     $('#dgo', s).onclick = async () => {
       const d = $('#dd', s).value; if (new Date(d + 'T12:00').getDay() === 6) return toast('לא עובדים בשבת');
       const go = $('#dgo', s); if (go.disabled) return; go.disabled = true;
-      const { data, error } = await sb.rpc('start_report', { p: pid, d }); if (error) { go.disabled = false; return toast(errText(error, 'הדוח לא נפתח — נסו שוב'), 4000); }
+      const { data, error } = await sb.rpc('start_report', { p: pid, d }); if (error) { go.disabled = false; return toast(errText(error, 'סיכום היום לא נפתח — נסו שוב'), 4000); }
       close(); location.hash = '#/day/' + data;
     };
   }, { back });
@@ -92,8 +92,8 @@ async function myDayNow() {
 const ISSUE_KIND = { 'רחפן': 'equipment', 'ציוד': 'equipment', 'בטיחות': 'safety', 'כמעט תאונה': 'near_miss', 'אתר': 'site', 'לקוח': 'site', 'אחר': 'other' };
 // dayId: יום השטח שאליו התקלה שייכת (לא חובה). מספיק סוג בלחיצה, מילים או תמונה
 export function issueSheet(pid, after, back, dayId = null) {
-  let kind = null, crit = false, files = [];
-  sheet(`<h3>תקלה / אירוע בטיחות</h3><div class="chips" id="ikc">${Object.keys(ISSUE_KIND).map((k, i) => `<button class="chip${i ? '' : ' sugg'}" data-k="${k}" aria-pressed="false">${k}</button>`).join('')}</div>
+  const L0 = last.get('ikind'); let kind = Object.keys(ISSUE_KIND).includes(L0) ? L0 : null, crit = false, files = [];   // הסוג האחרון — מסומן מראש
+  sheet(`<h3>תקלה / אירוע בטיחות</h3><div class="chips big" id="ikc">${Object.keys(ISSUE_KIND).map((k, i) => `<button class="chip${i || kind ? '' : ' sugg'}" data-k="${k}" aria-pressed="${k === kind}">${k}</button>`).join('')}</div>
     <textarea id="ib" rows="4" placeholder="מה קרה, איפה, מה נעשה"></textarea>
     <label class="tog"><span>קריטי — העבודה נעצרה / סכנה</span><span class="sw"><input type="checkbox" id="ic"><i></i></span></label>
     <label class="btn ghost block">${icon('photo', 18)} תמונות<input type="file" accept="image/*" multiple id="ip" hidden></label><div id="ipn" class="small muted"></div>
@@ -106,8 +106,8 @@ export function issueSheet(pid, after, back, dayId = null) {
       if (!kind) { const c = $('#ikc', s); c.classList.remove('need'); void c.offsetWidth; c.classList.add('need'); return toast('מה סוג התקלה?'); }   // סיווג חובה — בלי "אחר" שקט (לקח מסמנטו)
       if ($('#isend', s).disabled) return; $('#isend', s).disabled = true;
       const body = text ? (['רחפן', 'לקוח'].includes(kind) ? `${kind}: ${text}` : text) : files.length && kind === 'אחר' ? 'תקלה (בתמונה)' : kind;
-      const row = { id: uid(), project_id: pid, ...(dayId ? { work_day_id: dayId } : {}), kind: ISSUE_KIND[kind] || 'other', severity: crit ? 'critical' : 'normal', body, opened_by: state.user.id };
-      await enqueue({ kind: 'insert', table: 'issues', row });
+      const row = { id: uid(), project_id: pid, ...(dayId ? { work_day_id: dayId } : {}), kind: ISSUE_KIND[kind] || 'other', severity: crit ? 'critical' : 'normal', body, opened_by: state.user.id, created_at: new Date().toISOString() };
+      last.set('ikind', kind); await enqueue({ kind: 'insert', table: 'issues', row });
       for (const f of files) await addFieldPhoto(f, { kind: 'issue', project_id: pid, issue_id: row.id, ...(dayId ? { work_day_id: dayId } : {}) });
       close(); toast(crit ? 'דווח — המנהלים מקבלים התראה' : 'התקלה דווחה'); after && after(row);
     };
@@ -177,10 +177,10 @@ export async function reportsTab(box, D, { reload }) {
       <div class="list">${feed.map(f => f.html).join('')}<button class="addrow" id="rnew" type="button">${icon('plus', 18)} ${feed.length ? 'דוח חדש' : 'דוח ראשון'}</button></div></section>`;
   $('#rnew').onclick = () => pickType(pid);
   $$('[data-mr]').forEach(b => b.onclick = async () => { const r = D.reps.find(x => x.monday_item_id === b.dataset.mr); const u = await signedUrls('media', (r.photos || []).filter(Boolean));
-    sheet(`<h3>דוח יומי · ${dm(r.report_date)}</h3><div class="small muted">${esc(r.crew || '')}</div>
+    sheet(`<h3>סיכום היום · ${dm(r.report_date)}</h3><div class="small muted">${esc(r.crew || '')}</div>
       <div class="menu">${[['עבודה', r.work], ['שעות', r.hours], ['גלונים', r.gallons], ['בעיות', r.issues], ['הערות', r.notes]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(String(v))}</b></span></div>`).join('')}</div>
       <div class="gallery">${(r.photos || []).filter(Boolean).map(x => `<button data-z="${esc(u[x])}"><img src="${esc(u[x])}" alt=""></button>`).join('')}</div>
-      ${isManager() ? `<a class="more center" href="https://edroneil-force.monday.com/boards/5099882177/pulses/${r.monday_item_id}" target="_blank" rel="noopener">פתיחה במאנדי</a>` : ''}<button class="btn ghost block" data-close>סגירה</button>`, sh => $$('[data-z]', sh).forEach(z => z.onclick = () => zoom(z.dataset.z, ''))); });
+      ${state.profile.role === 'admin' ? `<a class="more center" href="https://edroneil-force.monday.com/boards/5099882177/pulses/${r.monday_item_id}" target="_blank" rel="noopener">פתיחה במאנדי</a>` : ''}<button class="btn ghost block" data-close>סגירה</button>`, sh => $$('[data-z]', sh).forEach(z => z.onclick = () => zoom(z.dataset.z, ''))); });
   $$('[data-is]').forEach(b => b.onclick = async () => { const i = D.issues.find(x => x.id === b.dataset.is);
     const { data: ip } = await sb.from('photos').select('storage_path').eq('issue_id', i.id); const u = await signedUrls('field', (ip || []).map(x => x.storage_path));
     sheet(`<h3>תקלה · ${dm(isoDay(new Date(i.created_at)))}</h3><div>${esc(i.body)}</div>${i.resolution ? `<div class="note">טיפול: ${esc(i.resolution)}</div>` : ''}

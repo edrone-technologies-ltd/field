@@ -36,13 +36,13 @@ export async function filesSection(box, p) {
   const { data } = await sb.from('project_files').select('*').eq('project_id', p.id).order('pinned', { ascending: false }).order('created_at', { ascending: false }).then(r => r, () => ({ data: null }));
   const L = data || [];
   if (!L.length && !M) { box.innerHTML = ''; return; }
-  box.innerHTML = `<section class="pf"><div class="sh-row"><h3 class="sh">קבצים${L.length ? ` <span class="count">${L.length}</span>` : ''}</h3>${M ? `<button class="more pf-add" type="button" id="pfAdd">${icon('plus', 16)} קובץ</button>` : ''}</div>
+  box.innerHTML = `<section class="pf"><div class="sh-row"><h3 class="sh">מסמכים${L.length ? ` <span class="count">${L.length}</span>` : ''}</h3>${M ? `<button class="more pf-add" type="button" id="pfAdd">${icon('plus', 16)} מסמך</button>` : ''}</div>
     ${L.length ? `<div class="pf-list">${L.map(f => `<div class="pf-row${f.pinned ? ' pin' : ''}" data-f="${f.id}">
       <button class="pf-open" type="button" data-o="${f.id}"><span class="pf-ic ${f.kind}">${icon(isImgM(f.mime) ? 'photo' : f.kind === 'report' ? 'report' : 'file', 18)}</span>
         <span class="grow"><b>${esc(f.title)}</b><small>${f.pinned ? '📌 ' : ''}${esc(KHE[f.kind] || '')} · ${dm(isoDay(new Date(f.created_at)))}${f.size ? ` · <bdi dir="ltr">${size(f.size)}</bdi>` : ''}</small></span></button>
       <button class="pf-b" type="button" data-s="${f.id}" aria-label="שיתוף">${shareIcon(17)}</button>
       ${M ? `<button class="pf-b" type="button" data-m="${f.id}" aria-label="אפשרויות">⋯</button>` : ''}</div>`).join('')}</div>`
-      : `<button class="pf-empty" type="button" id="pfAdd2">${icon('folder', 20)}<span>תיק הפרויקט ריק — דוחות, מסמכים ותכניות</span></button>`}</section>`;
+      : `<button class="pf-empty" type="button" id="pfAdd2">${icon('folder', 20)}<span>הוספת מסמך</span></button>`}</section>`;
   const byId = id => L.find(f => f.id === id);
   const redraw = () => filesSection(box, p);
   $$('[data-o]', box).forEach(b => b.onclick = () => openFile(byId(b.dataset.o)));

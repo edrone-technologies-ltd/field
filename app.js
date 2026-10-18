@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, sheet, haptic, navDir, skeleton, freshReads, replaceHash } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, goUp, sheet, haptic, navDir, skeleton, freshReads, replaceHash } from './lib/core.js';
 import { errText } from './lib/audit.js';
 import './lib/photo.js';   // בכל בחירת תמונה: צילום או מהגלריה
 
@@ -48,7 +48,7 @@ function nav(show, active = '') {
   unread();
 }
 // כפתור + : המקום היחיד ליצירת משהו חדש. רשת אחת, מילה אחת לכל פעולה; בתוך פרויקט — הדוח משויך אליו מראש
-const ADD = { daily: ['report', 'דוח יומי'], issue: ['alert', 'תקלה'], expense: ['receipt', 'הוצאה'], spec: ['clipboard', 'אפיון'], signoff: ['pen', 'החתמת לקוח'], visit: ['users', 'ביקור'], summary: ['activity', 'סיכום'] };
+const ADD = { daily: ['report', 'סיכום היום'], issue: ['alert', 'תקלה'], expense: ['receipt', 'הוצאה'], spec: ['clipboard', 'אפיון'], signoff: ['pen', 'החתמת לקוח'], visit: ['users', 'ביקור'], summary: ['activity', 'סיכום פרויקט'] };
 async function quickAdd() {
   const { newReport, TYPES } = await import('./modules/reports.js');
   const pid = (location.hash.match(/^#\/p\/([0-9a-f-]{36})/) || [])[1] || null;
@@ -86,7 +86,7 @@ function renderMenu() {
       state.profile.role !== 'crew' && ['#/weather', 'sun', 'מזג אוויר וטיסה', 'לכל אתר ולכל מקום — רוח, משבים, גשם, Kp'],   // עובד שטח: התחזית בכרטיס היום
       ['#/kb', 'book', 'מרכז ידע', 'הדרכות וסרטוני תפעול'],
       can('specs') && ['#/specs', 'clipboard', 'אפיונים', 'סיורים לפי אתר ומבנה'],
-      isManager() && ['#/reports', 'photo', 'דוחות שטח', 'כל הדוחות והתמונות'],
+      isManager() && ['#/reports', 'photo', 'ימי שטח שבוצעו', 'סיכום היום ותמונות לכל פרויקט'],
       can('equipment') && ['#/equipment', 'drone', 'ציוד', 'רחפנים ותקלות'],
       can('purchase') && ['#/purchase', 'cart', 'רכש ומלאי', 'בקשת רכש'],
     ]],
@@ -428,7 +428,7 @@ function ctFill() {
   $('.ct-t', ct).textContent = (ctSrc.textContent || '').trim();
   const hd = ctSrc.closest('.phead,.hhead,.phero'), b = hd?.querySelector('a.back'), s = $('.ct-s', ct);
   const show = b && (hd.classList.contains('phero') || !document.body.hasAttribute('data-root'));
-  s.innerHTML = show ? `<a class="back" href="${esc(b.getAttribute('href') || '#/')}" tabindex="-1"${b.dataset.hard ? ' data-hard="1"' : ''}>${icon('back', 20)}</a>` : '';
+  s.innerHTML = show ? `<a class="back" href="${esc(b.getAttribute('href') || '#/')}" tabindex="-1"${b.dataset.hard ? ' data-hard="1"' : ''}${b.dataset.up ? ' data-up="1"' : ''}>${icon('back', 20)}</a>` : '';
 }
 function ctCheck() {
   ctRaf = 0;
@@ -499,6 +499,6 @@ initNav();
 }
 document.addEventListener('click', e => {
   const a = e.target.closest('a.back'); if (!a || e.defaultPrevented || a.dataset.hard) return;
-  e.preventDefault(); goBack(a.getAttribute('href') || '#/');
+  e.preventDefault(); if (a.dataset.up) goUp(a.getAttribute('href')); else goBack(a.getAttribute('href') || '#/');   // data-up: חזרה למסך האב (יום שטח → הפרויקט), גם כשהגיעו מהבית
 });
 boot();

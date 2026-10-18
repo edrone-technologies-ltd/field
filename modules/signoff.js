@@ -75,7 +75,7 @@ export async function renderSignoff(el, pid, dayId = null) {
         <div class="muted">${esc(p.name)}</div>
         <div class="kpis">${[[c.length, 'ימי עבודה'], [S.sec.works ? S.tasks.size : 0, 'משימות'], [S.sec.photos ? S.photos.size : 0, 'תמונות']].map(([n, l]) => `<div class="kpi ${n ? '' : 'zero'}"><b>${n}</b><span>${l}</span></div>`).join('')}</div>
         <section><h3 class="sh">ימים</h3><div class="list">${days.map(x => `<label class="lrow"><span class="datebox"><b>${+x.d.slice(8)}</b><small>${dow(x.d)}</small></span>
-          <span class="grow"><b>${dm(x.d)}${x.wx ? ' · עצירת מזג אוויר' : ''}</b><small>${esc(x.work || (x.rep ? 'דוח יומי' : 'יום שטח'))}${byDay(x.d).length ? ` · ${byDay(x.d).length} תמונות` : ''}</small></span>
+          <span class="grow"><b>${dm(x.d)}${x.wx ? ' · עצירת מזג אוויר' : ''}</b><small>${esc(x.work || (x.rep ? 'סיכום היום' : 'יום שטח'))}${byDay(x.d).length ? ` · ${byDay(x.d).length} תמונות` : ''}</small></span>
           <span class="sw"><input type="checkbox" data-day="${x.d}" ${S.days.has(x.d) ? 'checked' : ''}><i></i></span></label>`).join('')}</div></section>
         <section><h3 class="sh">מה נכלל בדוח</h3><div class="menu pad">${tog('works', 'עבודות שבוצעו')}${tog('photos', 'תיעוד בתמונות')}${tog('qty', 'כמויות וחומר')}${iss.length || days.some(x => x.issues) ? tog('issues', 'תקלות שטופלו') : ''}</div></section>
         <label class="field">מה בוצע<textarea id="sw" rows="3">${esc(S.text ?? summaryText())}</textarea></label>

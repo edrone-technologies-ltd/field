@@ -21,7 +21,7 @@ export async function renderEquipment(el) {
     const since = isoDay(new Date(Date.now() - 120 * 864e5));
     const [{ data, error }, { data: i }, { data: w }] = await Promise.all([
       sb.from('equipment').select('*').order('kind').order('name'),
-      sb.from('issues').select('id,equipment_id,body,status,created_at,severity').not('equipment_id', 'is', null).order('created_at', { ascending: false }).limit(100),
+      sb.from('issues').select('id,equipment_id,body,status,created_at,severity,kind,project_id,work_day_id,opened_by,resolution,decision,prestart').not('equipment_id', 'is', null).order('created_at', { ascending: false }).limit(100),
       sb.from('work_days').select('id,day,drone_id,vehicle_id,projects(name)').gte('day', since).or('drone_id.not.is.null,vehicle_id.not.is.null').order('day').limit(500),
     ]);
     if (error) throw error; rows = data || []; iss = i || []; days = w || []; await cache.set('equipment', { rows, iss, days });
@@ -30,16 +30,21 @@ export async function renderEquipment(el) {
   const use = id => { const mine = days.filter(d => d.drone_id === id || d.vehicle_id === id);
     return { last: mine.filter(d => d.day <= today).pop() || null, next: mine.find(d => d.day > today) || mine.find(d => d.day === today) || null }; };
   const openOf = id => iss.filter(i => i.equipment_id === id && i.status === 'open');
+  // מדד = סינון הרשימה לאותם כלים (לחיצה שנייה — הכל)
+  let FIL = null;
+  const FILTERS = { ready: r => r.kind === 'drone' && r.health === 'ok', grounded: r => r.health === 'grounded', open: r => openOf(r.id).length > 0 };
   const draw = () => {
     const by = {}; rows.forEach(r => (by[r.kind] ||= []).push(r));
     Object.values(by).forEach(a => a.sort((x, y) => (RANK[x.health] ?? 3) - (RANK[y.health] ?? 3) || x.name.localeCompare(y.name, 'he')));
     const drones = by.drone || [], gr = rows.filter(r => r.health === 'grounded'), wr = rows.filter(r => ['warning', 'maintenance'].includes(r.health)),
       opn = rows.filter(r => openOf(r.id).length), due = rows.filter(r => dueOf(r).length);
     const ready = drones.filter(r => r.health === 'ok').length;
+    if (FIL && !rows.some(FILTERS[FIL])) FIL = null;
+    const kf = (k, n, b, l, tone) => n ? `<button type="button" class="kpi ${tone}" data-fil="${k}" aria-pressed="${FIL === k}"><b>${b}</b><span>${l}</span></button>` : `<div class="kpi zero"><b>${b}</b><span>${l}</span></div>`;
     const summary = rows.length ? `<div class="kpis eqk">
-        <div class="kpi ${drones.length && ready === drones.length ? 'ok' : ''}"><b>${ready}/${drones.length}</b><span>רחפנים מוכנים</span></div>
-        <div class="kpi ${gr.length ? 'bad' : ''}"><b>${gr.length}</b><span>מקורקעים</span></div>
-        <div class="kpi ${wr.length + opn.length ? 'warn' : ''}"><b>${opn.length}</b><span>תקלות פתוחות</span></div></div>
+        ${kf('ready', ready, `${ready}/${drones.length}`, 'רחפנים מוכנים', drones.length && ready === drones.length ? 'ok' : '')}
+        ${kf('grounded', gr.length, gr.length, 'מקורקעים', gr.length ? 'bad' : '')}
+        ${kf('open', opn.length, opn.length, 'תקלות פתוחות', wr.length + opn.length ? 'warn' : '')}</div>
       ${due.length ? `<div class="alist">${due.map(r => `<button class="arow ${dueOf(r).some(x => x.n < 0) ? 'bad' : 'warn'}" type="button" data-e="${r.id}"><span class="aic">${icon('shield', 18)}</span><span class="grow"><b>${esc(r.name)}</b><small>${dueOf(r).map(dueTxt).join(' · ')}</small></span><span class="chev">${icon('chev', 18)}</span></button>`).join('')}</div>` : ''}` : '';
     const line = r => {
       const h = HEALTH[r.health] || HEALTH.ok, op = openOf(r.id), u = use(r.id);
@@ -52,12 +57,14 @@ export async function renderEquipment(el) {
         ${sub.length || stale ? `<small>${stale ? `<span class="stale">${r.health_date ? 'בדיקה אחרונה ' + ago(r.health_date) : 'לא נבדק'}</span>${sub.length ? ' · ' : ''}` : ''}${esc(sub.join(' · '))}</small>` : ''}</span><span class="pill ${h[1]}">${h[0]}</span></button>`;
     };
     const missing = M ? Object.keys(KIND).filter(k => !by[k] && !['drone', 'other'].includes(k)) : [];
-    $('#el').innerHTML = summary + Object.entries(KIND).filter(([k]) => by[k]).map(([k, t]) => `<section><div class="sh-row"><h3 class="sh">${t}</h3><span class="count">${by[k].length}</span></div><div class="list">${by[k].map(line).join('')}</div></section>`).join('')
-      + (missing.length ? `<div class="chips eqadd">${missing.map(k => `<button class="chip" data-addk="${k}">${icon('plus', 15)} ${KIND1[k]}</button>`).join('')}</div>` : '')
+    const shown = k => (by[k] || []).filter(r => !FIL || FILTERS[FIL](r));
+    $('#el').innerHTML = summary + Object.entries(KIND).filter(([k]) => shown(k).length).map(([k, t]) => `<section><div class="sh-row"><h3 class="sh">${t}</h3><span class="count">${shown(k).length}</span></div><div class="list">${shown(k).map(line).join('')}</div></section>`).join('')
+      + (missing.length && !FIL ? `<div class="chips eqadd">${missing.map(k => `<button class="chip" data-addk="${k}">${icon('plus', 15)} ${KIND1[k]}</button>`).join('')}</div>` : '')
       + (rows.length ? '' : `<div class="ecta"><span class="ei">${icon('drone', 28)}</span><b>עוד אין ציוד</b></div>`);
     // רחפן = יומן טכני מלא (מסך משלו). שאר הציוד — חלון פרטים
     $$('[data-e]').forEach(b => b.onclick = () => { const r = rows.find(x => x.id === b.dataset.e); if (r?.kind === 'drone') location.hash = '#/equipment/' + r.id; else detail(r); });
     $$('[data-addk]').forEach(b => b.onclick = () => addItem(b.dataset.addk));
+    $$('[data-fil]').forEach(b => b.onclick = () => { FIL = FIL === b.dataset.fil ? null : b.dataset.fil; draw(); });
   };
   const a = $('#add'); if (a) a.onclick = () => addItem();
   function detail(r) {
@@ -67,10 +74,10 @@ export async function renderEquipment(el) {
     sheet(`<div class="row"><h3 class="grow">${esc(r.name)}</h3><span class="pill ${h[1]}">${h[0]}</span></div>
       <div class="small muted">${esc([r.serial ? 'מס׳ ' + r.serial : '', r.health_date ? 'בדיקה אחרונה ' + dm(r.health_date) + ' · ' + ago(r.health_date) : '', u.last ? 'יצא לאחרונה ' + dm(u.last.day) + (u.last.projects?.name ? ' · ' + u.last.projects.name : '') : ''].filter(Boolean).join(' · '))}</div>
       ${r.health_detail || r.health_note ? `<div class="note pre">${esc(r.health_detail || r.health_note)}</div>` : ''}
-      ${dueOf(r).length ? `<div class="alist">${dueOf(r).map(x => `<div class="arow ${x.n < 0 ? 'bad' : 'warn'}"><span class="aic">${icon('shield', 18)}</span><span class="grow"><b>${dueTxt(x)}</b><small>${new Date(x.d).toLocaleDateString('he-IL')}</small></span></div>`).join('')}</div>` : ''}
+      ${dueOf(r).length ? `<div class="alist">${dueOf(r).map(x => `<${M ? `button type="button" data-due="${x.t === 'ביטוח' ? 'ein' : 'eli'}"` : 'div'} class="arow ${x.n < 0 ? 'bad' : 'warn'}"><span class="aic">${icon('shield', 18)}</span><span class="grow"><b>${dueTxt(x)}</b><small>${new Date(x.d).toLocaleDateString('he-IL')}</small></span>${M ? `<span class="chev">${icon('chev', 18)}</span>` : ''}</${M ? 'button' : 'div'}>`).join('')}</div>` : ''}
       ${!fromMonday && M ? `<div class="chips">${Object.entries(HEALTH).map(([k, v]) => `<button class="chip" data-h="${k}" aria-pressed="${r.health === k}">${v[0]}</button>`).join('')}</div>` : ''}
       ${up.length ? `<div class="field">משובץ<div class="list">${up.map(d => `<a class="lrow" href="#/day/${d.id}" data-close><span class="grow"><b>${d.day === today ? 'היום' : dm(d.day)}</b><small>${esc(d.projects?.name || '')}</small></span><span class="chev">${icon('chev', 16)}</span></a>`).join('')}</div></div>` : ''}
-      ${mine.length ? `<div class="field">תקלות<div class="list">${mine.slice(0, 8).map(i => `<div class="lrow"><span class="grow"><b>${esc(issueTxt(r, i))}</b><small>${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span>${i.status === 'open' && M ? `<button class="chip" data-fix="${i.id}">${icon('check', 14)} טופל</button>` : `<span class="pill ${i.status === 'open' ? 'warn' : 'ok'}">${i.status === 'open' ? 'פתוחה' : 'טופלה'}</span>`}</div>`).join('')}</div></div>` : ''}
+      ${mine.length ? `<div class="field">תקלות<div class="list">${mine.slice(0, 8).map(i => `<div class="lrow eqi" role="button" tabindex="0" data-iss="${i.id}"><span class="grow"><b>${esc(issueTxt(r, i))}</b><small>${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span>${i.status === 'open' && M ? `<button class="chip" data-fix="${i.id}">${icon('check', 14)} טופל</button>` : `<span class="pill ${i.status === 'open' ? 'warn' : 'ok'}">${i.status === 'open' ? 'פתוחה' : 'טופלה'}</span>`}</div>`).join('')}</div></div>` : ''}
       ${M ? `<details class="fold"><summary><span class="sh">פרטים ותוקף</span></summary><div class="stack">
         <div class="row"><label class="field grow">ביטוח עד<input type="date" id="ein" value="${r.insurance_until || ''}"></label><label class="field grow">${r.kind === 'drone' ? 'רישום עד' : r.kind === 'vehicle' ? 'טסט עד' : 'רישוי עד'}<input type="date" id="eli" value="${r.license_until || ''}"></label></div>
         <div class="row"><label class="field grow">מספר סידורי<input id="ese" value="${esc(r.serial || '')}"></label>${r.kind === 'battery' ? `<label class="field grow">מחזורי טעינה<input type="number" inputmode="numeric" id="ecy" value="${r.cycles ?? ''}"></label>` : ''}</div>
@@ -80,7 +87,9 @@ export async function renderEquipment(el) {
       <div class="row"><button class="btn ghost grow" data-close>סגירה</button><button class="btn primary grow" id="es">דיווח תקלה</button></div>`, (s, close) => {
       $$('[data-q]', s).forEach(b => b.onclick = () => { const t = $('#eb', s); t.value = t.value ? t.value + ', ' + b.dataset.q : b.dataset.q; t.focus(); });
       $$('[data-h]', s).forEach(b => b.onclick = async () => { r.health = b.dataset.h; r.health_date = isoDay(); await enqueue({ kind: 'update', table: 'equipment', rowId: r.id, patch: { health: r.health, health_date: r.health_date } }); close(); toast(`${r.name}: ${HEALTH[r.health][0]}`); draw(); });
-      $$('[data-fix]', s).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true; const i = iss.find(x => x.id === b.dataset.fix);
+      $$('[data-due]', s).forEach(b => b.onclick = () => { const f = $('details.fold', s); if (f) f.open = true; const inp = $('#' + b.dataset.due, s); inp?.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => inp?.focus(), 250); });
+      $$('[data-iss]', s).forEach(b => b.onclick = e => { if (e.target.closest('[data-fix]')) return; const i = iss.find(x => x.id === b.dataset.iss); close(); import('../lib/issue.js').then(m => m.openIssue(i, { here: 'eq:' + r.id, after: () => draw() })); });
+      $$('[data-fix]', s).forEach(b => b.onclick = async e => { e.stopPropagation(); if (b.disabled) return; b.disabled = true; const i = iss.find(x => x.id === b.dataset.fix);
         Object.assign(i, { status: 'closed' }); await enqueue({ kind: 'update', table: 'issues', rowId: i.id, patch: { status: 'closed', resolution: 'טופל', closed_by: state.user.id, closed_at: new Date().toISOString() } });
         toast('התקלה נסגרה'); close(); draw(); detail(r); });
       const sv = $('#esv', s); if (sv) sv.onclick = async () => { if (sv.disabled) return; sv.disabled = true;
@@ -162,7 +171,7 @@ async function renderDrone(el, r, ctx) {
       <button class="btn primary block" id="svc">${icon('wrench', 18)} רישום טיפול</button>
     </div>
     <div class="kpis"><div class="kpi"><b>${hrs(since.m)}</b><span>${last ? 'שעות מאז הטיפול' : 'שעות אוויר'}</span></div><div class="kpi"><b>${since.f}</b><span>${last ? 'טיסות מאז' : 'טיסות'}</span></div>${last ? `<div class="kpi"><b>${hrs(life.m)}</b><span>סה״כ שעות</span></div>` : `<div class="kpi"><b>${life.n}</b><span>ימי טיסה</span></div>`}</div>
-    ${op.length ? `<section><h3 class="sh">תקלות פתוחות</h3><div class="list">${op.map(i => `<div class="lrow"><span class="aic warn">${icon('alert', 16)}</span><span class="grow"><b>${esc(issueTxt(r, i))}</b><small>${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span>${M ? `<button class="chip" data-fix="${i.id}">${icon('check', 14)} טופל</button>` : ''}</div>`).join('')}</div></section>` : ''}
+    ${op.length ? `<section><h3 class="sh">תקלות פתוחות</h3><div class="list">${op.map(i => `<div class="lrow" role="button" tabindex="0" data-iss="${i.id}"><span class="aic warn">${icon('alert', 16)}</span><span class="grow"><b>${esc(issueTxt(r, i))}</b><small>${new Date(i.created_at).toLocaleDateString('he-IL')}</small></span>${M ? `<button class="chip" data-fix="${i.id}">${icon('check', 14)} טופל</button>` : ''}</div>`).join('')}</div></section>` : ''}
     <section><div class="sh-row"><h3 class="sh">רכיבים</h3>${M ? `<button class="more" type="button" id="cadd">${icon('plus', 16)} רכיב</button>` : ''}</div>
       ${C.length ? `<div class="list">${C.map(c => { const u = compUse(c), p = compPct(c), t = p >= 100 ? 'bad' : p >= 85 ? 'warn' : 'ok';
         return `<button type="button" class="lrow stockrow" data-c="${c.id}"><span class="grow"><b>${esc(CK[c.kind])}${c.position ? ' ' + esc(c.position) : ''}</b><small>${esc([c.serial ? 'מס׳ ' + c.serial : '', `${hrs(u.m)} ש׳ · ${u.f} טיסות`, 'מ-' + dm(c.installed_on)].filter(Boolean).join(' · '))}</small>${c.replace_hours || c.replace_cycles ? meter(p, t) : ''}</span>${p >= 100 ? '<span class="pill bad">להחליף</span>' : p >= 85 ? '<span class="pill warn">בקרוב</span>' : ''}</button>`; }).join('')}</div>`
@@ -172,8 +181,8 @@ async function renderDrone(el, r, ctx) {
         return `<button type="button" class="lrow stockrow" data-b="${b.id}"><span class="grow"><b>${esc(b.name)}</b><small>${esc([b.serial ? 'מס׳ ' + b.serial : '', `${est ? '≈' : ''}${n} מחזורים${b.replace_cycles ? ' מתוך ' + b.replace_cycles : ''}`].filter(Boolean).join(' · '))}</small>${p != null ? meter(p, t) : ''}</span>${p >= 100 ? '<span class="pill bad">להחליף</span>' : ''}</button>`; }).join('')}</div>`
         : M ? `<button class="btn ghost block" id="badd2">${icon('plus', 18)} סוללות של הכלי</button>` : ''}</section>
     <section><div class="sh-row"><h3 class="sh">יומן טיסות</h3><span class="count">${life.n}</span></div>
-      ${D.length ? `<div class="list">${D.slice(0, 5).map(d => `<div class="lrow"><span class="datebox"><b>${+d.day.slice(8)}.${+d.day.slice(5, 7)}</b></span><span class="grow"><b>${d.flights != null ? d.flights + ' טיסות' : '—'}${d.air_minutes != null ? ' · ' + hrs(d.air_minutes) + ' ש׳' : ''}</b><small>${esc(PN(d.project_id) || (d.from_logs ? 'מהלוגים' : ''))}${d.from_logs && d.project_id ? ' · מהלוגים' : ''}</small></span>${d.work_day_id ? `<a class="chev" href="#/day/${d.work_day_id}" aria-label="יום השטח">${icon('chev', 16)}</a>` : ''}</div>`).join('')}</div>
-        ${D.length > 5 ? `<details class="fold"><summary><span class="sh">עוד ${D.length - 5} ימים</span></summary><div class="list">${D.slice(5).map(d => `<div class="lrow kv"><span class="grow"><small>${dm(d.day)} · ${esc(PN(d.project_id))}</small><b>${d.flights ?? '—'} טיסות · ${hrs(d.air_minutes)} ש׳</b></span></div>`).join('')}</div></details>` : ''}`
+      ${D.length ? `<div class="list">${D.slice(0, 5).map(d => `<${d.work_day_id ? `a href="#/day/${d.work_day_id}"` : 'div'} class="lrow"><span class="datebox"><b>${+d.day.slice(8)}.${+d.day.slice(5, 7)}</b></span><span class="grow"><b>${d.flights != null ? d.flights + ' טיסות' : '—'}${d.air_minutes != null ? ' · ' + hrs(d.air_minutes) + ' ש׳' : ''}</b><small>${esc(PN(d.project_id) || (d.from_logs ? 'מהלוגים' : ''))}${d.from_logs && d.project_id ? ' · מהלוגים' : ''}</small></span>${d.work_day_id ? `<span class="chev">${icon('chev', 16)}</span>` : ''}</${d.work_day_id ? 'a' : 'div'}>`).join('')}</div>
+        ${D.length > 5 ? `<details class="fold"><summary><span class="sh">עוד ${D.length - 5} ימים</span></summary><div class="list">${D.slice(5).map(d => `<${d.work_day_id ? `a href="#/day/${d.work_day_id}"` : 'div'} class="lrow kv"><span class="grow"><small>${dm(d.day)} · ${esc(PN(d.project_id))}</small><b>${d.flights ?? '—'} טיסות · ${hrs(d.air_minutes)} ש׳</b></span>${d.work_day_id ? `<span class="chev">${icon('chev', 16)}</span>` : ''}</${d.work_day_id ? 'a' : 'div'}>`).join('')}</div></details>` : ''}`
         : '<div class="empty-line">הטיסות נרשמות לבד מימי השטח</div>'}</section>
     ${SV.length ? `<section><h3 class="sh">טיפולים</h3><div class="list">${SV.map(x => `<div class="lrow">${x.photo_path && urls[x.photo_path] ? `<img class="svimg" src="${esc(urls[x.photo_path])}" alt="" data-z="${esc(urls[x.photo_path])}">` : `<span class="mic">${icon('wrench', 18)}</span>`}<span class="grow"><b>${SK[x.kind]} · ${dm(x.done_on)}</b>${x.body ? `<small>${esc(x.body)}</small>` : ''}<small>${esc(x.profiles?.full_name || '')}</small></span></div>`).join('')}</div></section>` : ''}
     ${M ? `<details class="fold"><summary><span class="sh">מצב ופרטים</span></summary><div class="stack">
@@ -186,7 +195,8 @@ async function renderDrone(el, r, ctx) {
   $('#svc').onclick = () => serviceSheet(r, C, again);
   $$('[data-rc]', el).forEach(b => b.onclick = () => serviceSheet(r, C, again, { kind: 'component', comp: b.dataset.rc }));
   $('#rep').onclick = () => issueSheet(r, ctx, again);
-  $$('[data-fix]', el).forEach(b => b.onclick = async () => { if (b.disabled) return; b.disabled = true;
+  $$('[data-iss]', el).forEach(b => b.onclick = e => { if (e.target.closest('[data-fix]')) return; const i = (ctx.iss || []).find(x => x.id === b.dataset.iss); import('../lib/issue.js').then(m => m.openIssue(i, { here: 'eq:' + r.id, after: again })); });
+  $$('[data-fix]', el).forEach(b => b.onclick = async e => { e.stopPropagation(); if (b.disabled) return; b.disabled = true;
     await enqueue({ kind: 'update', table: 'issues', rowId: b.dataset.fix, patch: { status: 'closed', resolution: 'טופל', closed_by: state.user.id, closed_at: new Date().toISOString() } });
     const i = (ctx.iss || []).find(x => x.id === b.dataset.fix); if (i) i.status = 'closed'; toast('התקלה נסגרה'); again(); });
   ['#cadd', '#cadd2'].forEach(k => { const b = $(k); if (b) b.onclick = () => compSheet(r, null, again); });

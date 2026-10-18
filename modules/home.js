@@ -1,6 +1,7 @@
 // בית: עונה רק על "מה קורה היום ומה צריך אותי". כל השאר בלשוניות.
 // מנהל → מסך הבקרה (ops.js). עובד שטח: שעון · מחכה לך · היום שלי · הימים הקרובים. יצירת כל דבר חדש — רק בכפתור +.
 import { sb, state, can, isManager, cache, covers, folderGrid, signedUrls, $, $$, esc, nf, initials, icon, isoDay, dm, HE_DOW, HE_D1, timeAgo , stLabel, toast, isOpenProject, enqueue, ask, haptic, othersPending, othersCard, addFieldPhoto, flush } from '../lib/core.js';
+import { mon } from '../lib/core.js';
 import { needsList, bindNeeds } from './attention.js';
 import { errText } from '../lib/audit.js';
 import { isNight, nightRange, nightTag, carryNight, isCurrent, wxKey } from '../lib/night.js';
@@ -99,7 +100,7 @@ export function alerts(d) {
   if (ended.length) out.push({ tone: 'warn', ic: 'calendar', title: ended.length > 1 ? `${ended.length} פרויקטים שהסתיימו ועדיין פתוחים` : `הסתיים ב-${dm(ended[0].planned_to || ended[0].actual_to)} ועדיין פתוח`, sub: ended.length > 1 ? ended.map(p => p.name).join(' · ') : ended[0].name, ...pick(ended, '/s') });
   const last = new Map(); (d.reports || []).forEach(r => { if (r.project_id && !last.has(r.project_id)) last.set(r.project_id, r); });
   const mism = P.filter(p => { const r = last.get(p.id); return r && daysBetween(r.report_date, t) <= 7 && p.status_label !== 'בביצוע' && isOpen(p); });
-  if (mism.length) out.push({ tone: 'warn', ic: 'report', title: mism.length > 1 ? `${mism.length} פרויקטים בשטח שהסטטוס שלהם במאנדי לא "בביצוע"` : `עובדים בשטח, אבל במאנדי הסטטוס "${mism[0].status_label}"`, sub: mism.map(p => p.name).join(' · '), ...pick(mism) });
+  if (mism.length) out.push({ tone: 'warn', ic: 'report', title: mism.length > 1 ? `${mism.length} פרויקטים בשטח שהסטטוס שלהם${mon(' במאנדי')} לא "בביצוע"` : `עובדים בשטח, אבל${mon(' במאנדי')} הסטטוס "${mism[0].status_label}"`, sub: mism.map(p => p.name).join(' · '), ...pick(mism) });
   const iss = (d.reports || []).filter(r => r.had_issues && daysBetween(r.report_date, t) <= 7);
   const ip = [...new Map(iss.filter(r => r.project_id).map(r => [r.project_id, { id: r.project_id, name: r.project_label, client_name: dm(r.report_date) }])).values()];
   if (iss.length) out.push({ tone: 'warn', ic: 'alert', title: `${iss.length} דוחות עם תקלות השבוע`, sub: [...new Set(iss.map(r => r.project_label))].join(' · '), ...(ip.length ? pick(ip, '/d') : { href: '#/reports' }) });
@@ -111,7 +112,7 @@ export function alerts(d) {
   // שליחה למאנדי נכשלה: לפריט עצמו (יום שטח / פרויקט / דוח ביקור / רכש); אחרת — יומן הסנכרון (מנהל מערכת)
   const PE = [...new Map((d.pushErr || []).map(e => [e.entity + ':' + e.entity_id, e])).values()];
   if (PE.length) { const one = PE.length === 1 ? errHref(PE[0]) : null;
-    out.push({ tone: 'warn', ic: 'alert', title: PE.length > 1 ? `${PE.length} פריטים לא עברו למאנדי` : 'שליחה למאנדי נכשלה', sub: [...new Set(PE.map(e => ENT_HE[e.entity] || 'עדכון'))].join(' · '),
+    out.push({ tone: 'warn', ic: 'alert', title: PE.length > 1 ? `${PE.length} פריטים לא עברו ${mon('למאנדי', 'למשרד')}` : mon('שליחה למאנדי נכשלה', 'שליחה למשרד נכשלה'), sub: [...new Set(PE.map(e => ENT_HE[e.entity] || 'עדכון'))].join(' · '),
       href: one || (can('admin') ? '#/admin/sync' : ''), list: !one && !can('admin') && PE.some(errHref) ? PE.filter(errHref).map(e => ({ href: errHref(e), t: ENT_HE[e.entity] || 'עדכון', s: '' })) : null }); }
   // סיור בלי תאריך: לליד עצמו (איש קשר + משימה לצוות לתיאום); כמה — רשימה של בדיוק אותם לידים
   const nd = (d.visits || []).filter(v => !v.visit_date), lead = vHref;
@@ -120,7 +121,7 @@ export function alerts(d) {
   const rank = { bad: 0, warn: 1, '': 2 };
   return out.sort((a, b) => rank[a.tone] - rank[b.tone]);
 }
-const ENT_HE = { work_day: 'דוח יומי', spec: 'אפיון', issue: 'תקלה', missing: 'חסר בשטח', message: 'הודעה', signoff: 'החתמת לקוח', summary: 'סיכום פרויקט', task: 'משימה', task_board: 'משימה',
+const ENT_HE = { work_day: 'סיכום היום', spec: 'אפיון', issue: 'תקלה', missing: 'חסר בשטח', message: 'הודעה', signoff: 'החתמת לקוח', summary: 'סיכום פרויקט', task: 'משימה', task_board: 'משימה',
   visit: 'דוח ביקור', purchase: 'בקשת רכש', contact: 'איש קשר', project_close: 'סגירת פרויקט', project_start: 'פתיחת פרויקט', schedule: 'תאריכי פרויקט' };
 const errHref = e => !e.entity_id ? null : e.entity === 'work_day' ? `#/day/${e.entity_id}` : ['summary', 'project_close', 'project_start', 'schedule'].includes(e.entity) ? `#/p/${e.entity_id}`
   : e.entity === 'visit' ? `#/visit/${e.entity_id}` : e.entity === 'purchase' ? '#/purchase' : null;
@@ -338,7 +339,7 @@ async function pastOpen(box) {
   for (const w of rows) { const c = await cache.get('day:' + w.id).catch(() => null); if (c?.day?.status !== 'done') open.push(w); }   // נסגר בטלפון ועוד בתור — לא מציגים
   if (!box.isConnected) return;
   box.innerHTML = open.length ? `<section><div class="sh-row"><h3 class="sh">דוח שלא נסגר</h3><span class="count">${open.length}</span></div><div class="list">${open.map(w => `<a class="lrow" href="#/day/${w.id}"><span class="datebox"><b>${+w.day.slice(8)}</b><small>יום ${HE_D1[new Date(w.day + 'T12:00').getDay()]}</small></span>
-    <span class="grow"><b>${esc(w.projects?.name || '')}</b><small>${w.kind === 'report' ? 'דוח יומי' : 'יום שטח'} · ${DAY_ST[w.status] || ''}</small></span><span class="pill warn">לסגירה</span></a>`).join('')}</div></section>` : '';
+    <span class="grow"><b>${esc(w.projects?.name || '')}</b><small>${w.kind === 'report' ? 'סיכום היום' : 'יום שטח'} · ${DAY_ST[w.status] || ''}</small></span><span class="pill warn">לסגירה</span></a>`).join('')}</div></section>` : '';
 }
 // אישורי הגעה / "לא אוכל" שעוד בתור (בלי קליטה) — נחשבים כבר נשלחו
 const PQ = { ok: new Set(), no: new Set() };
@@ -397,7 +398,7 @@ export async function renderSchedule(el) {
   const noDate = (d.projects || []).filter(isOpen).filter(p => ['קביעת מועד', 'תואם - ממתין לביצוע', 'אושר מול לקוח', 'בביצוע'].includes(p.status_label) && !hasDay.has(p.id) && !((p.planned_to || p.planned_from || '') >= t));
   await pendingConfirms(); mine.sort((a, b) => a.day < b.day ? -1 : 1);
   box.innerHTML = `${!M ? `<section><h3 class="sh">הימים שלי</h3>${mine.length ? `<div class="list">${mine.map(w => dayRow(w, by, mine)).join('')}</div>` : '<div class="empty-line">אין לך ימי שטח משובצים</div>'}</section>` : ''}
-    ${M && noDate.length ? `<section><div class="sh-row"><h3 class="sh">ממתינים לתאריך במאנדי</h3><span class="count">${noDate.length}</span></div>
+    ${M && noDate.length ? `<section><div class="sh-row"><h3 class="sh">${mon('ממתינים לתאריך במאנדי', 'ממתינים לתאריך')}</h3><span class="count">${noDate.length}</span></div>
       <div class="alist">${noDate.map(p => `<a class="arow" href="#/p/${p.id}"><span class="aic">${icon('calendar', 20)}</span><span class="grow"><b>${esc(p.name)}</b><small>${esc([p.status_label, p.client_name].filter(Boolean).join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}`;
   bindConfirm(box);
 }
@@ -442,7 +443,7 @@ async function mySchedule(el) {
 // ---------- דוחות שטח ----------
 export async function renderReports(el) {
   // דוחות שטח מסודרים בתיקיות: תיקייה לכל פרויקט (תמונה, כמה דוחות, האחרון, תקלות). לחיצה = הדוחות של אותו פרויקט
-  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1>דוחות שטח</h1></header>
+  el.innerHTML = `<header class="phead"><a class="back" href="#/menu" aria-label="חזרה">${icon('back', 20)}</a><h1>ימי שטח שבוצעו</h1></header>
     <div id="prodx"></div><input type="search" class="search" id="rq" placeholder="חיפוש פרויקט"><div id="rl"><div class="skel"></div></div>`;
   import('./zones.js').then(m => m.prodSection($('#prodx'))).catch(() => {});   // תפוקה: מ״ר לשעה (db/112)
   const [{ data: reps }, { data: days }, { data: projs }] = await Promise.all([
@@ -457,7 +458,7 @@ export async function renderReports(el) {
   const draw = q => {
     const list = P.filter(p => !q || (p.name + ' ' + (p.client_name || '')).includes(q));
     $('#rl').innerHTML = list.length ? folderGrid(list.map(p => { const x = by.get(p.id);
-      return { href: `#/p/${p.id}/d`, img: cov[p.id], title: p.name, sub: `${x.n} דוחות · אחרון ${dm(x.last)}`, count: x.n, pill: x.iss ? `${x.iss} תקלות` : '', tone: 'warn' }; }))
+      return { href: `#/p/${p.id}/d`, img: cov[p.id], title: p.name, sub: `${x.n === 1 ? 'יום אחד' : x.n + ' ימים'} · אחרון ${dm(x.last)}`, count: x.n, pill: x.iss ? `${x.iss} תקלות` : '', tone: 'warn' }; }))
       : '<div class="empty-card"><span><b>לא נמצא</b><small>נסו שם אחר</small></span></div>';
   };
   $('#rq').oninput = e => draw(e.target.value.trim()); draw('');

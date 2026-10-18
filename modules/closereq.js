@@ -32,9 +32,9 @@ export async function approvalCards() {
   if (state.profile?.role !== 'admin') return [];
   try {
     const { data } = await sb.from('close_requests').select('id,reason,created_at,project_id,projects(name),who:requested_by(full_name)').eq('status', 'pending').order('created_at');
-    return (data || []).map(r => `<div class="card stack opr"><div class="row"><b class="grow">סגירה בלי חתימה · ${esc(r.projects?.name || '')}</b><small class="muted">${esc((r.who?.full_name || '').split(' ')[0])}</small></div>
-      <small>${esc(r.reason)}</small>
-      <div class="row-btns"><a class="btn ghost sm" href="#/p/${r.project_id}/s">הפרויקט</a><button class="btn ghost sm" data-crq="${r.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-crq="${r.id}" data-ok="1">אישור</button></div></div>`);
+    const { oprGo } = await import('./ops.js');
+    return (data || []).map(r => `<div class="card stack opr">${oprGo(`#/p/${r.project_id}`, `סגירה בלי חתימה · ${esc(r.projects?.name || '')}`, esc(r.reason), esc((r.who?.full_name || '').split(' ')[0]))}
+      <div class="row-btns"><button class="btn ghost sm" data-crq="${r.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-crq="${r.id}" data-ok="1">אישור</button></div></div>`);
   } catch { return []; }
 }
 export async function decide(id, ok) {

@@ -39,7 +39,11 @@ export async function renderDispatch(el, start, o = {}) {
     for (let d = x.planned_from >= t0 ? x.planned_from : t0; d <= (x.planned_to || x.planned_from); d = addDays(d, 1)) if (wk(d) && inPulse(x, d) && (!lo || d < lo || d > hi)) miss.push(d);
     return { x, d: miss[0], n: miss.length };
   }).filter(n => n.n).sort((a, b) => a.d < b.d ? -1 : 1);
-  const needStrip = () => needP.length ? `<div class="dneed">${needP.map(n => `<button type="button" class="dline need" data-sch="${n.x.id}" data-d="${n.d}"><span class="grow"><b>${esc(n.x.name)}</b><small>${dm(n.x.planned_from)}${n.x.planned_to && n.x.planned_to !== n.x.planned_from ? '–' + dm(n.x.planned_to) : ''} · ${n.n === 1 ? 'יום אחד חסר' : n.n + ' ימים חסרים'}</small></span><span class="pill warn">לשבץ</span></button>`).join('')}</div>` : '';
+  // סיכום השבוע בשורה אחת (מידע — כל אחד מהפריטים נמצא בלוח שמתחת)
+  const live = (wds || []).filter(w => w.status !== 'cancelled'), ppl = new Set(live.flatMap(w => [w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)]).filter(Boolean));
+  const unc = live.filter(w => w.status === 'planned' && w.day >= t0).reduce((n, w) => n + (w.work_day_crew || []).filter(c => c.user_id !== w.crew_lead_id && !c.confirmed_at && !c.cant_come_at).length, 0);
+  const sumLine = () => live.length ? `<div class="dsum"><b>${live.length}</b> ימי שטח · <b>${ppl.size}</b> אנשים${needP.length ? ` · <b>${needP.length}</b> לשבץ` : ''}${unc ? ` · <b>${unc}</b> לא אישרו הגעה` : ''}</div>` : '';
+  const needStrip = () => sumLine() + (needP.length ? `<div class="dneed">${needP.map(n => `<button type="button" class="dline need" data-sch="${n.x.id}" data-d="${n.d}"><span class="grow"><b>${esc(n.x.name)}</b><small>${dm(n.x.planned_from)}${n.x.planned_to && n.x.planned_to !== n.x.planned_from ? '–' + dm(n.x.planned_to) : ''} · ${n.n === 1 ? 'יום אחד חסר' : n.n + ' ימים חסרים'}</small></span><span class="pill warn">לשבץ</span></button>`).join('')}</div>` : '');
   const bindNeed = () => $$('[data-sch]', el).forEach(b => b.onclick = () => { location.hash = `#/p/${b.dataset.sch}/sch/${b.dataset.d}`; });
   const onWeek = p => (wds || []).some(w => w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id));
   // מי שעובד השבוע — למעלה; אחריו מטיסים פנויים; אחריו השאר (לשיבוץ בלחיצה על תא ריק)
@@ -92,7 +96,7 @@ export async function renderDispatch(el, start, o = {}) {
   $$('td[data-u]', el).forEach(td => td.onclick = () => {
     const p = staff.find(x => x.id === td.dataset.u), d = td.dataset.d, mine = (wds || []).filter(w => w.day === d && (w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id)));
     sheet(`<h3>${esc(p.full_name)} · ${HE_D1[new Date(d + 'T12:00').getDay()]} ${dm(d)}</h3>
-      ${mine.length ? `<div class="list">${mine.map(w => `<div class="lrow"><span class="grow"><b>${esc(w.projects?.name || '')}</b></span><button class="chip" data-rm="${w.id}">הסרה מהיום</button></div>`).join('')}</div>` : ''}
+      ${mine.length ? `<div class="list">${mine.map(w => `<div class="lrow"><a class="grow" href="#/day/${w.id}" data-close><b>${esc(w.projects?.name || '')}</b><small>יום השטח</small></a><button class="chip" data-rm="${w.id}">הסרה מהיום</button></div>`).join('')}</div>` : ''}
       <label class="field">שיבוץ לפרויקט<select id="ap"><option value="">בחירת פרויקט…</option>${(projects || []).map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></label>
       <div class="row-btns"><button class="btn ghost" data-close>סגירה</button><button class="btn primary" id="ago">שיבוץ</button></div>`, (s, close) => {
       const go = $('#ago', s);
@@ -146,7 +150,7 @@ export async function renderDispatch(el, start, o = {}) {
         ${wd.map(w => { const crew = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
           const nc = w.status === 'planned' ? crew.filter(u => noCome(w, u)) : [], tag = nc.length ? 'button' : 'a';
           return `<${tag} class="dline ${w.status === 'done' ? 'done' : ''}" ${nc.length ? `type="button" data-da="${w.id}"` : `href="#/day/${w.id}"`}><span class="grow"><b>${esc(w.projects?.name || '')}${dtTag(w)}${nightTag(w)}</b><small>${crew.map(u => (noCome(w, u) ? `<s>${esc(NM.get(u) || '')}</s>` : esc(NM.get(u) || '')) + (u === w.crew_lead_id ? leadMark() : '') + ((busy.get(u) || 0) > 1 ? `<span class="dwarn" title="משובץ פעמיים" aria-label="משובץ פעמיים">${icon('alert', 14)}</span>` : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${nc.length ? `<span class="pill bad">${nc.length > 1 ? nc.length + ' לא יגיעו' : 'לא יגיע'}</span>` : w.status === 'done' ? '<span class="pill ok">בוצע</span>' : w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${d}"></span>` : ''}</${tag}>`; }).join('')}
-        ${ab.map(a => `<div class="dline abs"><span class="grow"><small>${esc(NM.get(a.user_id) || '')}: ${ABS[a.kind]}${a.status === 'pending' ? ' (ממתין לאישור)' : ''}</small></span></div>`).join('')}
+        ${ab.map(a => `<a class="dline abs" href="#/attendance/${a.user_id}/${a.date_from.slice(0, 7)}"><span class="grow"><small>${esc(NM.get(a.user_id) || '')}: ${ABS[a.kind]}${a.status === 'pending' ? ' (ממתין לאישור)' : ''}</small></span><span class="chev">${icon('chev', 16)}</span></a>`).join('')}
 </section>`;
     }).join('');
     import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});

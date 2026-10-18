@@ -2,6 +2,7 @@
 // בחינם: סרטונים לא נשמרים בשרת שלנו (רק קישור). לשרת עולים רק PDF ותמונות עד 10MB.
 // "צפיתי והבנתי" = מעקב הדרכה; פריט "חובה" מופיע בבית לכל מי שעוד לא אישר.
 import { sb, state, isManager, can, sheet, icon, $, $$, esc, toast, confirmBox, signedUrls, backBtn, initials, replaceHash, goUp, zoom } from '../lib/core.js';
+import { mon } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 import { shareIcon, shareLink, shareFile, kbShareUrl, ogIndex } from '../lib/share.js';
 
@@ -34,7 +35,7 @@ export async function renderKb(el, cat = '') {
   el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">מרכז ידע</h1>${M ? `<button class="hbtn" id="kbnew" aria-label="הדרכה חדשה">${icon('plus', 20)}</button>` : ''}</header>
     <div class="stack lg">
       ${cat ? '' : quickRail(all)}
-      <input class="search" id="kbq" type="search" placeholder="חיפוש: משאבה, סוללות, דוח יומי…">
+      <input class="search" id="kbq" type="search" placeholder="חיפוש: משאבה, סוללות, סיכום היום…">
       ${used.length > 1 ? `<div class="chips scroll">${['', ...used].map(c => `<button class="chip" data-c="${esc(c)}" aria-pressed="${c === cat}">${c || 'הכל'}</button>`).join('')}</div>` : ''}
       ${todo.length ? `<section><div class="sh-row"><h3 class="sh">לצפייה — חובה</h3><span class="count">${todo.length}</span></div><div class="list">${todo.map(row).join('')}</div></section>` : ''}
       <div id="kbl" class="stack lg"></div>
@@ -86,9 +87,9 @@ const FLOW = [
   { ic: 'calendar', t: 'שיבוץ', s: 'צוות, רחפן ותאריך — הצוות מאשר הגעה', href: '#/schedule', ok: () => true, kb: [] },
   { ic: 'drone', t: 'הכנה', s: 'ציוד, מים וחומרים, מזג אוויר, מרחב אווירי', href: '#/weather', ok: () => true, kb: ['רחפנים', 'מערכת שטיפה ומשאבות', 'חומרים וניקוי'] },
   { ic: 'send', t: 'יום שטח', s: 'יציאה, הגעה, בטיחות, עבודה לפי התכנית', href: '#/', ok: () => true, kb: ['בטיחות ועבודה בגובה', 'נהלים'] },
-  { ic: 'photo', t: 'דוח יומי', s: 'תמונות לפני/אחרי, תקלות, הוצאות', href: '#/', ok: () => true, kb: [] },
+  { ic: 'photo', t: 'סיכום היום', s: 'תמונות לפני/אחרי, תקלות, הוצאות', href: '#/', ok: () => true, kb: [] },
   { ic: 'pen', t: 'החתמת לקוח', s: 'בסיום — הלקוח חותם בשטח', href: '#/projects', ok: () => can('projects'), kb: [] },
-  { ic: 'check', t: 'סיכום', s: 'הדוחות והתמונות מגיעים למשרד ולמאנדי לבד', href: '#/projects', ok: () => can('projects') && isManager(), kb: [] },
+  { ic: 'check', t: 'סיכום', s: mon('הדוחות והתמונות מגיעים למשרד ולמאנדי לבד', 'הדוחות והתמונות מגיעים למשרד לבד'), href: '#/projects', ok: () => can('projects') && isManager(), kb: [] },
 ];
 async function renderFlow(el) {
   const { data: items } = await sb.from('kb_items').select('category');

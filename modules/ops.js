@@ -2,6 +2,7 @@
 // סדר קבוע: מדדים · דורש טיפול (רשימה אחת) · לאישורך · היום בשטח · מחר · המשימות שלי · אתמול.
 // היום ומחר בשטח (צוות, מי החתים, מי אישר הגעה, מזג אוויר) · בעיות (מחושבות מהנתונים, שבוע קדימה) · לאישורך (תיקוני שעות, היעדרויות, בקשות למשרד, רכש).
 import { sb, state, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, HE_DOW, toast, ask, confirmBox, timeAgo, can, initials, sheet, leadMark, shortName, dayLabel } from '../lib/core.js';
+import { mon } from '../lib/core.js';
 import { attentionItems, sortNeeds, needsList, bindNeeds } from './attention.js';
 import { errText } from '../lib/audit.js';
 import { nightTag, wxKey, carryNight, isCurrent } from '../lib/night.js';
@@ -12,6 +13,8 @@ const hm = iso => new Date(iso).toLocaleTimeString('he-IL', { hour: '2-digit', m
 // מה קורה עכשיו ביום השטח (מהטלפון של ראש הצוות) — המנהל רואה בלי להתקשר
 const LIVE = { en_route: 'בדרך', on_site: 'באתר', working: 'בעבודה', issue: 'תקלה', done: 'נסגר' };
 const ABS = { vacation: 'חופשה', sick: 'מחלה', reserve: 'מילואים', unpaid: 'חופש ללא תשלום', other: 'היעדרות' };
+// כרטיס אישור: הכותרת מובילה למקור (השעות של העובד באותו חודש / הבקשה), הכפתורים מאשרים במקום
+export const oprGo = (href, title, sub = '', meta = '') => `<a class="oprgo" href="${href}"><span class="grow"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</span>${meta ? `<small class="muted">${meta}</small>` : ''}<span class="chev">${icon('chev', 16)}</span></a>`;
 
 export async function renderOps(el) {
   if (!isManager()) { el.innerHTML = '<div class="empty">למנהל תפעול ומעלה.</div>'; return; }
@@ -68,7 +71,7 @@ export async function renderOps(el) {
     if (busy.get(w.day + w.drone_id) > 1) issues.push({ tone: 'bad', ic: 'drone', t: `${D.get(w.drone_id)?.name || 'רחפן'} משובץ פעמיים · ${when}`, s: pn, href: `#/dispatch/${w.day}`, ...fix });
     if (w.weather_alerted && w.status === 'planned') issues.push({ tone: 'warn', ic: 'sun', t: `תחזית לא לטוס · ${when}`, s: `${pn}${w.gust_max != null ? ' · משבים עד ' + w.gust_max + ' קמ״ש' : ''}`, href, ...fix });
     const pf = w.projects?.planned_from, pt = w.projects?.planned_to || pf;
-    if (pf && w.status === 'planned' && (w.day < pf || w.day > pt)) issues.push({ tone: 'warn', ic: 'calendar', t: `במאנדי ${dm(pf)}${pt !== pf ? '–' + dm(pt) : ''}, משובץ ${when}`, s: pn, href: `#/p/${w.project_id}` });
+    if (pf && w.status === 'planned' && (w.day < pf || w.day > pt)) issues.push({ tone: 'warn', ic: 'calendar', t: `${mon('במאנדי', 'מתוכנן')} ${dm(pf)}${pt !== pf ? '–' + dm(pt) : ''}, משובץ ${when}`, s: pn, href: `#/p/${w.project_id}` });
     // "לא יכול להגיע" — הכי דחוף: צריך מחליף. לחיצה = ניהול היום (הסרה / הוספת אדם)
     crew.filter(c => c.cant_come_at && w.status === 'planned').forEach(c => issues.push({ tone: 'bad', ic: 'users', t: `${name(c.user_id)} לא יכול להגיע · ${when}`, s: [pn, c.cant_come_reason].filter(Boolean).join(' · '), href, ...fix }));
     const un = crew.filter(c => c.role !== 'lead' && !c.confirmed_at && !c.cant_come_at && w.status === 'planned');
@@ -144,7 +147,7 @@ export async function renderOps(el) {
   shifts.filter(s => /נסגרה אוטומטית/.test(s.note || '')).forEach(s => issues.push({ tone: 'warn', ic: 'clock', t: `יציאה אוטומטית · ${name(s.user_id)}`, s: `${dm(isoDay(new Date(s.start_at)))} · נרשמו 12 שעות — לוודא`, href: `#/attendance/${s.user_id}` }));
   // הסנכרון עם מאנדי הוא מה שמחזיק את הכל — אם הוא נתקע, זה הדבר הראשון שצריך לדעת
   const lastOk = pulls.find(x => x.status === 'ok');
-  if (pulls.length && (!lastOk || Date.now() - new Date(lastOk.created_at) > 40 * 6e4)) issues.unshift({ tone: 'bad', ic: 'alert', t: 'הסנכרון עם מאנדי נעצר', s: lastOk ? `סבב תקין אחרון ${timeAgo(lastOk.created_at)}` : 'הסבבים האחרונים נכשלו', href: can('admin') ? '#/admin/sync' : '' });
+  if (pulls.length && (!lastOk || Date.now() - new Date(lastOk.created_at) > 40 * 6e4)) issues.unshift({ tone: 'bad', ic: 'alert', t: mon('הסנכרון עם מאנדי נעצר', 'הסנכרון עם המשרד נעצר'), s: lastOk ? `סבב תקין אחרון ${timeAgo(lastOk.created_at)}` : 'הסבבים האחרונים נכשלו', href: can('admin') ? '#/admin/sync' : '' });
   // רשימה אחת: בעיות שטח (שבוע קדימה) + מה שהמערכת מזהה (צי, פרויקטים, רישיונות, סנכרון) + מה שמחכה לי אישית
   const [sys, mineA] = await extra;
   // רחפן מקורקע שכבר מופיע כ"מקורקע ומשובץ" (עם תיקון בלחיצה) — לא שורה נוספת
@@ -195,22 +198,24 @@ export async function renderOps(el) {
     .gte('work_days.day', pendAbs.map(a => a.date_from).sort()[0]).lte('work_days.day', pendAbs.map(a => a.date_to).sort().at(-1)).eq('work_days.status', 'planned')) : [];
   const absHit = a => absDays.filter(c => c.user_id === a.user_id && c.work_days.day >= a.date_from && c.work_days.day <= a.date_to).map(c => c.work_days).sort((x, y) => x.day < y.day ? -1 : 1);
   const approvals = [
-    ...sreq.map(r => `<div class="card stack opr"><div class="row"><b class="grow">${esc(name(r.user_id))} · תיקון שעות</b><small class="muted">${timeAgo(r.created_at)}</small></div>
-      <small>${r.req_start ? dm(isoDay(new Date(r.req_start))) + ' · <bdi dir="ltr">' + hm(r.req_start) + (r.req_end ? '–' + hm(r.req_end) : '') + '</bdi>' : ''}${r.reason ? ' · ' + esc(r.reason) : ''}</small>
+    ...sreq.map(r => `<div class="card stack opr">${oprGo(`#/attendance/${r.user_id}${r.req_start ? '/' + isoDay(new Date(r.req_start)).slice(0, 7) : ''}`, `${esc(name(r.user_id))} · תיקון שעות`,
+      `${r.req_start ? dm(isoDay(new Date(r.req_start))) + ' · <bdi dir="ltr">' + hm(r.req_start) + (r.req_end ? '–' + hm(r.req_end) : '') + '</bdi>' : ''}${r.reason ? ' · ' + esc(r.reason) : ''}`, timeAgo(r.created_at))}
       <div class="row-btns"><button class="btn ghost sm" data-sr="${r.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-sr="${r.id}" data-ok="1">אישור</button></div></div>`),
-    ...pendAbs.map(a => `<div class="card stack opr"><div class="row"><b class="grow">${esc(name(a.user_id))} · ${ABS[a.kind] || 'היעדרות'}</b></div>
-      <small>${dm(a.date_from)}${a.date_to !== a.date_from ? '–' + dm(a.date_to) : ''}${a.note ? ' · ' + esc(a.note) : ''}</small>
+    ...pendAbs.map(a => `<div class="card stack opr">${oprGo(`#/attendance/${a.user_id}/${a.date_from.slice(0, 7)}`, `${esc(name(a.user_id))} · ${ABS[a.kind] || 'היעדרות'}`,
+      `${dm(a.date_from)}${a.date_to !== a.date_from ? '–' + dm(a.date_to) : ''}${a.note ? ' · ' + esc(a.note) : ''}`)}
       ${absHit(a).length ? `<small class="bad">משובץ ${absHit(a).map(w => `${HE_D1[new Date(w.day + 'T12:00').getDay()]} ${dm(w.day)} · ${esc(shortName(w.projects?.name || ''))}`).join(' · ')}</small>` : ''}
       <div class="row-btns"><button class="btn ghost sm" data-ab="${a.id}" data-ok="0">דחייה</button><button class="btn primary sm" data-ab="${a.id}" data-ok="1" ${absHit(a).length ? `data-swapday="${absHit(a)[0].id}"` : ''}>${absHit(a).length ? 'אישור והחלפה' : 'אישור'}</button></div></div>`),
-    ...oreq.map(r => `<div class="card stack opr"><div class="row"><b class="grow">${esc(name(r.user_id))} · ${esc(r.category || 'בקשה')}</b><small class="muted">${timeAgo(r.created_at)}</small></div>
-      <small>${esc((r.body || '').slice(0, 160))}</small>
-      <div class="row-btns"><a class="btn ghost sm" href="#/requests">פתיחה</a><button class="btn primary sm" data-or="${r.id}">סימון כטופל</button></div></div>`),
+    ...oreq.map(r => `<div class="card stack opr">${oprGo('#/requests', `${esc(name(r.user_id))} · ${esc(r.category || 'בקשה')}`, esc((r.body || '').slice(0, 160)), timeAgo(r.created_at))}
+      <div class="row-btns"><button class="btn primary sm" data-or="${r.id}">סימון כטופל</button></div></div>`),
   ];
   approvals.push(...await crCards);
   const pHref = preq.length === 1 && preq[0].monday_item_id ? `https://edroneil-force.monday.com/boards/5099908084/pulses/${preq[0].monday_item_id}" target="_blank" rel="noopener` : '#/purchase';
   if (exq.length) approvals.push(`<a class="lrow card" href="#/expenses"><span class="mic">${icon('receipt', 19)}</span><span class="grow"><b>${exq.length > 1 ? exq.length + ' הוצאות לאישור' : 'הוצאה לאישור'}</b></span><span class="chev">${icon('chev', 18)}</span></a>`);
   if (preq.length) approvals.push(`<a class="lrow card" href="${pHref}"><span class="mic">${icon('cart', 19)}</span><span class="grow"><b>${preq.length > 1 ? preq.length + ' בקשות רכש ממתינות' : 'בקשת רכש ממתינה'}</b><small>לאישור ושליחה לספק</small></span><span class="chev">${icon('chev', 18)}</span></a>`);
 
+  // צעד הבא אחד (כמו במסך הפרויקט): הדבר הכי דחוף — בעיה חמורה, אחרת מה שמחכה לאישורך, אחרת הראשון ברשימה. הוא לא חוזר ברשימה שמתחת
+  const NS = N.find(x => x.tone === 'bad') || (approvals.length ? { title: approvals.length > 1 ? `${approvals.length} מחכים לאישורך` : 'מחכה לאישורך', appr: true } : N[0]) || null;
+  const N2 = NS && !NS.appr ? N.filter(x => x !== NS) : N;
   const kpi = (n, l, k, tone = '') => n ? `<button class="kpi ${tone}" data-kpi="${k}" aria-haspopup="dialog"><b>${n}</b><span>${l}</span></button>` : `<div class="kpi zero"><b>0</b><span>${l}</span></div>`;   // 0 = שקט ולא לחיץ
   const nextDay = days.find(w => w.day > tm);
   const none = (title, sub) => `<div class="empty-card"><span class="ei">${icon('drone', 24)}</span><span><b>${title}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></div>`;
@@ -220,8 +225,9 @@ export async function renderOps(el) {
         : `<div class="lrow slim" id="pushA"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span>${pushA.btn ? `<button class="btn ghost sm" id="pushOn">${pushA.btn}</button>` : ''}</div>` : ''}
       ${chatA ? `<a class="lrow slim chatA" href="${chatA.list ? '#/inbox' : chatA.href}"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(chatA.title)}</b>${chatA.sub ? `<small>${esc(chatA.sub)}</small>` : ''}</span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
       <div class="kpis opk">${kpi(dToday.length, 'בשטח היום', 'today')}${kpi(open.length, 'במשמרת', 'shift')}${kpi(N.length, 'לטיפול', 'needs', N.some(i => i.tone === 'bad') ? 'bad' : N.length ? 'warn' : '')}${kpi(approvals.length, 'לאישור', 'appr', approvals.length ? 'warn' : '')}</div>
+      ${NS ? (NS.href ? `<a class="btn primary nstep ${NS.tone === 'bad' ? 'bad' : ''}" id="hnstep" href="${esc(NS.href)}"${/^https?:/.test(NS.href) ? ' target="_blank" rel="noopener"' : ''}>${esc(NS.title)}</a>` : `<button type="button" class="btn primary nstep ${NS.tone === 'bad' ? 'bad' : ''}" id="hnstep">${esc(NS.title)}</button>`) : ''}
       ${week}
-      ${needsList(N, { limit: 3 })}
+      ${needsList(N2, { limit: 3 })}
       ${approvals.length ? `<section id="sec-appr"><div class="sh-row"><h3 class="sh">לאישורך</h3><span class="count">${approvals.length}</span></div>${approvals.join('')}</section>` : ''}
       <section id="sec-today"><div class="sh-row"><h3 class="sh">היום בשטח</h3><a class="more" href="#/schedule">לו״ז</a></div>${dToday.length ? `<div class="list">${dToday.map(dayRow).join('')}</div>` : `<div class="empty-line">אין ימי שטח היום${nextDay ? ` · הבא ${dm(nextDay.day)} ${esc(shortName(nextDay.projects?.name))}` : ''}</div>`}</section>
       ${dTom.length ? `<section><h3 class="sh">מחר</h3><div class="list">${dTom.map(dayRow).join('')}</div></section>` : ''}
@@ -242,11 +248,15 @@ export async function renderOps(el) {
   $$('[data-kpi]', el).forEach(b => b.onclick = () => KPI[b.dataset.kpi]());
   $$('[data-wk]', el).forEach(b => b.onclick = () => wkSheet(b.dataset.wk));
 
-  bindNeeds(el, N, () => renderOps(el));
+  bindNeeds(el, N2, () => renderOps(el));
+  const hn = $('#hnstep', el); if (hn && !NS.href) hn.onclick = async () => {
+    if (NS.appr) return $('#sec-appr', el)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (NS.list) return sheet(`<h3>${esc(NS.title)}</h3><div class="list">${NS.list.map(l => `<a class="lrow" href="${l.href}" data-close><span class="grow"><b>${esc(l.t)}</b>${l.s ? `<small>${esc(l.s)}</small>` : ''}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div>`);
+    if (NS.act) { if (hn.disabled) return; hn.disabled = true; try { await NS.act(); } catch (e) { toast(errText(e)); } finally { hn.disabled = false; } } };
   $$('[data-da]', el).forEach(b => b.onclick = () => import('./dayadmin.js').then(m => m.openDayAdmin(b.dataset.da, () => renderOps(el))));
   const po = $('#pushOn', el); if (po) po.onclick = async () => { if (po.disabled) return; po.disabled = true; const { enablePush } = await import('../lib/core.js');
     try { await enablePush(); toast('ההתראות הופעלו'); $('#pushA', el)?.remove(); } catch (e) { po.disabled = false; toast(errText(e, 'ההתראות לא הופעלו — בדקו את הרשאות הטלפון')); } };
-  $$('[data-nmore]', el).forEach(b => b.onclick = KPI.needs);   // "עוד" בבית = אותו פירוט מלא
+  $$('[data-nmore]', el).forEach(b => b.onclick = KPI.needs);   // "עוד" = הפירוט המלא (כולל הצעד הבא)   // "עוד" בבית = אותו פירוט מלא
   home.extras();
   import('../lib/wx.js').then(m => m.fillWx(el)).catch(() => {});
   const again = () => renderOps(el);

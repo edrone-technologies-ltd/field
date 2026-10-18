@@ -185,6 +185,12 @@ section h3{font-size:1.1rem}
 .steps i{font-style:normal;width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--card2);border:1px solid var(--line);font-weight:800;font-size:.8rem}
 .steps li.done{color:var(--muted)} .steps li.done i{background:var(--okbg);color:var(--ok);border-color:transparent}
 .steps li.now{color:var(--ink);font-weight:700} .steps li.now i{background:var(--lime);color:var(--lime-ink);border-color:transparent}
+/* שלב שעבר = כפתור: חוזרים אליו להשלים/לתקן. נקודה כתומה = נשאר בו חסר */
+.steps li>button{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px;width:100%;position:relative;min-height:44px;-webkit-tap-highlight-color:transparent}
+.steps li>button:focus-visible{outline:2px solid var(--lime);outline-offset:2px;border-radius:8px}
+.steps li.view{color:var(--ink);font-weight:700} .steps li.view i{box-shadow:0 0 0 2px var(--lime)}
+.steps li.view~li.now i{background:var(--card2);color:var(--ink);box-shadow:0 0 0 2px var(--lime) inset}
+.steps .gap{position:absolute;top:-2px;inset-inline-end:calc(50% - 18px);width:10px;height:10px;border-radius:50%;background:var(--warn);border:2px solid var(--bg)}
 .eqgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .eqb{min-height:56px;border-radius:12px;border:1px solid var(--line);background:var(--card);padding:8px 10px;text-align:right;font-weight:500;cursor:pointer}
 .eqb[aria-pressed="true"]{background:var(--limebg);border-color:var(--lime);font-weight:700}
@@ -2623,3 +2629,101 @@ body.ws .xrow .stack.tight{flex-direction:row;gap:6px}
 @media screen and (min-width:1100px){body.rpk-on .app{padding-left:max(396px,calc((100% - 760px) / 2 + 16px))!important}}
 @media print{.rpk{display:none!important}body.rpk-on .app{padding-left:0!important}}
 @media screen and (min-width:1100px) and (max-width:1599px){body.rpk-on .creport .pg{zoom:.7}body.rpk-on .creport{margin:0}}
+
+/* ===== מסך פרויקט אחד (#/p/:id, אביחי 18/10): שורת מצב · מונים + צעד הבא · פתוח · ימי שטח ===== */
+.pj{display:flex;flex-direction:column;gap:12px}
+.pj .num{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.pjhead{margin-bottom:0;align-items:flex-start}
+.pjhead h1{font-size:var(--t-h1,1.6rem);line-height:1.2;overflow-wrap:anywhere}
+.pjsub{display:block;color:var(--muted);font-size:var(--t-meta,.82rem);margin-top:2px}
+.pjstat{position:sticky;top:0;z-index:3;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 -16px;padding:8px 16px;background:var(--bg);border-bottom:1px solid var(--line);font-size:.92rem}
+.slink{background:none;border:0;padding:6px 0;min-height:36px;font:inherit;color:var(--ink);text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:4px;cursor:pointer;text-align:start}
+.slink.strong{font-weight:700;color:var(--ink)}
+.pjcnt{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.cnt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-height:72px;padding:10px 12px;border-radius:14px;background:var(--card);border:1px solid var(--line);cursor:pointer;text-align:start}
+.cnt b{font-family:var(--f-display);font-size:1.6rem;line-height:1.05;font-weight:800}
+.cnt span{font-size:var(--t-meta,.82rem);color:var(--muted)}
+.cnt.bad b{color:var(--bad)} .cnt.warn b{color:var(--warn)} .cnt.blue b{color:var(--blue)}
+.cnt.zero{background:transparent;border-color:transparent;cursor:default} .cnt.zero b{color:var(--faint)}
+.nstep{grid-column:1/-1;min-height:52px;text-align:center;line-height:1.25;padding:8px 16px}
+.nstep.bad{background:var(--bad);color:#fff}
+.pjgrid{display:flex;flex-direction:column;gap:14px}
+.pjcol{min-width:0}
+@media (max-width:1099px){.pjcol{display:contents} #pjdays > *{order:-1}}   /* טלפון: ימי השטח לפני "פתוח" */
+.ofil{margin:8px 0}
+.olist{display:flex;flex-direction:column;border-radius:16px;overflow:hidden;background:var(--card);border:1px solid var(--line)}
+.orow{display:flex;flex-wrap:wrap;align-items:center;gap:0 8px;border-bottom:1px solid var(--line);padding-inline-end:10px}
+.orow:last-child{border-bottom:0}
+.ohead{flex:1;min-width:0;display:flex;align-items:center;gap:10px;min-height:60px;padding:10px 0 10px 0;padding-inline-start:14px;background:none;border:0;font:inherit;color:inherit;text-align:start;cursor:pointer}
+.ohead b{display:block;font-size:var(--t-b,.97rem);line-height:1.3;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.ohead small{display:block;color:var(--muted);font-size:var(--t-meta,.82rem)}
+.odot{width:9px;height:9px;flex:none;border-radius:50%;background:var(--blue)}
+.orow.bad .odot,.odot.bad{background:var(--bad)} .orow.warn .odot{background:var(--warn)}
+.orow > .chip,.orow > a.chip{min-height:40px;display:inline-flex;align-items:center;text-decoration:none;color:var(--ink)}
+.obody{flex-basis:100%;display:flex;flex-direction:column;gap:8px;padding:0 14px 14px;padding-inline-start:33px;font-size:.92rem}
+.olines{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.oline{display:flex;align-items:center;gap:8px;min-height:48px;padding:8px 12px;border-bottom:1px solid var(--line);color:inherit;text-decoration:none}
+.oline:last-child{border-bottom:0} .oline b{display:block;font-size:.9rem} .oline small{display:block;color:var(--muted);font-size:.78rem}
+#pjopen .ckadd{border:0;padding:8px 0 0}
+.pj .chip.sm{min-height:40px;display:inline-flex;align-items:center}
+.fold summary{min-height:44px}
+.fold summary::-webkit-details-marker{display:none}
+.fold .fmeta{color:var(--muted);font-size:var(--t-meta,.82rem);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
+.fold.sub{background:var(--bg2)}
+.tlact{flex-wrap:wrap;gap:6px 10px}
+.tl{display:flex;flex-direction:column;gap:8px;position:relative}
+.tl::before{content:"";position:absolute;inset-block:10px;inset-inline-start:22px;width:2px;background:var(--line)}
+.tday{position:relative;display:flex;align-items:flex-start;gap:10px}
+.tday .datebox{position:relative;z-index:1;border:1px solid var(--line)}
+.tday.past .datebox b{color:var(--ok)}
+.tcard{flex:1;min-width:0;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;color:inherit;text-decoration:none}
+.thead{display:flex;align-items:center;gap:8px;width:100%;min-height:60px;padding:10px 12px;background:none;border:0;font:inherit;color:inherit;text-align:start;cursor:pointer}
+a.tcard.thead{padding:10px 12px}
+.thead b{display:block;font-size:var(--t-b,.97rem);line-height:1.3} .thead small{display:block;color:var(--muted);font-size:var(--t-meta,.82rem)}
+.thead small.warnt{color:var(--warn)} .thead small.okt{color:var(--ok)} .thead small.bad{color:var(--bad)}
+.tday.past .thead .chev{transform:rotate(-90deg);transition:transform .15s} .tday.open .thead .chev{transform:rotate(90deg)}
+.tday.today .tcard{border-color:var(--lime);box-shadow:0 0 0 1px var(--lime)}
+.tday.flash .tcard{box-shadow:0 0 0 2px var(--lime)}
+.tbody{display:flex;flex-direction:column;gap:10px;padding:0 12px 12px;border-top:1px solid var(--line);padding-top:12px}
+.tbody .kpis{grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}
+.tbody .photos .ph.sk{background:var(--bg2)}
+.tchip{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:99px;background:var(--bg2);border:1px solid var(--line);font-size:.82rem}
+.tchip.warn{background:var(--warnbg);color:var(--warn);border-color:transparent}
+.trep{margin:0;font-size:.92rem;line-height:1.6;white-space:pre-line}
+.tsub{display:flex;flex-direction:column;gap:6px;background:var(--bg2);border-radius:12px;padding:10px 12px}
+.tsub > b{font-size:.88rem}
+.tline{display:flex;align-items:center;gap:8px;min-height:40px;background:none;border:0;padding:0;font:inherit;color:inherit;text-align:start;cursor:pointer}
+.tlmore{min-height:44px;margin-inline-start:56px;background:none;border:1px dashed var(--line);border-radius:12px;color:var(--muted);font:inherit;cursor:pointer}
+@media (min-width:1100px){
+  .app:has(> .pj){max-width:1280px}
+  body.ws .app.app:has(> .pj){padding-left:28px;padding-right:28px;max-width:calc(1280px + 56px)}   /* 100% כאן = רוחב ה-body, לא ה-app — לכן ריפוד קבוע ורוחב מרבי */
+  .pjstat{position:static;margin:0;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
+  .pjcnt{grid-template-columns:repeat(3,1fr) 1.6fr}
+  .nstep{grid-column:auto;min-height:72px}
+  .pjgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+}
+/* מדדים בתוך סיכום היום / התיק — מידע בלי מקור נפרד: טקסט, בלי מראה כרטיס */
+.tbody .kpi,#pjfile > .kpis .kpi{background:transparent;border:0;padding:4px 0;min-height:0}
+.tbody .kpis,#pjfile > .kpis{gap:4px 14px}
+.sttxt{font-size:.88rem;font-weight:800;color:var(--muted)} .sttxt.lime{color:var(--lime)} .sttxt.ok{color:var(--ok)} .sttxt.bad{color:var(--bad)} .sttxt.pilot{color:var(--blue)}
+/* ---------- שדרוג לילה 18/10: כל אריח מוביל למקור; מה שלא מוביל — לא נראה לחיץ ---------- */
+div.kpi:not([role=button]),div.lrow:not([role=button]),div.arow{cursor:default}
+div.kpi:not([role=button]):active,div.lrow:not([role=button]):active,div.arow:active{transform:none}
+.lrow[role=button]{cursor:pointer}
+.kpis.plain .kpi{background:transparent;border:0;box-shadow:none;padding:4px 0;min-height:0}
+.kpis.plain{gap:4px 14px}
+.kpi[aria-pressed=true]{outline:2px solid var(--lime);outline-offset:-2px}
+/* כרטיס אישור: הכותרת מובילה לעובד / לבקשה / לפרויקט, הכפתורים מאשרים במקום */
+.oprgo{display:flex;align-items:center;gap:8px;color:inherit;text-decoration:none;min-height:44px;margin:-6px -6px 0;padding:6px;border-radius:12px}
+.oprgo .grow{display:flex;flex-direction:column;gap:2px;min-width:0} .oprgo small{color:var(--muted);font-size:var(--t-meta)}
+.oprgo:active{background:color-mix(in srgb,var(--ink) 5%,var(--card))}
+a.dline.abs .chev{flex:none}
+a.alert{color:inherit;text-decoration:none} a.alert .chev{flex:none}
+.notego{display:flex;align-items:flex-start;gap:8px;width:100%;text-align:right;font:inherit;color:inherit;text-decoration:none;cursor:pointer;border-top:0;border-bottom:0;border-inline-end:0}
+.notego .chev{margin-inline-start:auto;flex:none;align-self:center}
+.chip.warn{background:var(--warnbg);color:var(--warn);border-color:transparent;font-weight:700}
+.lrow.info{background:transparent;border:0;box-shadow:none;min-height:0;padding:6px 2px}
+#hnstep{width:100%;display:flex;align-items:center;justify-content:center}
+.dsum{font-size:var(--t-meta);color:var(--muted);padding:2px 2px 6px} .dsum b{color:var(--ink);font-family:var(--f-mono);direction:ltr;unicode-bidi:isolate}
+/* דיווח בשטח: בחירה בלחיצה גדולה (עם כפפות) */
+#sheet .chips.big{gap:8px} #sheet .chips.big .chip{min-height:48px;padding:0 18px;font-size:1rem}

@@ -58,7 +58,7 @@ export async function projectCost(box, pid) {
   if (!days.length) { box.innerHTML = ''; return; }
   const r = rollProject(days, P);
   box.innerHTML = `<section class="cx"><div class="sh-row"><h3 class="sh">עלות בפועל</h3><a class="more" href="#/costs">כל העלויות</a></div>
-    <div class="kpis"><div class="kpi"><b>${ils(r.act)}</b><span>${r.nd ? `עד היום · ${r.nd === 1 ? 'יום אחד' : r.nd + ' ימים'}` : 'עוד לא נסגר יום'}</span></div>
+    <div class="kpis plain"><div class="kpi"><b>${ils(r.act)}</b><span>${r.nd ? `עד היום · ${r.nd === 1 ? 'יום אחד' : r.nd + ' ימים'}` : 'עוד לא נסגר יום'}</span></div>
       <div class="kpi"><b>${ils(r.fc)}</b><span>צפי לפרויקט</span></div>
       ${r.m != null ? `<div class="kpi ${tone(r.m)}"><b>${r.m}%</b><span>רווח צפוי</span></div>` : r.est ? `<div class="kpi"><b>${ils(r.est)}</b><span>מתוכנן במאנדי</span></div>` : ''}</div>
     ${r.price ? `<div class="cx-bar" title="עלות מול מחיר"><i style="width:${Math.min(100, r.act / r.price * 100)}%"></i><i class="rest" style="width:${Math.max(0, Math.min(100 - r.act / r.price * 100, r.rest / r.price * 100))}%"></i></div>

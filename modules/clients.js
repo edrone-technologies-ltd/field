@@ -1,8 +1,8 @@
 // תיק לקוח: לקוח (ישות משלמת, מסונכרן מתיק הלקוחות במאנדי) ← אתרים ← פרויקטים. היסטוריית עבודות לכל אתר, אנשי קשר, וקבוצת האם.
 import { sb, can, isManager, icon, $, $$, esc, backBtn, dm, stLabel, isOpenProject, navButtons, isoDay } from '../lib/core.js';
+import { hideMoneyText } from '../lib/core.js';
 // כסף לא מוצג למי שאין לו כספים (מנהל תפעול): משפטים בטקסט חופשי ממאנדי עם סכום/מע״מ/חשבונית/תנאי תשלום יורדים
-const MONEY_RE = /₪|ש["״]ח|שקל|מע["״]מ|חשבוני|קבל[הות]\s*\d|תשלום|תשלומ|משלמ|כספים|חשבון בנק|ניכוי מס|\d[\d,.]*\s*(?:אלף|K\b)/;
-const noMoney = t => !t || can('finance') ? t : String(t).split(/(?<=[.!?\n])\s+|\s+(?=⚠)/).filter(x => !MONEY_RE.test(x)).join(' ').trim() || null;
+const noMoney = t => hideMoneyText(t) || null;   // core.js — אותו כלל בכל האפליקציה
 const SITE_SEL = 'id,slug,name,address,contact_name,contact_phone,lat,lng,buildings(id,specs(status))';
 const intl = p => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('972') ? d : d.replace(/^0/, '972'); };
 const local = p => { const d = String(p || '').replace(/\D/g, ''); return d.startsWith('972') ? '0' + d.slice(3) : d; };

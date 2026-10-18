@@ -4,6 +4,7 @@
 // עריכה (החלפת אדם/רחפן/שעה, הוספה/הסרה של יום) = נעילה של התא והרצה מחדש סביב הנעילות. "החלת השיבוץ" — דרך
 // wizard_apply (db/128: schedule_work_days / assign_day הקיימים, הודעה אחת לכל עובד לשבוע; יום רחפן בלי מטיס — לא מוחל). בלי כסף.
 import { sb, isManager, $, $$, esc, icon, isoDay, dm, HE_D1, toast, sheet, backBtn, replaceHash, isOpenProject, shortName, leadMark } from '../lib/core.js';
+import { mon } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 import { availability } from '../lib/avail.js';
 import { siteDays } from '../lib/wx.js';
@@ -257,7 +258,7 @@ function grade(slot, S) {
   if (p.needDrone && !slot.drone) { bad.push('אין רחפן פנוי'); g -= 30; }
   const short = c.size - (slot.lead ? 1 : 0) - slot.crew.length; if (slot.lead && short > 0) { warn.push(`חסר ${short} בצוות`); g -= 15 * short; }
   const x = wxOf(p, d); if (x?.L === 2) { bad.push(`לא לטוס · משבים ${Math.round(x.g)}`); g -= 40; } else if (x?.L === 1) { warn.push(`גבולי · משבים ${Math.round(x.g)}`); g -= 10; }
-  if (p.from && !(p.from <= d && (p.to || p.from) >= d)) { warn.push('מחוץ לטווח מאנדי'); g -= 5; }
+  if (p.from && !(p.from <= d && (p.to || p.from) >= d)) { warn.push(mon('מחוץ לטווח מאנדי', 'מחוץ לטווח התאריכים')); g -= 5; }
   [slot.lead, ...slot.crew].filter(Boolean).forEach(u => { const rw = restWarn(u, slot, S); if (rw) { warn.push(first(NM(u)) + ': ' + rw); g -= 5; } });
   if (slot.drone && W.AV[d]?.droneWarn(slot.drone)) warn.push(DRN(slot.drone) + ': ' + W.AV[d].droneWarn(slot.drone));
   const sc = [slot.lead && personScore(slot.lead, slot, 'lead', S).s, ...slot.crew.map(u => personScore(u, slot, 'crew', S).s)].filter(v => v !== false);
@@ -285,7 +286,7 @@ function solve() {
       pick.push(d); }
     pick.sort().forEach(d => S.push({ pid: p.id, d, lead: null, crew: [], drone: null, locked: false }));
     const sk = skipped.filter(x => x.pid === p.id);
-    if (pick.length < need) unfilled.push({ pid: p.id, why: `חסרים ${need - pick.length} ימים${sk.length ? ` · ${sk.map(x => sd(x.d)).join(', ')} לא לטוס` : p.rangeDays.length ? ' בטווח מאנדי' : ''}` });
+    if (pick.length < need) unfilled.push({ pid: p.id, why: `חסרים ${need - pick.length} ימים${sk.length ? ` · ${sk.map(x => sd(x.d)).join(', ')} לא לטוס` : p.rangeDays.length ? mon(' בטווח מאנדי', ' בטווח התאריכים') : ''}` });
   }
   // 3. מילוי חמדני: פרויקטים קשים (פחות ימים פנויים) קודם, ובתוך פרויקט — לפי סדר הימים (רציפות)
   const free = S.filter(x => !x.locked);
@@ -366,7 +367,7 @@ function draw() {
 
 function row(p, cols) {
   const c = cfg(p), S = W.S.filter(s => s.pid === p.id), r = W.RD.get(p.id);
-  const meta = [p.from ? `מאנדי ${dm(p.from)}${p.to && p.to !== p.from ? '–' + dm(p.to) : ''}` : 'בלי תאריך במאנדי', p.expected != null ? `נשארו ${p.rem}` : null, r ? `מוכנות ${r.ok}/${r.n}` : null].filter(Boolean).join(' · ');
+  const meta = [p.from ? `${mon('מאנדי', 'תאריכים מהמשרד')} ${dm(p.from)}${p.to && p.to !== p.from ? '–' + dm(p.to) : ''}` : mon('בלי תאריך במאנדי', 'בלי תאריך מהמשרד'), p.expected != null ? `נשארו ${p.rem}` : null, r ? `מוכנות ${r.ok}/${r.n}` : null].filter(Boolean).join(' · ');
   return `<div class="wzph"><a href="#/p/${p.id}" class="wzpn">${esc(pname(p.name))}${p.pilot ? ' <span class="pill lime">פיילוט</span>' : ''}</a><small>${esc(meta)}</small>
       <div class="wzctl"><span class="wzstep" title="ימים השבוע"><button type="button" data-want="${p.id}|-1" aria-label="פחות ימים">−</button><b>${c.want}</b><small>ימים</small><button type="button" data-want="${p.id}|1" aria-label="עוד יום">+</button></span>
       <span class="wzstep" title="גודל צוות"><button type="button" data-size="${p.id}|-1" aria-label="צוות קטן יותר">−</button><b>${c.size}</b><small>בצוות</small><button type="button" data-size="${p.id}|1" aria-label="צוות גדול יותר">+</button></span></div></div>
