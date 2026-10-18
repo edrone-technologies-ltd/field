@@ -43,6 +43,25 @@ function draftSaver(pid, scope, DR) {
   addEventListener('hashchange', now, { once: true });
   return { soon: () => { dirty = true; clearTimeout(tm); tm = setTimeout(now, 700); }, now: () => { dirty = true; return now(); } };
 }
+// עמודי התיעוד: יום (התאריך + התמונות שלו) לא נחתך בין עמודים. יום גדול מהמקום שנשאר — ממשיך בעמוד הבא עם התאריך שוב ו"(המשך)".
+// מידות בשורות (שורת 3 תמונות = 1, זוג לפני/אחרי = 2, פס תאריך = 0.45); עמוד = 5, העמוד הראשון (עם הכותרת) = 4.1 — נמדד בהדפסה A4
+function paginate(blocks, { cap = 5, first = 4.1, band = 0.45 } = {}) {
+  const pages = []; let cur = [], w8 = 0, room = first;
+  const newPage = () => { if (cur.length) pages.push(cur); cur = []; w8 = 0; room = pages.length ? cap : first; };
+  for (const bl of blocks) {
+    const units = [...bl.pairs.map(p => ({ w: 2, pair: p })), ...Array.from({ length: Math.ceil(bl.rest.length / 3) }, (_, i) => ({ w: 1, rest: bl.rest.slice(i * 3, i * 3 + 3) }))];
+    let c = null, n = 0;
+    for (const u of units) {
+      if (!c || w8 + u.w > room) {
+        if (w8 + band + u.w > room && cur.length) newPage();
+        c = { d: bl.d, work: bl.work, pairs: [], rest: [], cont: n > 0 }; cur.push(c); w8 += band; n++;
+      }
+      if (u.pair) c.pairs.push(u.pair); else c.rest.push(...u.rest); w8 += u.w;
+    }
+  }
+  if (cur.length) pages.push(cur);
+  return pages;
+}
 const pp = t => String(t || '').trim().split(/\n\s*\n/).filter(x => x.trim()).map(x => `<p>${bdi(x.trim()).replace(/\n/g, '<br>')}</p>`).join('');
 const lis = t => String(t || '').split('\n').map(s => s.trim()).filter(Boolean).map(s => `<li>${bdi(s)}</li>`).join('');
 const txtOf = e => e.tagName === 'UL' ? (e.querySelector('li') ? [...e.querySelectorAll('li')].map(li => li.innerText.trim()) : e.innerText.split('\n')).map(s => s.trim()).filter(Boolean).join('\n')
@@ -130,7 +149,7 @@ async function saveReport(btn, pid, name, title) {
     const { saveToProject } = await import('./pfiles.js');
     await saveToProject(pid, new File([blob], name.replace(/[\\/:*?"<>|]+/g, ' ') + '.pdf', { type: 'application/pdf' }), title, 'report');
     toast('נשמר בתיק הפרויקט');
-  } catch (e) { toast(e?.message === 'lib' ? 'אין קליטה — נסו שוב' : 'לא נשמר — נסו שוב'); }
+  } catch (e) { toast(e?.message === 'pdf-timeout' ? 'הדוח לקח יותר מדי זמן — נסו שוב, או "הדפסה"' : e?.message === 'lib' ? 'אין קליטה — נסו שוב' : 'לא נשמר — נסו שוב'); }
   btn.disabled = false; btn.innerHTML = lbl;
 }
 
@@ -264,9 +283,7 @@ export async function renderClientReport(el, pid) {
     // זוגות אמיתיים בלבד: לפני ואחרי מאותו יום עבודה. השאר — בשורה משלהם
     const blocks = dates.map(d => { const mine = PH.filter(x => x.d === d), b = mine.filter(x => x.k === 'before'), a = mine.filter(x => x.k !== 'before');
       const pairs = []; while (b.length && a.length) pairs.push([b.shift(), a.pop()]); return { d, work: L.find(x => x.d === d)?.work, pairs, rest: [...b, ...a] }; }).filter(x => x.pairs.length || x.rest.length);
-    const pages = []; let cur = [], w8 = 0;
-    for (const bl of blocks) { const wt = bl.pairs.length * 2 + Math.ceil(bl.rest.length / 3); if (cur.length && w8 + wt > 4) { pages.push(cur); cur = []; w8 = 0; } cur.push(bl); w8 += wt; }
-    if (cur.length) pages.push(cur);
+    const pages = paginate(blocks);
     const afterAll = PH.filter(x => x.k !== 'before');
     const hero = (p.cover_path && mu[p.cover_path]) || (afterAll.length && url(afterAll.at(-1))) || (PH[0] && url(PH[0])) || coverArt(p.name);
     const VB = visitSel(visits, vDef, on, tx);
@@ -287,7 +304,7 @@ export async function renderClientReport(el, pid) {
         <div class="foot"><span><b>E-Drone</b> Technologies</span>${coLine ? `<span>${coLine}</span>` : ''}</div></div>
       ${pilot ? visitPage(VB, x => fu[x], true, () => foot(++pn)) : ''}
       ${pages.map((pg, i) => `<div class="pg"><div class="pad">${i ? '' : '<div class="rsec">DOCUMENTATION</div><h2>תיעוד העבודה</h2><div class="rule"></div>'}
-        ${pg.map(bl => `<div class="ba"><div class="band"><span class="t">${esc(fmt(bl.d))}</span>${bl.work ? `<span class="d">${esc(bl.work)}</span>` : ''}<span class="ln"></span></div>
+        ${pg.map(bl => `<div class="ba"><div class="band"><span class="t">${esc(fmt(bl.d))}${bl.cont ? ' <small class="cont">(המשך)</small>' : ''}</span>${bl.work && !bl.cont ? `<span class="d">${esc(bl.work)}</span>` : ''}<span class="ln"></span></div>
           ${bl.pairs.map(([b, a]) => `<div class="row2 cr-pair">${shot(b, 'לפני')}${shot(a, 'אחרי')}</div>`).join('')}
           ${bl.rest.length ? `<div class="row3">${bl.rest.map(x => shot(x, x.k === 'before' ? 'לפני' : x.k === 'after' ? 'אחרי' : '')).join('')}</div>` : ''}</div>`).join('')}
         </div>${foot(++pn)}</div>`).join('')}
@@ -462,9 +479,7 @@ export async function renderWeeklyUpdate(el, pid, ws0, autoShare = false) {
     const PH = PH0.filter(x => on(pk(x), x.k !== 'general'));
     const blocks = Wd.map(d => { const mine = PH.filter(x => x.d === d.day), b = mine.filter(x => x.k === 'before'), a = mine.filter(x => x.k === 'after'); const pairs = []; while (b.length && a.length) pairs.push([b.shift(), a.pop()]);
       return { d: d.day, work: L.find(x => x.d === d.day)?.work, pairs, rest: [...b, ...a, ...mine.filter(x => x.k === 'general')] }; }).filter(x => x.pairs.length || x.rest.length);
-    const pages = []; let cur = [], w8 = 0;
-    for (const bl of blocks) { const wt = bl.pairs.length * 2 + Math.ceil(bl.rest.length / 3); if (cur.length && w8 + wt > 4) { pages.push(cur); cur = []; w8 = 0; } cur.push(bl); w8 += wt; }
-    if (cur.length) pages.push(cur);
+    const pages = paginate(blocks);
     const hero = coverU || PH.filter(x => x.k === 'after').at(-1)?.u || PH[0]?.u || coverArt(p.name);
     const VB = visitSel(vin, vDef, on, tx);
     const T = TI.filter(x => on(x.k, x.on)).map(x => ({ k: x.k, t: tx(x.k, [x.l, x.b].filter(Boolean).join(' · ')) }));
@@ -483,7 +498,7 @@ export async function renderWeeklyUpdate(el, pid, ws0, autoShare = false) {
         ${L.length ? `<div class="pad wk-log"><div class="rsec">FIELD LOG</div><table class="cr-log"><tr><th>תאריך</th><th>עבודה</th><th>הושלם</th></tr>${L.map(x => `<tr><td class="cr-d"><bdi dir="ltr">${dm(x.d)}</bdi></td><td data-ek="${x.k}">${bdi(x.work || 'עבודה באתר')}</td><td data-ek="${x.zk}">${x.zones ? x.zones.split('\n').map(bdi).join('<br>') : ''}</td></tr>`).join('')}</table></div>` : ''}
         <div class="foot"><span><b>E-Drone</b> Technologies</span>${coLine ? `<span>${coLine}</span>` : ''}</div></div>
       ${pages.map((pg, i) => `<div class="pg"><div class="pad">${i ? '' : '<div class="rsec">BEFORE / AFTER</div><h2>לפני ואחרי</h2><div class="rule"></div>'}
-        ${pg.map(bl => `<div class="ba"><div class="band"><span class="t">${esc(fmt(bl.d))}</span>${bl.work ? `<span class="d">${esc(bl.work)}</span>` : ''}<span class="ln"></span></div>
+        ${pg.map(bl => `<div class="ba"><div class="band"><span class="t">${esc(fmt(bl.d))}${bl.cont ? ' <small class="cont">(המשך)</small>' : ''}</span>${bl.work && !bl.cont ? `<span class="d">${esc(bl.work)}</span>` : ''}<span class="ln"></span></div>
           ${bl.pairs.map(([b, a]) => `<div class="row2 cr-pair">${shot(b, 'לפני')}${shot(a, 'אחרי')}</div>`).join('')}
           ${bl.rest.length ? `<div class="row3">${bl.rest.map(x => shot(x, x.k === 'before' ? 'לפני' : x.k === 'after' ? 'אחרי' : '')).join('')}</div>` : ''}</div>`).join('')}</div>${foot(++pn)}</div>`).join('')}
       ${visitPage(VB, x => urls[x], pilot, () => foot(++pn))}

@@ -2735,3 +2735,10 @@ a.alert{color:inherit;text-decoration:none} a.alert .chev{flex:none}
 @media print{.creport .cr-ed{display:none!important}}
 .ohead2{display:flex;align-items:center;gap:8px;flex-wrap:wrap} .ohead2 .ofil{flex:1;min-width:0} .ohead2 .oadd{margin-inline-start:auto;min-height:40px;font-weight:800}
 .ckadd .hbtn{flex:none}
+/* PDF: התקדמות בזמן ההכנה */
+.pdfprog{position:fixed;inset-inline:16px;bottom:calc(84px + env(safe-area-inset-bottom));z-index:9999;display:flex;align-items:center;justify-content:center;gap:10px;margin:0 auto;max-width:360px;padding:12px 16px;border-radius:14px;background:var(--ink);color:var(--bg);font-weight:700;box-shadow:0 8px 24px #0004}
+.pdfprog .shspin{border-color:currentColor;border-top-color:transparent}
+/* דוח ללקוח: יום (התאריך + התמונות) לא נחתך בין עמודים — גם בהדפסה */
+.creport .band .cont{font-size:9pt;font-weight:600;color:#8A9099}
+.creport .ba,.creport .row2,.creport .row3,.creport .cr-vf{break-inside:avoid;page-break-inside:avoid}
+.creport .band{break-after:avoid;page-break-after:avoid}
