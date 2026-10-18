@@ -2727,3 +2727,11 @@ a.alert{color:inherit;text-decoration:none} a.alert .chev{flex:none}
 .dsum{font-size:var(--t-meta);color:var(--muted);padding:2px 2px 6px} .dsum b{color:var(--ink);font-family:var(--f-mono);direction:ltr;unicode-bidi:isolate}
 /* דיווח בשטח: בחירה בלחיצה גדולה (עם כפפות) */
 #sheet .chips.big{gap:8px} #sheet .chips.big .chip{min-height:48px;padding:0 18px;font-size:1rem}
+/* דוח ללקוח: מחיקה/הוספת שורה בפירוט העבודה — רק במסך, לא ב-PDF ובהדפסה */
+.creport td.cr-ed,.creport th.cr-ed{width:34px;padding:2mm 0;text-align:center}
+.creport .cr-x{width:32px;height:32px;border-radius:50%;border:1px solid #E5E7EB;background:#fff;color:#9AA0A6;font-size:18px;line-height:1;cursor:pointer}
+.creport .cr-add{margin-top:4mm;min-height:44px;font-weight:800;border:1.5px dashed #C9CED6;width:100%}
+.pdf-render .cr-ed{display:none!important}
+@media print{.creport .cr-ed{display:none!important}}
+.ohead2{display:flex;align-items:center;gap:8px;flex-wrap:wrap} .ohead2 .ofil{flex:1;min-width:0} .ohead2 .oadd{margin-inline-start:auto;min-height:40px;font-weight:800}
+.ckadd .hbtn{flex:none}

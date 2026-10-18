@@ -209,7 +209,7 @@ export async function renderProject(el, id, tab = 'o') {
   }
   const TYPE_HE = { issue: 'תקלה', miss: 'חוסר', task: 'משימה' };
   const counts = () => { const O = openItems(); return { O, issue: O.filter(x => x.type === 'issue').length, issueN: D.issues.filter(i => i.status === 'open').length, miss: D.miss.filter(m => m.status !== 'handled').length, task: O.filter(x => x.type === 'task').reduce((n, x) => n + x.xs.length, 0) }; };
-  let FIL = 'all', OPENED = null, DONE_OPEN = false;
+  let FIL = 'all', OPENED = null, DONE_OPEN = false, ADDING = false;
   // מה שטופל: תקלות שנסגרו (עם הטיפול), פריטי מעקב שבוצעו, חוסרים שטופלו — מהחדש לישן
   const doneItems = () => [
     ...D.issues.filter(i => i.status !== 'open').map(i => ({ at: i.closed_at || i.created_at, t: String(i.body || '').replace(/\s+/g, ' '), s: ['תקלה', i.resolution || (i.decision === 'cleared' ? 'כשיר לעבוד' : '')].filter(Boolean).join(' · '), href: i.work_day_id ? '#/day/' + i.work_day_id : '' })),
@@ -227,15 +227,19 @@ export async function renderProject(el, id, tab = 'o') {
     const L = C.O.filter(x => FIL === 'all' || x.type === FIL);
     const chip = (k, t, n) => n || k === 'all' ? `<button type="button" class="chip sm" data-of="${k}" aria-pressed="${FIL === k}">${t}${k === 'all' ? '' : ' ' + mono(String(n))}</button>` : '';
     box.innerHTML = `<div class="sh-row"><h2 class="sh">פתוח</h2></div>
-      ${C.O.length ? `<div class="chips ofil">${chip('all', 'הכל', 0)}${chip('issue', 'תקלות', C.issueN)}${chip('miss', 'חוסרים', C.miss)}${chip('task', 'משימות', C.task)}</div>
-      <div class="olist">${L.map(openRow).join('') || '<div class="empty-line">אין</div>'}</div>` : `<div class="empty-line">אין פריטים פתוחים</div>`}
-      <form class="ckadd" id="ckadd"><input id="ckin" placeholder="משימה חדשה" autocomplete="off" aria-label="משימה חדשה"><button class="btn primary sm">הוספה</button></form>
+      <div class="ohead2">${C.O.length ? `<div class="chips ofil">${chip('all', 'הכל', 0)}${chip('issue', 'תקלות', C.issueN)}${chip('miss', 'חוסרים', C.miss)}${chip('task', 'משימות', C.task)}</div>` : ''}<button type="button" class="btn ghost sm oadd" id="oadd" aria-expanded="${ADDING}">+ משימה</button></div>
+      <form class="ckadd" id="ckadd"${ADDING ? '' : ' hidden'}><input id="ckin" placeholder="משימה חדשה" autocomplete="off" aria-label="משימה חדשה"><button class="btn primary sm">הוספה</button><button type="button" class="hbtn" id="ckx" aria-label="סגירה">×</button></form>
+      ${C.O.length ? `<div class="olist">${L.map(openRow).join('') || '<div class="empty-line">אין</div>'}</div>` : `<div class="empty-line">אין פריטים פתוחים</div>`}
       ${(() => { const H = doneItems(); return H.length ? `<details class="fold sub" id="odone"${DONE_OPEN ? ' open' : ''}><summary><span class="sh">טופלו</span><span class="count">${H.length}</span></summary><div class="olines">${H.map(x => x.href ? `<a class="oline" href="${x.href}"><span class="grow"><b>${esc(x.t)}</b><small>${esc(x.s)}</small></span><span class="chev">${icon('chev', 16)}</span></a>` : `<div class="oline"><span class="grow"><b>${esc(x.t)}</b><small>${esc(x.s)}</small></span></div>`).join('')}</div></details>` : ''; })()}`;
     const od = $('#odone', box); if (od) od.ontoggle = () => { DONE_OPEN = od.open; };
     $$('[data-of]', box).forEach(b => b.onclick = () => { FIL = b.dataset.of; OPENED = null; drawOpen(); });
     $$('.ohead', box).forEach(b => b.onclick = () => { const k = b.closest('[data-key]').dataset.key; OPENED = OPENED === k ? null : k; drawOpen(); });
     $$('[data-oact]', box).forEach(b => b.onclick = e => { e.stopPropagation(); doAct(C.O.find(x => x.key === b.dataset.oact), b); });
     $$('[data-osch]', box).forEach(b => b.onclick = () => openSched());
+    // "+ משימה" בראש "פתוח" (אביחי לא מצא את השדה בתחתית): לחיצה פותחת שדה עם פוקוס, Enter מוסיף, Esc / × סוגר
+    const shut = () => { ADDING = false; $('#ckadd', box).hidden = true; $('#oadd', box).setAttribute('aria-expanded', 'false'); };
+    $('#oadd', box).onclick = () => { ADDING = true; $('#ckadd', box).hidden = false; $('#oadd', box).setAttribute('aria-expanded', 'true'); $('#ckin', box).focus(); };
+    $('#ckx', box).onclick = shut; $('#ckin', box).onkeydown = e => { if (e.key === 'Escape') shut(); };
     const f = $('#ckadd', box); f.onsubmit = async e => { e.preventDefault(); const v = $('#ckin', box).value.trim(); if (!v) return;
       const row = { id: crypto.randomUUID(), project_id: id, title: v, phase: 'מעקב', status: 'todo', is_extra: true, created_by: state.user.id };
       D.tasks.push(row); await enqueue({ kind: 'insert', table: 'tasks', row }); refresh(); setTimeout(() => $('#ckin', el)?.focus(), 30); };

@@ -23,15 +23,18 @@ async function svcFor(p, visits = []) {
 // vs:<ביקור> סיכום ביקור · t:<משימה> · rp:<תיקון> · is:<תקלה> · so חתימה · nx שבוע הבא · work/intro/summary/title/client… נוסחים
 const DRK = (pid, scope) => `rdraft:${pid}:${scope}`;
 async function loadDraft(pid, scope) {
-  const r = await sb.from('project_report_drafts').select('data').eq('project_id', pid).eq('scope', scope).maybeSingle().then(x => x, e => ({ error: e }));
-  const d = r.error ? await cache.get(DRK(pid, scope)).catch(() => null) : r.data?.data;
+  const [r, loc] = await Promise.all([sb.from('project_report_drafts').select('data,updated_at').eq('project_id', pid).eq('scope', scope).maybeSingle().then(x => x, e => ({ error: e })),
+    cache.get(DRK(pid, scope)).catch(() => null)]);
+  // החדש מבין השניים: עריכה שנשמרה בטלפון ולא הגיעה לשרת (קליטה / שגיאה) לא נדרסת בכניסה הבאה
+  const srvAt = r.data?.updated_at ? Date.parse(r.data.updated_at) : 0;
+  const d = r.error || (loc?.at && loc.at > srvAt) ? loc : r.data?.data;
   return { sel: { ...(d?.sel || {}) }, txt: { ...(d?.txt || {}) } };
 }
 function draftSaver(pid, scope, DR) {
   let tm = null, dirty = false, warned = false;
   const now = async () => {
     clearTimeout(tm); if (!dirty) return; dirty = false;
-    cache.set(DRK(pid, scope), DR).catch(() => {});
+    cache.set(DRK(pid, scope), { sel: DR.sel, txt: DR.txt, at: Date.now() }).catch(() => {});
     const empty = !Object.keys(DR.sel).length && !Object.keys(DR.txt).length;
     const r = await (empty ? sb.from('project_report_drafts').delete().eq('project_id', pid).eq('scope', scope)
       : sb.from('project_report_drafts').upsert({ project_id: pid, scope, data: DR, updated_by: state.user.id, updated_at: new Date().toISOString() })).then(x => x, e => ({ error: e }));
@@ -48,6 +51,28 @@ const txtOf = e => e.tagName === 'UL' ? (e.querySelector('li') ? [...e.querySele
 function bindEdits(root, DR, save, onTxt) {
   root.querySelectorAll('[data-ek]').forEach(e => { e.setAttribute('contenteditable', 'true');
     e.addEventListener('input', () => { DR.txt[e.dataset.ek] = txtOf(e); save.soon(); onTxt?.(e.dataset.ek); }); });
+}
+// "פירוט העבודה": כל שורה עם מפתח קבוע (t:<משימה> / sc:<טקסט> / sa:<חדשה>) וכל עמודה נשמרת בטיוטה (k, k:b, k:s).
+// מחיקה = מהדוח בלבד (sel=false, כמו "מה נכנס"); שורה שנוספה — ברשימה 'sc+'. המשימות בפרויקט לא משתנות
+const hkey = s => { let h = 0; for (const c of String(s)) h = (h * 31 + c.codePointAt(0)) | 0; return (h >>> 0).toString(36); };
+function scopeRows(T, works, DR, on, tx) {
+  const base = T.length ? T.map(x => ({ k: x.k, t: x.t, b: x.b || '' })) : works.map(w => { const k = 'sc:' + hkey(w); return { k, t: tx(k, w), b: '' }; });
+  const add = (() => { try { return JSON.parse(DR.txt['sc+'] || '[]'); } catch { return []; } })().map(id => ({ k: 'sa:' + id, t: tx('sa:' + id, ''), b: '' }));
+  return [...base.filter(r => on(r.k, true)), ...add];
+}
+function scopeTable(R, hb, tx) {
+  const row = r => `<tr><td class="el" data-ek="${r.k}">${bdi(r.t)}</td><td data-ek="${r.k}:b">${bdi(tx(r.k + ':b', hb ? r.b : 'E-Drone'))}</td><td class="st"><span class="pill" data-ek="${r.k}:s">${esc(tx(r.k + ':s', 'בוצע'))}</span></td><td class="cr-ed"><button type="button" class="cr-x" data-scx="${r.k}" aria-label="מחיקת השורה מהדוח">×</button></td></tr>`;
+  return `<table class="cr-scope"><tr><th>עבודה</th><th>${hb ? 'מבנה' : 'באחריות'}</th><th>סטטוס</th><th class="cr-ed"></th></tr>${R.map(row).join('') || '<tr><td colspan="3">—</td></tr>'}</table>
+    <button type="button" class="btn ghost cr-ed cr-add" data-scadd>+ שורה</button>`;
+}
+function bindScope(root, DR, save, draw) {
+  root.querySelectorAll('[data-scx]').forEach(b => b.onclick = () => { const k = b.dataset.scx;
+    if (k.startsWith('sa:')) { const id = k.slice(3); DR.txt['sc+'] = JSON.stringify(JSON.parse(DR.txt['sc+'] || '[]').filter(x => x !== id)); [k, k + ':b', k + ':s'].forEach(x => delete DR.txt[x]); }
+    else DR.sel[k] = false;
+    save.soon(); draw(); });
+  const a = root.querySelector('[data-scadd]'); if (a) a.onclick = () => { const id = Math.random().toString(36).slice(2, 8);
+    DR.txt['sc+'] = JSON.stringify([...JSON.parse(DR.txt['sc+'] || '[]'), id]); DR.txt['sa:' + id] = 'עבודה נוספת'; save.soon(); draw();
+    const c = root.querySelector(`[data-ek="sa:${id}"]`); if (c) { c.focus(); getSelection()?.selectAllChildren(c); } };
 }
 // הפאנל: צד במחשב, גיליון בטלפון. groups: [{ t, open, grid, txt:[{k,l,v,rows}], items:[{k,l,s,img,tag,sub,on}] }]
 function picker(groups, DR, save, redraw) {
@@ -269,8 +294,7 @@ export async function renderClientReport(el, pid) {
       ${pilot ? '' : visitPage(VB, x => fu[x], false, () => foot(++pn))}
       ${notesPage(RTs, () => foot(++pn))}
       <div class="pg"><div class="pad"><div class="rsec">SCOPE</div><h2>פירוט העבודה</h2><div class="rule"></div>
-        <table><tr><th>עבודה</th><th>${T.some(x => x.b) ? 'מבנה' : 'באחריות'}</th><th>סטטוס</th></tr>
-          ${(() => { const R = T.length ? T : works.map(w => ({ t: w })); const hb = T.some(x => x.b); return R.slice(0, 14).map(w => `<tr><td class="el" ${w.k ? `data-ek="${w.k}"` : 'contenteditable="true"'}>${bdi(w.t)}</td><td>${hb ? bdi(w.b || '') : 'E-Drone'}</td><td class="st"><span class="pill">בוצע</span></td></tr>`).join('') + (R.length > 14 ? `<tr><td class="el">ועוד ${R.length - 14}</td><td></td><td class="st"><span class="pill">בוצע</span></td></tr>` : '') || '<tr><td colspan="3">—</td></tr>'; })()}</table>
+        ${scopeTable(scopeRows(T, works, DR, on, tx), T.some(x => x.b), tx)}
         ${L.length ? `<div class="rsec" style="margin-top:11mm">FIELD LOG</div><h2 class="cr-h3">יומן ימי העבודה</h2>
           <table class="cr-log"><tr><th>תאריך</th><th>עבודה</th>${qty ? '<th>כמות</th>' : ''}</tr>${L.map(x => `<tr><td class="cr-d"><bdi dir="ltr">${dm(x.d)}</bdi></td><td data-ek="${x.k}">${bdi(x.work || 'עבודה באתר')}</td>${qty ? `<td>${x.gal ? `<bdi dir="ltr">${x.gal}</bdi> גל׳` : ''}</td>` : ''}</tr>`).join('')}</table>
           ${qty && (qty.gallons || qty.material?.length) ? `<div class="cr-qty">${qty.gallons ? `<span><b><bdi dir="ltr">${qty.gallons}</bdi></b> גלונים בסה״כ</span>` : ''}${qty.material?.length ? `<span>${esc(qty.material.join(' · '))}</span>` : ''}</div>` : ''}` : ''}
@@ -305,7 +329,7 @@ export async function renderClientReport(el, pid) {
   ];
   const save = draftSaver(pid, 'final', DR), ref = {};
   let cur;
-  const draw = () => { cur = build(); const cr = $('#cr'); if (!cr) return; cr.innerHTML = cur.html; bindEdits(cr, DR, save, k => ref.pk?.sync(k)); };
+  const draw = () => { cur = build(); const cr = $('#cr'); if (!cr) return; cr.innerHTML = cur.html; bindEdits(cr, DR, save, k => ref.pk?.sync(k)); bindScope(cr, DR, save, draw); };
   el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/p/${pid}/s" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ללקוח${hasSo ? '' : ' <span class="pill warn">לפני חתימה</span>'}</b>
       <button class="btn ghost sm" id="rpkb">${icon('check', 16)}<span class="rt-l"> מה נכנס</span></button>
       ${M ? `<button class="btn ghost sm" id="shr">${icon('send', 16)}<span class="rt-l"> קישור</span></button>` : ''}<button class="btn ghost sm" id="collage">קולאז׳</button><button class="btn ghost sm" id="print">הדפסה</button>
@@ -468,7 +492,7 @@ export async function renderWeeklyUpdate(el, pid, ws0, autoShare = false) {
         ${listSec('DONE', 'מה בוצע השבוע', T, false)}
         ${listSec('REPAIRS', 'נקודות שתוקנו', RP, T.length > 0)}
         ${listSec('RESOLVED', 'נקודות שטופלו השבוע', IS, T.length + RP.length > 0)}
-        ${NX.length ? `<div class="rsec" style="margin-top:${IS.length + T.length + RP.length ? 11 : 0}mm">NEXT WEEK</div><h2 class="cr-h3">מתוכנן לשבוע הבא</h2><ul class="cl" contenteditable="true">${NX.map(d => `<li>${esc(fmt(d))}</li>`).join('')}</ul>` : ''}
+        ${NX.length ? `<div class="rsec" style="margin-top:${IS.length + T.length + RP.length ? 11 : 0}mm">NEXT WEEK</div><h2 class="cr-h3">מתוכנן לשבוע הבא</h2><ul class="cl" data-ek="nxl">${lis(tx('nxl', NX.map(d => fmt(d)).join('\n')))}</ul>` : ''}
         <div class="end"><div class="l"><b>E-Drone Technologies</b>${coLine ? `<br>${coLine}` : ''}</div><img src="logo.png" alt="E-Drone"></div></div>${foot(++pn)}</div>` : ''}`;
     return { html };
   }
