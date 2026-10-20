@@ -2742,3 +2742,10 @@ a.alert{color:inherit;text-decoration:none} a.alert .chev{flex:none}
 .creport .band .cont{font-size:9pt;font-weight:600;color:#8A9099}
 .creport .ba,.creport .row2,.creport .row3,.creport .cr-vf{break-inside:avoid;page-break-inside:avoid}
 .creport .band{break-after:avoid;page-break-after:avoid}
+/* דוח ראשי (פנימי) — אותו עיצוב של הדוח ללקוח */
+.mreport .mr-h1{font-size:24pt;font-weight:800;margin:4mm 0 2mm;line-height:1.2} .mreport .mr-sub{color:#6B7280;font-size:10pt}
+.mreport .mr-stats{grid-template-columns:repeat(3,1fr);margin-top:8mm;border-top:1px solid #E8EAED} .mreport .mr-stats .stat{padding:6mm 3mm} .mreport .mr-stats .n{font-size:17pt}
+.mreport .mr-kv{font-size:9.4pt;color:#4B5563;margin:1.5mm 0} .mreport .mr-rep p{font-size:9.6pt} .mreport .mr-s{display:block;color:#8A9099;font-size:8.4pt}
+.mreport .mr-bad{color:#C43C30} .mreport .mr-ph{color:#9AA0A6} .mreport .mr-lessons{min-height:30mm;border:1px dashed #D5D9DE;border-radius:3mm;padding:3mm 4mm}
+.mreport td{padding:2.6mm 1mm} .mreport .meta{margin-top:6mm}
+.pdf-render .mreport .mr-lessons{border:0;padding:0} .pdf-render .mreport .mr-ph{display:none}

@@ -542,3 +542,5 @@ export async function renderWeeklyUpdate(el, pid, ws0, autoShare = false) {
   // הגעה מ"שיתוף" בכרטיס: ה-PDF נבנה ונפתח השיתוף מיד (אם הטלפון מבקש לחיצה נוספת — גיליון שיתוף אחד)
   if (autoShare) { replaceHash(`#/client-report/${pid}/w/${ws}`, false); if (W.length) share($('#wksh')); }
 }
+// לדוח הראשי (master.js): אותו מנוע — טיוטות, עריכה במקום, שמירה לתיק, ניסוח
+export { loadDraft, draftSaver, bindEdits, saveReport, bdi, pp, fmt };

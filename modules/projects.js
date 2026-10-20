@@ -795,7 +795,9 @@ export async function renderProject(el, id, tab = 'o') {
     const daysTxt = ds => { const x = [...ds].sort(); return !x.length ? '' : x.length === 1 ? dm(x[0]) : x.length <= 4 ? x.map(dm).join(', ') : `${x.length} ימים · ${dm(x[0])}–${dm(x.at(-1))}`; };
     const cs = p.closed_summary;
     const CR = M ? await import('./closereq.js') : null, crq = CR ? await CR.lastRequest(id) : null;
-    box.innerHTML = `${cs ? `<div class="card row"><span class="dot ok"></span><b class="grow">הפרויקט נסגר ${new Date(cs.closed_at).toLocaleDateString('he-IL')}</b></div>` : ''}
+    // שני הדוחות בראש התיק (אפיון v2): דוח ראשי — מנהלים; דוח ללקוח — כמו היום (מנהלים וראש צוות)
+    const reps = M || LEAD ? `<div class="row-btns pjrep">${M ? `<a class="btn primary" href="#/master-report/${id}">${icon('report', 18)} דוח ראשי</a>` : ''}<a class="btn ghost" href="#/client-report/${id}">${icon('send', 18)} דוח ללקוח</a></div>` : '';
+    box.innerHTML = `${reps}${cs ? `<div class="card row"><span class="dot ok"></span><b class="grow">הפרויקט נסגר ${new Date(cs.closed_at).toLocaleDateString('he-IL')}</b></div>` : ''}
       ${kpiRow([[hrs && nf(hrs), 'שעות צוות'], [gal && nf(gal), 'גלונים'], [D.issues.length, 'תקלות', 'issue'], [D.tasks.filter(t => t.is_extra).length, 'תוספות מהלקוח']])}
       ${M ? '<div id="wkup"></div>' : ''}
       ${SG.length ? `<section><h3 class="sh">${SG.length > 1 ? 'חתימות הלקוח' : 'חתימת הלקוח'}</h3>${SG.map((g, i) => `<div class="card stack tight"><div class="row"><b class="grow">${esc(g.name || '')}${g.role ? ' · ' + esc(g.role) : ''}</b><span class="pill ${g.ok ? 'ok' : 'warn'}">${g.ok ? 'אושר' : 'עם הערות'}</span></div>

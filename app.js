@@ -335,6 +335,7 @@ async function routeInner() {
     case 'attendance': { const m = await import('./modules/attendance.js'); if (h[1] === 'm' || !h[1]) return m.renderAttendance(app, h[2]); return m.renderHours(app, h[1], h[2]); }
     case 'purchase': if (guard('purchase')) { await (await import('./modules/purchase.js')).renderPurchase(app); } return;
     case 'dispatch': { await (await import('./modules/dispatch.js')).renderDispatch(app, h[1]); if (isWs() && h[2] === 'd' && /^[0-9a-f-]{36}$/.test(h[3] || '')) WS.drawerDay(h[3], h[1] || ''); return; }
+    case 'master-report': if (!isManager()) return deny(); return (await import('./modules/master.js')).renderMaster(app, h[1]);   // דוח ראשי — פנימי, מנהלים
     case 'client-report': { const m = await import('./modules/clientreport.js'); return h[2] === 'w' ? m.renderWeeklyUpdate(app, h[1], h[3], h[4] === 's') : m.renderClientReport(app, h[1]); }   // w = עדכון שבועי ללקוח
     case 'costs': if (!(can('finance') || state.profile.role === 'admin')) return deny(); return (await import('./modules/costs.js')).renderCosts(app, h[1]);   // עלויות — כספים בלבד (db/129)
     case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
