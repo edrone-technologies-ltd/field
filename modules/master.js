@@ -21,9 +21,9 @@ export async function renderMaster(el, pid) {
   if (!isManager()) { el.innerHTML = '<div class="empty-line">הדוח הראשי — למנהלים</div>'; return; }
   el.innerHTML = '<div class="skel tall"></div>';
   const q = x => x.then(r => r.data || [], () => []);
-  const [{ data: p }, days, tasks, issues, miss, photos, visits, sos, labor, fin] = await Promise.all([
+  const [{ data: p }, days, tasks, issues, miss, photos, visits, sos, labor, fin, fr] = await Promise.all([
     sb.from('projects').select('id,name,client_name,service,status_label,planned_from,planned_to,closed_summary,sites(name,address)').eq('id', pid).single(),
-    q(sb.from('work_days').select('id,day,status,kind,day_type,report_time,site_arrival,site_end,arrived_at,finished_at,gallons,flights,air_minutes,quality,material_used,report_text,crew_lead_id,work_day_crew(user_id,hours,profiles(full_name))').eq('project_id', pid).neq('status', 'cancelled').order('day')),
+    q(sb.from('work_days').select('id,day,status,kind,day_type,report_time,site_arrival,site_end,arrived_at,finished_at,gallons,flights,air_minutes,quality,material_used,report_text,crew_lead_id,monday_item_id,work_day_crew(user_id,hours,profiles(full_name))').eq('project_id', pid).neq('status', 'cancelled').order('day')),
     q(sb.from('tasks').select('id,title,status,phase,done_by,done_at,done_note,visit_id,is_extra').eq('project_id', pid).order('day_no', { nullsFirst: false }).order('seq')),
     q(sb.from('issues').select('id,body,kind,severity,status,decision,resolution,opened_by,created_at,closed_at,work_day_id').eq('project_id', pid).order('created_at')),
     q(sb.from('missing_items').select('id,item,qty,status,created_at,work_day_id,work_days!inner(project_id,day)').eq('work_days.project_id', pid).order('created_at')),
@@ -32,6 +32,8 @@ export async function renderMaster(el, pid) {
     q(sb.from('project_signoffs').select('signer_name,signer_role,full_ok,rating,notes,created_at').eq('project_id', pid).order('created_at')),
     q(sb.from('project_labor_days').select('user_id,day,work_h,travel_h,ot_h,profiles(full_name)').eq('project_id', pid).order('day')),
     ADMIN() ? q(sb.from('project_finance').select('*').eq('project_id', pid)) : Promise.resolve([]),   // כסף — הנהלה בלבד
+    // ימים מתקופת מאנדי (דוחות יומיים) — null = לא נטען, אי אפשר לספור בוודאות
+    sb.from('field_reports').select('monday_item_id,report_date').eq('project_id', pid).eq('excluded', false).order('report_date').then(r => r.error ? null : r.data || [], () => null),
   ]);
   if (!p) { el.innerHTML = '<div class="empty-line">הפרויקט לא נמצא</div>'; return; }
   const ids = [...new Set([...issues.map(i => i.opened_by), ...tasks.map(t => t.done_by)].filter(Boolean))];
@@ -44,7 +46,10 @@ export async function renderMaster(el, pid) {
   const crewH = done.reduce((s, d) => s + (d.work_day_crew || []).reduce((a, c) => a + Number(c.hours || 0), 0), 0);
   const gal = done.reduce((s, d) => s + Number(d.gallons || 0), 0);
   const issOpen = issues.filter(i => i.status !== 'closed'), missOpen = miss.filter(m => m.status !== 'handled');
-  const place = p.sites?.name || p.name, F = fin[0];
+  const place = p.sites?.name || p.name, F = [fin[0]].find(f => f && ['price_net', 'est_cost', 'labor_cost_actual', 'expenses_actual', 'gross_profit'].some(k => f[k] != null));   // שורה ריקה = אין מקטע כספים
+  // ימים שדווחו רק במאנדי: תאריך שאין לו יום שטח שבוצע באפליקציה ודוח שהאפליקציה לא דחפה — בלי ספירה כפולה (כמו db/086)
+  const frBad = !fr || fr.some(r => !r.report_date), appD = new Set(done.map(d => d.day)), pushed = new Set(days.map(d => d.monday_item_id).filter(Boolean));
+  const extra = []; (fr || []).forEach(r => { if (r.report_date && !appD.has(r.report_date) && !pushed.has(r.monday_item_id) && !extra.some(x => x.day === r.report_date)) extra.push({ day: r.report_date, mid: r.monday_item_id }); });
   const foot = (n => () => `<div class="cr-pf"><span><bdi dir="ltr"><b>E-Drone</b> Technologies</bdi> · דוח ראשי · פנימי</span><span>${++n}</span></div>`)(0);
   const sec = (rsec, h, body) => body ? `<div class="pg flow"><div class="pad"><div class="rsec">${rsec}</div><h2>${h}</h2><div class="rule"></div>${body}</div>${foot()}</div>` : '';
   const shot = path => U[path] ? `<div class="shot"><img src="${esc(U[path])}" alt=""></div>` : '';
@@ -57,6 +62,9 @@ export async function renderMaster(el, pid) {
       <div class="rsec" style="margin-top:9mm">LESSONS</div><h2 class="cr-h3">לקחים ומסקנות</h2>
       <div class="cr-tx mr-lessons" data-ek="lessons">${DR.txt.lessons ? pp(DR.txt.lessons) : '<p class="mr-ph">מה למדנו, מה לעשות אחרת בפעם הבאה</p>'}</div></div>${foot()}</div>`;
 
+  const moreDays = extra.length ? `<div class="mr-kv mr-more">${ADMIN()
+    ? `<b>${num("+" + extra.length)} ימים במאנדי</b> · ${extra.map(x => x.mid ? `<a href="https://edroneil-force.monday.com/boards/5099882177/pulses/${esc(x.mid)}" target="_blank" rel="noopener">${num(dm(x.day))}</a>` : num(dm(x.day))).join(' · ')}`
+    : `<a href="#/p/${pid}/d"><b>${num("+" + extra.length)} ימים מדוחות קודמים</b></a> · ${extra.map(x => num(dm(x.day))).join(' · ')}`}</div>` : '';
   const dayBlocks = done.map(d => { const crew = (d.work_day_crew || []), ph = photos.filter(x => x.work_day_id === d.id).slice(0, 6);
     return `<div class="ba"><div class="band"><span class="t">${esc(fmt(d.day))}</span><span class="d">${esc([d.kind === 'report' ? 'סיכום ידני' : '', d.day_type && d.day_type !== 'work' ? d.day_type : ''].filter(Boolean).join(' · '))}</span><span class="ln"></span></div>
       <div class="mr-kv">${[d.report_time && `יציאה ${num(d.report_time.slice(0, 5))}`, d.arrived_at && `באתר ${num(hm(d.arrived_at))}${d.finished_at ? '–' + num(hm(d.finished_at)) : ''}`, d.gallons != null && `${num(d.gallons)} גלונים`, d.flights != null && `${num(d.flights)} טיסות`, d.material_used && esc(d.material_used), d.quality && `איכות ${'★'.repeat(d.quality)}`].filter(Boolean).join(' · ')}</div>
@@ -77,9 +85,14 @@ export async function renderMaster(el, pid) {
   const soT = table(['חותם', 'תאריך', 'אישור', 'הערות'], sos.map(s => [bdi([s.signer_name, s.signer_role].filter(Boolean).join(' · ')), num(dm(s.created_at.slice(0, 10))), s.full_ok === false ? 'עם הערות' : 'בוצע במלואו' + (s.rating ? ' · ' + num(s.rating + '/5') : ''), bdi(s.notes || '')]));
   const by = {}; labor.forEach(r => { const k = r.profiles?.full_name || ''; (by[k] ||= { w: 0, t: 0, o: 0, d: new Set() }); by[k].w += +r.work_h; by[k].t += +r.travel_h; by[k].o += +r.ot_h; by[k].d.add(r.day); });
   const labT = table(['עובד', 'ימים', 'באתר', 'נסיעה', 'נוספות'], Object.entries(by).map(([n, v]) => [esc(n), num(v.d.size), num(H(v.w)), num(H(v.t)), num(H(v.o))]));
-  const money = ADMIN() && F ? `<div class="meta mr-money">${kv('מחיר (נטו)', num(ils(F.price_net)))}${kv('עלות מתוכננת', num(ils(F.est_cost)))}${kv('שכר בפועל', num(ils(F.labor_cost_actual)))}${kv('הוצאות שטח', num(ils(F.expenses_actual)))}${kv('רווח גולמי', num(ils(F.gross_profit)) + (F.gross_pct != null ? ` (${num(F.gross_pct + '%')})` : ''))}</div>` : '';
+  // עלות חלקית (ימים ממאנדי שלא נספרו בשכר, או אין הוצאות חומר/דלק) → בלי אחוז ובלי סכום רווח
+  const noExp = F && !(Number(F.expenses_actual) > 0), partial = F && (frBad || extra.length > 0 || noExp);
+  const miss1 = [...(frBad || extra.length ? ['ימים שדווחו במאנדי'] : []), ...(noExp ? ['חומר ודלק'] : [])];
+  const X = done.length, Y = X + extra.length;
+  const partLine = partial ? `<div class="mr-part">${frBad ? '' : `<b>נתון חלקי · ${X === 1 ? 'יום שטח אחד' : `${num(X)} ימי שטח`} באפליקציה מתוך ${num(Y)}</b>`}<small>לא כולל ${miss1.join(', ')}</small></div>` : '';
+  const money = ADMIN() && F ? `${partLine}<div class="meta mr-money">${kv('מחיר (נטו)', num(ils(F.price_net)))}${kv('עלות מתוכננת', num(ils(F.est_cost)))}${kv('שכר בפועל', num(ils(F.labor_cost_actual)))}${kv('הוצאות שטח', num(ils(F.expenses_actual)))}${kv('רווח גולמי', partial ? '<b class="mr-bad">לא סופי</b>' : num(ils(F.gross_profit)) + (F.gross_pct != null ? ` (${num(F.gross_pct + '%')})` : ''))}</div>` : '';
 
-  const html = `<div class="creport mreport">${cover}${sec('FIELD DAYS', 'ימי שטח', dayBlocks)}${sec('TASKS', 'משימות', tasksT)}${sec('ISSUES', 'תקלות — פתוחות וסגורות', issT)}${sec('MISSING', 'חוסרים', missT)}${sec('VISITS', 'ביקורים', visT)}${sec('SIGN-OFF', 'החתמות לקוח', soT)}${sec('ATTENDANCE', 'שעות ונוכחות', labT)}${money ? sec('FINANCE', 'כספים · הנהלה בלבד', money) : ''}</div>`;
+  const html = `<div class="creport mreport">${cover}${sec('FIELD DAYS', 'ימי שטח', moreDays + dayBlocks)}${sec('TASKS', 'משימות', tasksT)}${sec('ISSUES', 'תקלות — פתוחות וסגורות', issT)}${sec('MISSING', 'חוסרים', missT)}${sec('VISITS', 'ביקורים', visT)}${sec('SIGN-OFF', 'החתמות לקוח', soT)}${sec('ATTENDANCE', 'שעות ונוכחות', labT)}${money ? sec('FINANCE', 'כספים · הנהלה בלבד', money) : ''}</div>`;
   const name = `דוח ראשי · פנימי · ${place}`;
   el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/p/${pid}" data-up="1" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ראשי <span class="pill">פנימי</span></b>
       <button class="btn ghost sm" id="mrmake">${icon('report', 16)}<span class="rt-l"> הפקה</span></button>

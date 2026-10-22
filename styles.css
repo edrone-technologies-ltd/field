@@ -2748,4 +2748,6 @@ a.alert{color:inherit;text-decoration:none} a.alert .chev{flex:none}
 .mreport .mr-kv{font-size:9.4pt;color:#4B5563;margin:1.5mm 0} .mreport .mr-rep p{font-size:9.6pt} .mreport .mr-s{display:block;color:#8A9099;font-size:8.4pt}
 .mreport .mr-bad{color:#C43C30} .mreport .mr-ph{color:#9AA0A6} .mreport .mr-lessons{min-height:30mm;border:1px dashed #D5D9DE;border-radius:3mm;padding:3mm 4mm}
 .mreport td{padding:2.6mm 1mm} .mreport .meta{margin-top:6mm}
+.mreport .mr-part{margin-top:4mm;padding:3mm 4mm;border-inline-start:3px solid #D08A1E;background:#FFF8EC;border-radius:2mm;font-size:10pt} .mreport .mr-part small{display:block;color:#6B7280;font-size:9pt;margin-top:1mm}
+.mreport .mr-more{margin:0 0 4mm} .mreport .mr-more a{color:inherit;text-decoration:underline;text-underline-offset:2px} .mreport .mr-more a b{color:#1F2937}
 .pdf-render .mreport .mr-lessons{border:0;padding:0} .pdf-render .mreport .mr-ph{display:none}
