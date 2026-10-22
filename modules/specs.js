@@ -26,12 +26,15 @@ const fmtD = v => v ? `${nf(v)} ${v === 1 ? 'יום' : 'ימים'}` : 'ימים?
 const STAT = { new: ['', 'לא מולא'], draft: ['warn', 'טיוטה'], done: ['ok', 'הושלם'] };
 
 // ---------- נתונים (עם מטמון לעבודה בלי קליטה) ----------
+const SITES_SEL = 'id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,kind,lead_group,lead_stage,visit_date,lead_owner,service,merged_into,monday_spec_item_id,lat,lng,buildings(id,specs(status,days_expected)),projects(status_label,monday_group,closed_summary)';
+let hasArch = true;   // לפני מיגרציה 147 אין sites.archived_at — בודקים פעם אחת לטעינה, ואז בלי ארכיון
 async function fetchSites() {
   try {
-    const { data, error } = await sb.from('sites')
-      .select('id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,kind,lead_group,lead_stage,visit_date,lead_owner,service,merged_into,monday_spec_item_id,lat,lng,buildings(id,specs(status,days_expected)),projects(status_label,monday_group,closed_summary)')
-      .eq('is_active', true).order('name');
+    const q = sel => sb.from('sites').select(sel).eq('is_active', true).order('name');
+    let { data, error } = await q(SITES_SEL + (hasArch ? ',archived_at' : ''));
+    if (error && hasArch && /archived_at/.test(error.message || '')) { hasArch = false; ({ data, error } = await q(SITES_SEL)); }
     if (error) throw error;
+    data = [...new Map(data.map(x => [x.id, x])).values()];   // אתר אחד = שורה אחת
     await cache.set('sites', data); return data;
   } catch { return (await cache.get('sites')) || []; }
 }
@@ -70,8 +73,12 @@ export async function renderSites(el) {
   // תיקייה לכל אתר/ליד, בשלוש קבוצות ברורות במקום שלבי מאנדי: לסיור · הושלם · ארכיון (סגור)
   // השלב נקבע מהעובדות באפליקציה קודם (מה אופיין, האם יש פרויקט), ורק אחר כך מהקבוצה במאנדי. null = לא מוצג
   const closedP = x => x.monday_group === 'group_mm5052gw' || /^הסתיים|שולם/.test(x.status_label || '') || x.closed_summary;
+  // לידים שאוחדו לאתר (merged_into) — השלב שלהם במאנדי שייך לאתר. למשל נמל אשדוד: פיילוט בוצע, הליד ממתין להחלטת הלקוח
+  const leadsOf = new Map(); sites.filter(x => x.merged_into).forEach(x => leadsOf.set(x.merged_into, [...(leadsOf.get(x.merged_into) || []), x]));
   const STAGE = s => {
     if (s.merged_into) return null;                                    // ליד ששויך לאתר קיים — מוצג רק האתר
+    if (s.archived_at) return 'arch';                                  // הועבר לארכיון ידנית (147)
+    if ([s, ...(leadsOf.get(s.id) || [])].some(x => /^פיילוט בוצע/.test(x.lead_stage || ''))) return 'pilot';   // לפני "הפרויקט הסתיים": הפיילוט נסגר, העסקה לא
     const { n, done } = st(s), P = s.projects || [];
     if (P.length && P.every(closedP)) return 'arch';                  // כל הפרויקטים באתר הסתיימו
     if (!n) return P.length ? 'arch' : null;                           // אתר פרויקט בלי מבנים — אין מה לאפיין
@@ -81,7 +88,7 @@ export async function renderSites(el) {
     if (done === n || /אפיון בוצע|קבלן משנה|פיילוט/.test(g)) return 'done';
     return /לידים חדשים/.test(g) && !s.visit_date && !draft(s) ? 'new' : 'open'; };   // ליד חדש בלי סיור — לא "לסיור" עדיין
   const draft = s => s.buildings.some(b => (b.specs?.[0] || b.specs)?.status === 'draft');
-  const GROUPS = [['open', 'לסיור ואפיון'], ['done', 'אפיון הושלם'], ['new', 'לידים חדשים'], ['arch', 'ארכיון']];
+  const GROUPS = [['open', 'לסיור ואפיון'], ['done', 'אפיון הושלם'], ['pilot', 'פיילוט בוצע · ממתין להחלטת לקוח'], ['new', 'לידים חדשים'], ['arch', 'ארכיון']];
   // תאריך הסיור כתווית: היום / מחר / עבר בלי אפיון
   const today = new Date().toLocaleDateString('en-CA'), tmrw = new Date(Date.now() + 864e5).toLocaleDateString('en-CA');
   const visitPill = d => !d ? null : d === today ? ['סיור היום', 'ok'] : d === tmrw ? ['סיור מחר', 'ok'] : d < today ? ['סיור עבר', 'warn'] : ['סיור ' + dm(d), ''];
@@ -90,8 +97,8 @@ export async function renderSites(el) {
     // בתהליך → ישר לטופס; הושלם → סיכום האתר
     return { href: lead && n === 1 && !done ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, img: coverFor(s, s.cover_path && urls[s.cover_path]), title: s.name,
       sub: lead ? [s.contact_name, s.service].filter(Boolean).join(' · ') : `${n} מבנים`,
-      pill: vp ? vp[0] : n > 1 ? `${done}/${n}` : (done === n && n) || k === 'done' ? 'בוצע' : draft || done ? 'בתהליך' : '',
-      tone: vp ? vp[1] : (done === n && n) || k === 'done' ? 'ok' : done || draft ? 'warn' : '' }; };
+      pill: k === 'pilot' ? 'ממתין ללקוח' : vp ? vp[0] : n > 1 ? `${done}/${n}` : (done === n && n) || k === 'done' ? 'בוצע' : draft || done ? 'בתהליך' : '',
+      tone: k === 'pilot' ? '' : vp ? vp[1] : (done === n && n) || k === 'done' ? 'ok' : done || draft ? 'warn' : '' }; };
   const draw = q => {
     const list = sites.filter(s => !q || (s.name + ' ' + (s.contact_name || '')).includes(q));
     $('#sl').innerHTML = GROUPS.map(([k, t]) => { const g = list.filter(s => STAGE(s) === k); if (!g.length) return '';
