@@ -30,7 +30,7 @@ export async function load() {
   const q = async (p) => { try { const { data, error } = await p; if (error) throw error; return data || []; } catch { return null; } };
   const t = today(), since = addDays(t, -14), M = isManager(), n0 = state.storedN;
   const [projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq, vsites] = await Promise.all([
-    q(sb.from('projects').select('id,name,client_name,status_label,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id,closed_summary,lat,lng,sites(lat,lng)')),
+    q(sb.from('projects').select('id,name,client_name,status_label,engagement,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id,closed_summary,lat,lng,sites(lat,lng)')),
     q(sb.from('field_reports').select('monday_item_id,project_id,project_label,report_date,crew,work,had_issues,issues,photos').gte('report_date', since).order('report_date', { ascending: false })),
     M ? q(sb.from('spec_visits').select('*')) : [],
     q(sb.from('equipment').select('id,name,health,health_detail,health_date').eq('kind', 'drone').order('name')),
@@ -94,6 +94,16 @@ export function alerts(d) {
   (d.drones || []).filter(x => x.health === 'warning').forEach(x => out.push({ tone: 'warn', ic: 'drone', title: `רחפן ${x.name} במעקב`, sub: firstLine(x.health_detail), href: `#/equipment/${x.id}` }));
   const stuck = P.filter(p => p.status_label === 'תקוע' && isOpen(p));
   if (stuck.length) out.push({ tone: 'bad', ic: 'alert', title: stuck.length > 1 ? `${stuck.length} פרויקטים תקועים` : `פרויקט תקוע: ${stuck[0].name}`, sub: stuck.length > 1 ? stuck.map(p => p.name).join(' · ') : stuck[0].client_name, ...pick(stuck) });
+  // בביצוע לפי התאריכים (היום, או מתחיל בתוך יומיים) ואין יום שטח משובץ ביום הראשון שלו → לשבץ (רפאל 25/10). קבלן משנה מבצע — אין שיבוץ שלנו (ICL)
+  if (isManager()) {
+    const sch = new Set((d.wdays || []).filter(w => w.status !== 'cancelled').map(w => w.project_id + '|' + w.day));
+    const sun = x => new Date(x + 'T12:00:00').getDay() === 6 ? addDays(x, 1) : x;   // שבת — לא עובדים, בודקים את ראשון (כמו הדחיפה)
+    const first = p => sun(p.planned_from > t ? p.planned_from : t);
+    const unsch = P.filter(p => isOpen(p) && p.engagement !== 'קבלן משנה' && ['בביצוע', 'אושר מול לקוח', 'תואם - ממתין לביצוע'].includes(p.status_label) && p.planned_from && p.planned_from <= addDays(t, 2)
+      && (p.planned_to || p.planned_from) >= first(p) && !sch.has(p.id + '|' + first(p)));
+    if (unsch.length) out.push({ tone: unsch.some(p => first(p) === t) ? 'bad' : 'warn', ic: 'calendar', title: unsch.length > 1 ? `${unsch.length} פרויקטים בלי צוות משובץ` : `${unsch[0].name}: ${first(unsch[0]) === t ? 'היום' : 'ב-' + dm(first(unsch[0]))} בלי צוות משובץ`,
+      sub: unsch.length > 1 ? unsch.map(p => p.name).join(' · ') : 'בביצוע לפי התאריכים, ואין יום שטח בלו״ז', ...pick(unsch) });
+  }
   // תאריך הסיום עבר (ביותר מיומיים), אין ימי שטח עתידיים, והפרויקט עדיין פתוח → לסגור (לשונית הסיכום)
   const ahead = new Set((d.wdays || []).filter(w => w.day >= t && w.status !== 'done').map(w => w.project_id));
   const ended = P.filter(p => isOpen(p) && p.status_label !== 'תקוע' && !ahead.has(p.id) && (p.planned_to || p.actual_to) && daysBetween(p.planned_to || p.actual_to, t) > 2);
