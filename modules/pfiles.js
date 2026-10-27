@@ -1,9 +1,10 @@
 // תיק הפרויקט: קבצים (דוחות סופיים, מסמכים, תכניות). field/projects/<pid>/files/<uuid>.<ext> (db/144).
-// מנהל תפעול ומעלה בלבד (אביחי 13/10): רואים, מעלים, מצמידים, משנים שם, מוחקים. צוות וראש צוות — לא מוצג. לא נשלח ללקוח לבד — שיתוף רק בלחיצה.
+// מנהל תפעול ומעלה בלבד (אביחי 13/10): רואים, מעלים, מצמידים, משנים שם, מוחקים. לא נשלח ללקוח לבד — שיתוף רק בלחיצה.
+// מסמכי בטיחות (db/149, אביחי 26/10): ראש הצוות של יום עבודה בפרויקט רואה רק kind=safety, מ-3 ימים לפני עד 7 אחרי. צפייה בלבד — בלי שיתוף, בלי העלאה, בלי מטמון (sw.js).
 import { sb, state, isManager, sheet, icon, $, $$, esc, toast, dm, isoDay, confirmBox } from '../lib/core.js';
 import { shareIcon, shareFile } from '../lib/share.js';
 
-const KINDS = [['report', 'דוח'], ['doc', 'מסמך'], ['plan', 'תכנית'], ['other', 'אחר']];
+const KINDS = [['report', 'דוח'], ['doc', 'מסמך'], ['plan', 'תכנית'], ['safety', 'בטיחות'], ['other', 'אחר']];
 const KHE = Object.fromEntries(KINDS);
 const ACCEPT = 'application/pdf,image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv,.txt,.dwg,.dxf,.zip';
 const size = n => !n ? '' : n < 1048576 ? Math.max(1, Math.round(n / 1024)) + 'KB' : (n / 1048576).toFixed(1) + 'MB';
@@ -27,6 +28,17 @@ async function openFile(f) {
   const { data, error } = await sb.storage.from('field').createSignedUrl(f.storage_path, 600);
   if (error || !data?.signedUrl) { w?.close(); return toast('אין גישה לקובץ'); }
   if (w) w.location.href = data.signedUrl; else location.href = data.signedUrl;
+}
+
+// ראש הצוות: מסמכי בטיחות בלבד (RLS מסנן). פתיחה בלבד. אין קבצים — לא מוצג כלום
+export async function safetyRow(box, pid) {
+  if (!box) return;
+  const { data } = await sb.from('project_files').select('id,title,storage_path').eq('project_id', pid).eq('kind', 'safety').order('pinned', { ascending: false }).order('created_at', { ascending: false }).then(r => r, () => ({ data: null }));
+  const L = data || [];
+  if (!L.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<section class="pf"><h3 class="sh">מסמכי בטיחות</h3><div class="pf-list">${L.map(f => `<div class="pf-row">
+    <button class="pf-open" type="button" data-o="${f.id}"><span class="pf-ic safety">${icon('file', 18)}</span><span class="grow"><b>${esc(f.title)}</b></span></button></div>`).join('')}</div></section>`;
+  $$('[data-o]', box).forEach(b => b.onclick = () => openFile(L.find(f => f.id === b.dataset.o)));
 }
 
 export async function filesSection(box, p) {
@@ -64,9 +76,10 @@ function addSheet(p, file, redraw) {
     <div class="pf-file">${icon(isImgM(file.type) ? 'photo' : 'file', 20)}<span class="grow"><bdi>${esc(file.name)}</bdi></span><small dir="ltr">${size(file.size)}</small></div>
     <label class="field">שם<input id="pft" value="${esc(file.name.replace(/\.\w{2,5}$/, ''))}" maxlength="120"></label>
     <div class="chips" id="pfk">${KINDS.map(([k, t]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === kind}">${t}</button>`).join('')}</div>
+    <small class="muted" id="pfkh"${kind === 'safety' ? '' : ' hidden'}>גלוי לראש הצוות המשובץ. בלי ת״ז, חוזים או מחירים</small>
     <label class="tog"><span>📌 הצמדה לראש התיק</span><span class="sw"><input type="checkbox" id="pfp"><i></i></span></label>
     <button class="btn primary block big" id="pfu">העלאה</button>`, sh => {
-    $$('#pfk [data-k]', sh).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('#pfk [data-k]', sh).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    $$('#pfk [data-k]', sh).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('#pfk [data-k]', sh).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#pfkh', sh).hidden = kind !== 'safety'; });
     $('#pfp', sh).onchange = e => pin = e.target.checked;
     $('#pfu', sh).onclick = async e => {
       const b = e.currentTarget; if (b.disabled) return; b.disabled = true; b.classList.add('busy');
@@ -97,8 +110,9 @@ function rename(f, redraw) {
   let kind = f.kind;
   const close = sheet(`<h3>שינוי שם</h3><label class="field">שם<input id="pft" value="${esc(f.title)}" maxlength="120"></label>
     <div class="chips" id="pfk">${KINDS.map(([k, t]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === kind}">${t}</button>`).join('')}</div>
+    <small class="muted" id="pfkh"${kind === 'safety' ? '' : ' hidden'}>גלוי לראש הצוות המשובץ. בלי ת״ז, חוזים או מחירים</small>
     <button class="btn primary block big" id="pfs">שמירה</button>`, sh => {
-    $$('#pfk [data-k]', sh).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('#pfk [data-k]', sh).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    $$('#pfk [data-k]', sh).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('#pfk [data-k]', sh).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#pfkh', sh).hidden = kind !== 'safety'; });
     $('#pfs', sh).onclick = async () => { const title = $('#pft', sh).value.trim() || f.title; const { error } = await sb.from('project_files').update({ title, kind }).eq('id', f.id); close(); toast(error ? 'לא נשמר' : 'נשמר'); redraw(); };
   });
 }

@@ -142,6 +142,7 @@ export async function renderProject(el, id, tab = 'o') {
       <div class="pjcol stack" id="pjmain">
         <section id="pjopen"></section>
         <div id="pjready"></div>
+        ${!M ? '<div id="pjsafe"></div>' : ''}
         <details class="fold" id="fplan"><summary><span class="sh">תכנית עבודה</span><small class="fmeta" id="fplanm"></small></summary><div id="pjplan" class="stack"></div></details>
         <details class="fold" id="ffile"><summary><span class="sh">תיק הפרויקט</span><small class="fmeta" id="ffilem"></small></summary><div id="pjfile" class="stack"></div></details>
         ${showSpec ? `<details class="fold" id="fspec"><summary><span class="sh">אפיון</span><small class="fmeta">${esc(p.sites?.name || '')}</small></summary><div id="pjspec" class="stack"></div></details>` : ''}
@@ -156,6 +157,10 @@ export async function renderProject(el, id, tab = 'o') {
   const nw = $('#pjnew', el); if (nw) nw.onclick = () => import('./reports.js').then(m => m.newReport(id));
   // סעיף מקופל נטען בפתיחה הראשונה
   const lazy = (fid, fn) => { const f = $('#' + fid, el); if (!f) return; let done = false; f.addEventListener('toggle', () => { if (f.open && !done) { done = true; fn(); } }); };
+  // מסמכי בטיחות: רק לראש הצוות של יום בפרויקט, מ-3 ימים לפני עד 7 אחרי (db/149). תמיד מהרשת, לא מהמטמון
+  const lo = isoDay(new Date(Date.now() - 7 * 864e5)), hi = isoDay(new Date(Date.now() + 3 * 864e5));
+  if (!M && D.days.some(d => d.crew_lead_id === state.user.id && d.status !== 'cancelled' && d.day >= lo && d.day <= hi))
+    import('./pfiles.js').then(m => m.safetyRow($('#pjsafe', el), id)).catch(() => {});
   lazy('fspec', () => specTab($('#pjspec', el)));
   lazy('fchat', () => chat($('#pjchat', el)));
   lazy('ffile', () => fileBox($('#pjfile', el)));
