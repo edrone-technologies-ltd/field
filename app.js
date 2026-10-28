@@ -430,6 +430,8 @@ function ctFill() {
   const hd = ctSrc.closest('.phead,.hhead,.phero'), b = hd?.querySelector('a.back'), s = $('.ct-s', ct);
   const show = b && (hd.classList.contains('phero') || !document.body.hasAttribute('data-root'));
   s.innerHTML = show ? `<a class="back" href="${esc(b.getAttribute('href') || '#/')}" tabindex="-1"${b.dataset.hard ? ' data-hard="1"' : ''}${b.dataset.up ? ' data-up="1"' : ''}>${icon('back', 20)}</a>` : '';
+  // חץ עם handler משלו (אפיון: שמירה לפני יציאה, href ריק) — הלחיצה בסרגל הדק מפעילה את המקורי
+  const c = s.firstElementChild; if (c && b.onclick) c.onclick = e => { e.preventDefault(); e.stopPropagation(); b.click(); };
 }
 function ctCheck() {
   ctRaf = 0;
@@ -438,8 +440,9 @@ function ctCheck() {
   const on = !!ctSrc && app.scrollTop > 8 && ctSrc.getBoundingClientRect().bottom < ctH;
   if (on && !ctOn) ctFill();
   if (on !== ctOn) { ctOn = on; document.body.classList.toggle('ct-on', on); }
+  document.body.classList.toggle('scrl', app.scrollTop > 4);
 }
-function titleReset() { ctSrc = null; if (ctOn) { ctOn = false; document.body.classList.remove('ct-on'); } }
+function titleReset() { ctSrc = null; document.body.classList.remove('scrl'); if (ctOn) { ctOn = false; document.body.classList.remove('ct-on'); } }
 app.addEventListener('scroll', () => { if (!ctRaf) ctRaf = requestAnimationFrame(ctCheck); }, { passive: true });
 addEventListener('resize', () => { ctH = 0; }, { passive: true });
 
@@ -488,6 +491,8 @@ initNav();
   let maxVH = innerHeight;
   addEventListener('resize', () => { if (innerWidth < innerHeight) maxVH = Math.max(maxVH, innerHeight); });
   const heal = () => {
+    // הדף עצמו לא אמור לגלול (רק #app). אם iOS הזיז אותו (מקלדת/פוקוס) — הכותרת עולה מתחת לשורת הסטטוס והבר התחתון נחתך
+    if (scrollY || document.documentElement.scrollTop || document.body.scrollTop) { scrollTo(0, 0); document.body.scrollTop = 0; }
     if (innerWidth > innerHeight || maxVH - innerHeight <= 4) return;
     const els = [app, document.getElementById('tabbar')].filter(Boolean), st = app.scrollTop;
     els.forEach(e => e.style.display = 'none'); void document.body.offsetHeight; els.forEach(e => e.style.display = '');
@@ -495,6 +500,9 @@ initNav();
   };
   document.addEventListener('focusout', e => { if (e.target.matches?.('input,textarea,select,[contenteditable]')) { setTimeout(heal, 140); setTimeout(heal, 600); } });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) setTimeout(heal, 300); });
+  const typing = () => document.activeElement?.matches?.('input,textarea,select,[contenteditable]');   // בזמן הקלדה iOS מזיז בכוונה — לא נוגעים
+  window.visualViewport?.addEventListener('resize', () => setTimeout(() => { if (!typing()) heal(); }, 200), { passive: true });
+  addEventListener('scroll', () => { if (!typing()) heal(); }, { passive: true });
   addEventListener('pageshow', () => setTimeout(heal, 300));
   setTimeout(heal, 500);
 }

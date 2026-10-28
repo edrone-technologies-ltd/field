@@ -76,7 +76,7 @@ function addSheet(p, file, redraw) {
     <div class="pf-file">${icon(isImgM(file.type) ? 'photo' : 'file', 20)}<span class="grow"><bdi>${esc(file.name)}</bdi></span><small dir="ltr">${size(file.size)}</small></div>
     <label class="field">שם<input id="pft" value="${esc(file.name.replace(/\.\w{2,5}$/, ''))}" maxlength="120"></label>
     <div class="chips" id="pfk">${KINDS.map(([k, t]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === kind}">${t}</button>`).join('')}</div>
-    <small class="muted" id="pfkh"${kind === 'safety' ? '' : ' hidden'}>גלוי לראש הצוות המשובץ. בלי ת״ז, חוזים או מחירים</small>
+    <small class="muted" id="pfkh"${kind === 'safety' ? '' : ' hidden'}>גלוי לראש הצוות המשובץ. בלי חוזים או מחירים</small>
     <label class="tog"><span>📌 הצמדה לראש התיק</span><span class="sw"><input type="checkbox" id="pfp"><i></i></span></label>
     <button class="btn primary block big" id="pfu">העלאה</button>`, sh => {
     $$('#pfk [data-k]', sh).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('#pfk [data-k]', sh).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#pfkh', sh).hidden = kind !== 'safety'; });
@@ -110,7 +110,7 @@ function rename(f, redraw) {
   let kind = f.kind;
   const close = sheet(`<h3>שינוי שם</h3><label class="field">שם<input id="pft" value="${esc(f.title)}" maxlength="120"></label>
     <div class="chips" id="pfk">${KINDS.map(([k, t]) => `<button type="button" class="chip" data-k="${k}" aria-pressed="${k === kind}">${t}</button>`).join('')}</div>
-    <small class="muted" id="pfkh"${kind === 'safety' ? '' : ' hidden'}>גלוי לראש הצוות המשובץ. בלי ת״ז, חוזים או מחירים</small>
+    <small class="muted" id="pfkh"${kind === 'safety' ? '' : ' hidden'}>גלוי לראש הצוות המשובץ. בלי חוזים או מחירים</small>
     <button class="btn primary block big" id="pfs">שמירה</button>`, sh => {
     $$('#pfk [data-k]', sh).forEach(b => b.onclick = () => { kind = b.dataset.k; $$('#pfk [data-k]', sh).forEach(x => x.setAttribute('aria-pressed', x === b)); $('#pfkh', sh).hidden = kind !== 'safety'; });
     $('#pfs', sh).onclick = async () => { const title = $('#pft', sh).value.trim() || f.title; const { error } = await sb.from('project_files').update({ title, kind }).eq('id', f.id); close(); toast(error ? 'לא נשמר' : 'נשמר'); redraw(); };

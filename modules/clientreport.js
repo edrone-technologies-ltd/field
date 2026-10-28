@@ -7,13 +7,13 @@ import { visitDefault, visitPhotos } from './visits.js';
 
 const bdi = t => esc(t).replace(/([+−~≤≥]?[0-9A-Za-z][0-9A-Za-z.,%°~+−≤≥–—/ -]*[0-9A-Za-z%°])/g, '<bdi dir="ltr">$1</bdi>');
 const fmt = d => d ? new Date(d + 'T12:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
-const SITE_SEL = 'name,address,contact_name,service,subtitle,scope_text,lead_notes,access_notes';
+const SITE_SEL = 'name,address,contact_name,service,subtitle,scope_text,access_notes';
 // שירות + הקשר האתר (פנלים · "על גגות הלולים") — מהפרויקט, האתר, האפיון ודוחות הביקור
 const vText = v => [...(v.findings || []).map(x => x.text), v.summary];
 async function svcFor(p, visits = []) {
   const sp = p.site_id ? await sb.from('buildings').select('specs(service_type,notes,highlights)').eq('site_id', p.site_id).then(r => (r.data || []).flatMap(b => b.specs ? [].concat(b.specs) : []), () => []) : [];
   const svc = serviceOf(p, sp.find(x => x.service_type)?.service_type);
-  const s = p.sites || {}, txt = [p.name, s.name, s.subtitle, s.scope_text, s.lead_notes, s.access_notes, p.scope, p.work_notes, ...sp.flatMap(x => [x.notes, x.highlights]), ...visits.flatMap(vText)];
+  const s = p.sites || {}, txt = [p.name, s.name, s.subtitle, s.scope_text, s.access_notes, p.scope, p.work_notes, ...sp.flatMap(x => [x.notes, x.highlights]), ...visits.flatMap(vText)];
   const t0 = terms(svc);
   return terms(svc, siteCtx(t0.key, txt));
 }

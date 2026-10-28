@@ -26,7 +26,7 @@ const fmtD = v => v ? `${nf(v)} ${v === 1 ? 'יום' : 'ימים'}` : 'ימים?
 const STAT = { new: ['', 'לא מולא'], draft: ['warn', 'טיוטה'], done: ['ok', 'הושלם'] };
 
 // ---------- נתונים (עם מטמון לעבודה בלי קליטה) ----------
-const SITES_SEL = 'id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,kind,lead_group,lead_stage,visit_date,lead_owner,service,merged_into,monday_spec_item_id,lat,lng,buildings(id,specs(status,days_expected)),projects(status_label,monday_group,closed_summary)';
+const SITES_SEL = 'id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,kind,site_lead_private(lead_group,lead_stage,lead_owner),visit_date,service,merged_into,monday_spec_item_id,lat,lng,buildings(id,specs(status,days_expected)),projects(status_label,monday_group,closed_summary)';
 let hasArch = true;   // לפני מיגרציה 147 אין sites.archived_at — בודקים פעם אחת לטעינה, ואז בלי ארכיון
 async function fetchSites() {
   try {
@@ -34,12 +34,13 @@ async function fetchSites() {
     let { data, error } = await q(SITES_SEL + (hasArch ? ',archived_at' : ''));
     if (error && hasArch && /archived_at/.test(error.message || '')) { hasArch = false; ({ data, error } = await q(SITES_SEL)); }
     if (error) throw error;
-    data = [...new Map(data.map(x => [x.id, x])).values()];   // אתר אחד = שורה אחת
+    data = [...new Map(data.map(x => [x.id, leadPriv(x)])).values()];   // אתר אחד = שורה אחת
     await cache.set('sites', data); return data;
   } catch { return (await cache.get('sites')) || []; }
 }
-const SITE_FULL = '*,buildings(*,plan_images(*),specs(*))';   // כולל sites.service — מה מוצג בטופס
-const prepSite = data => { data.buildings.sort((a, b) => a.sort - b.sort);
+const SITE_FULL = '*,site_lead_private(lead_notes,lead_stage,lead_group,lead_owner),buildings(*,plan_images(*),specs(*))';   // כולל sites.service — מה מוצג בטופס. מידע הליד בטבלה נפרדת (db/150): RLS מחזיר רק למנהל
+const leadPriv = x => { Object.assign(x, { lead_notes: null, lead_stage: null, lead_group: null, lead_owner: null }, [].concat(x.site_lead_private || [])[0] || {}); delete x.site_lead_private; return x; };
+const prepSite = data => { leadPriv(data); data.buildings.sort((a, b) => a.sort - b.sort);
   data.buildings.forEach(b => { b.plan_images.sort((x, y) => x.sort - y.sort); b.spec = b.specs?.[0] || b.specs || null; }); return data; };
 async function fetchSite(slug) {
   try {

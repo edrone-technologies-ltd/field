@@ -137,7 +137,7 @@ textarea{min-height:90px;resize:vertical}
 
 
 /* סרגל פעולה תחתון */
-.bar{position:fixed;inset:auto 0 0 0;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:10px 16px calc(10px + var(--safe-b));display:flex;gap:10px;justify-content:center;z-index:5}
+.bar{position:fixed;inset:auto 0 0 0;background:var(--bg);border-top:1px solid var(--line);padding:10px 16px calc(10px + var(--safe-b));display:flex;gap:10px;justify-content:center;z-index:5}
 .bar .btn{flex:1;max-width:360px}
 
 /* הודעות */
@@ -1133,6 +1133,9 @@ body.ct-on .ctitle{opacity:1;transform:none;pointer-events:auto;visibility:visib
 .ct-s{grid-column:1;display:flex;justify-content:flex-start}
 .ctitle a.back{position:relative;width:40px;height:40px;background:transparent;border:0;box-shadow:none;color:var(--ink)}
 .ctitle a.back:active{background:var(--card2)}
+/* פס מתחת לשורת הסטטוס באייפון: כשגוללים, תוכן לא עובר מתחת לשעה/סוללה (viewport-fit=cover). מסכי hero נשארים מלאים כשלא גוללים */
+body::before{content:"";position:fixed;top:0;left:0;right:0;height:var(--safe-t);background:var(--bg);z-index:6;pointer-events:none;opacity:0;transition:opacity .15s}
+body.scrl::before{opacity:1}
 
 
 /* --- משיכה לרענון --- */
