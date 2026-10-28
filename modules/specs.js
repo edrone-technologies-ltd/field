@@ -23,6 +23,8 @@ const AIR = ['פתוח', 'נדרש תיאום', 'מוגבל'];
 const FACES = ['צפון', 'מזרח', 'דרום', 'מערב'];
 const WINDOW = ['רגיל', 'רק בוקר', 'רק אחה״צ', 'אחרי שעות פעילות'];
 const fmtD = v => v ? `${nf(v)} ${v === 1 ? 'יום' : 'ימים'}` : 'ימים?';
+const HEB = 'אבגדהוזחטיכלמנסעפצקרשת';
+export const optLabel = i => `אפשרות ${HEB[i] || i + 1}׳`;   // אפשרויות הצעה: א׳ = ההצעה הבסיסית
 const STAT = { new: ['', 'לא מולא'], draft: ['warn', 'טיוטה'], done: ['ok', 'הושלם'] };
 
 // ---------- נתונים (עם מטמון לעבודה בלי קליטה) ----------
@@ -180,7 +182,7 @@ function bindSiteTools(s, opts = {}) {
       });
     }
     if (k === 'task') return (await import('./tasks.js')).newTask({ site: s, title: s.kind === 'lead' ? `ליצור קשר${s.contact_name ? ' עם ' + s.contact_name : ''} ולתאם פגישת אפיון` : '' });
-    if (k === 'price') sheet(`<div class="card" id="price"></div><button class="btn ghost block" data-close>סגירה</button>`, () => priceCard(s, opts.days));
+    if (k === 'price') sheet(`<div class="card" id="price"></div><button class="btn ghost block" data-close>סגירה</button>`, () => priceCard(s, opts.days, opts.opts));
   });
 }
 
@@ -280,7 +282,17 @@ export function estimate(P, days, km, margin) {
   const cost = daily * days + travel;
   return { daily, travel, far, cost, price: cost / (1 - margin / 100) };
 }
-async function priceCard(s, days) {
+// אפשרויות הצעה באתר: שורה לכל אפשרות (א׳ = הבסיס). ימי האתר לאפשרות = שאר המבנים לפי הבסיס + המבנה הזה לפי האפשרות
+function siteOpts(s, siteDays) {
+  const many = s.buildings.length > 1;
+  return s.buildings.flatMap(b => {
+    const live = (Array.isArray(b.spec?.variants) ? b.spec.variants : []).filter(v => !v.archived); if (!live.length) return [];
+    const bd = Number(b.spec.days_expected || 0), pre = many ? b.name + ' · ' : '';
+    const vd = v => Number(v.days ?? (v.facade_days || []).reduce((t, x) => t + (Number(x.d) || 0), 0)) || 0;
+    return [{ l: pre + optLabel(0) + (b.spec.base_name ? ' · ' + b.spec.base_name : ''), d: bd, site: siteDays }, ...live.map((v, i) => ({ l: pre + optLabel(i + 1) + (v.name ? ' · ' + v.name : ''), d: vd(v), site: siteDays - bd + vd(v) }))];
+  });
+}
+async function priceCard(s, days, opts = []) {
   const box = $('#price'); if (!box) return;
   const { data } = await sb.from('pricing_params').select('key, value');
   if (!data?.length) { box.remove(); return; }
@@ -294,7 +306,8 @@ async function priceCard(s, days) {
     box.innerHTML = `<div class="row"><span class="mic">${icon('cash', 19)}</span><span class="grow"><b>הערכת מחיר</b><small class="muted">${nf(days)} ימים · ${Math.round(d.km)} ק״מ מב״ש${d.est ? ' (משוער)' : ''}${e.far ? ' · כולל לינה' : ''}</small></span></div>
       <div class="kpis"><div class="kpi"><b>₪${nf(Math.round(e.price))}</b><span>מחיר לפני מע״מ</span></div><div class="kpi"><b>₪${nf(Math.round(e.cost))}</b><span>עלות מלאה</span></div><div class="kpi"><b>₪${nf(Math.round(e.price / days))}</b><span>ליום</span></div></div>
       <div class="row pmargin"><small class="grow muted">מרווח</small><div class="stepper"><button type="button" data-m="-5">−</button><b class="sval">${m}%</b><button type="button" data-m="5">+</button></div></div>
-      <small class="muted">יום ₪${nf(Math.round(e.daily))} · נסיעה${e.far ? '+לינה' : ''} ₪${nf(Math.round(e.travel))}</small>`;
+      <small class="muted">יום ₪${nf(Math.round(e.daily))} · נסיעה${e.far ? '+לינה' : ''} ₪${nf(Math.round(e.travel))}</small>
+      ${opts.length ? `<div class="list optsum">${opts.map(o => { const od = Math.ceil(o.site - 1e-3); return `<div class="lrow optrow"><span class="grow">${esc(o.l)}<small class="muted"> · ${fmtD(od)}</small></span><b>${od > 0 ? '₪' + nf(Math.round(estimate(P, od, d.km, m).price)) : '—'}</b></div>`; }).join('')}</div>` : ''}`;
     $$('[data-m]', box).forEach(b => b.onclick = () => { m = Math.min(80, Math.max(0, m + Number(b.dataset.m))); draw(); });
   };
   draw();
@@ -308,15 +321,17 @@ export async function renderSite(el, slug, tab = 'b') {
   const n = s.buildings.length, done = s.buildings.filter(b => b.spec?.status === 'done').length;
   const days = s.buildings.reduce((t, b) => t + Number(b.spec?.days_expected || 0), 0);
   const thumbs = await signedUrls('plans', s.buildings.map(b => b.plan_images[0]?.storage_path).filter(Boolean));
+  const opts = siteOpts(s, days);
   el.innerHTML = `<header class="phead">${backBtn('#/specs')}<h1 class="grow">${esc(s.name)}</h1>${s.classification === 'restricted' ? '<span class="pill warn">אתר מוגבל</span>' : ''}</header>
     <div id="sctc"></div>
     ${siteTools(s, { price: true, days: Math.ceil(days - 1e-3) })}
     <div class="kpis"><div class="kpi"><b>${done}/${n}</b><span>מבנים הושלמו</span></div><div class="kpi"><b>${days ? nf(Math.ceil(days - 1e-3)) : '—'}</b><span>ימי עבודה${days % 1 ? ` (${nf(days)} עוגל)` : ''}</span></div>
       ${(a => a ? `<div class="kpi"><b>${nf(a)}</b><span>מ״ר לפי התכנית</span></div>` : `<div class="kpi"><b>${s.buildings.length - done}</b><span>נשארו לאפיון</span></div>`)(s.buildings.reduce((t, b) => t + Number(b.facade_area_m2 || 0), 0))}</div>
+    ${opts.length ? `<div class="menu optsum">${opts.map(o => `<div class="lrow optrow"><span class="grow">${esc(o.l)}</span><b>${fmtD(o.d)}</b></div>`).join('')}</div>` : ''}
     <div class="sigline" id="sig"></div>
     <div class="tabs" role="tablist"><button role="tab" aria-selected="${tab === 'b'}" data-t="b">מבנים</button><button role="tab" aria-selected="${tab === 'c'}" data-t="c">צ׳אט אפיון</button></div>
     <div id="tabbody"></div>`;
-  bindCopy(el); bindSiteTools(s, { days: Math.ceil(days - 1e-3) });
+  bindCopy(el); bindSiteTools(s, { days: Math.ceil(days - 1e-3), opts });
   import('../lib/contacts.js').then(async m => { await m.renderContacts($('#sctc'), { siteId: s.id, clientId: s.client_id, org: s.name, empty: s.contact_name || s.contact_phone ? contactCard(s.contact_name, s.contact_phone) : '' }); const c = $('#sctc'); if (c) bindCopy(c); });
   import('../lib/audit.js').then(m => m.signature($('#sig'), { site_id: s.id }));
   $$('.tabs button', el).forEach(b => b.onclick = () => replaceHash(`#/site/${slug}${b.dataset.t === 'c' ? '/chat' : ''}`));
@@ -372,8 +387,16 @@ export async function renderBuilding(el, slug, bid) {
   const titleOf = k => FAC.find(f => f.id === k)?.title || (FACES.includes(k) ? 'חזית ' + k : 'חזית מצילום');
   const dirOfKey = k => FAC.find(f => f.id === k)?.dir || FD.get(k)?.dir || (FACES.includes(k) ? k : null);
   const counter = k => `<div class="fcount${fget(k) ? ' set' : ''}" data-fk="${esc(k)}"><button type="button" data-d="-0.5" aria-label="פחות">−</button><b>${fmtD(fget(k))}</b><button type="button" data-d="0.5" aria-label="יותר">+</button></div>`;
-  const dirChips = k => `<div class="fdir" data-fk="${esc(k)}">${FACES.map(f => `<button type="button" data-v="${f}" aria-pressed="${FD.get(k)?.dir === f}">${f}</button>`).join('')}</div>`;
+  // כיוון של תמונת חזית: תווית קטנה (לא לשוניות). לחיצה פותחת בחירה — רק למי שעורך
+  const ARW = { 'צפון': '↑', 'מזרח': '→', 'דרום': '↓', 'מערב': '←' };
+  const dirTxt = d => d ? `<span class="ar" aria-hidden="true">${ARW[d]}</span>${d}` : 'כיוון?';
+  const dirTag = k => { const d = FD.get(k)?.dir;
+    return editable ? `<button type="button" class="ftag${d ? '' : ' none'}" data-tk="${esc(k)}" aria-label="כיוון החזית: ${d || 'לא סומן'}"><span>${dirTxt(d)}</span></button>`
+      : d ? `<span class="ftag ro"><span>${dirTxt(d)}</span></span>` : ''; };
   const one = s.kind === 'lead' && s.buildings.length === 1;
+  // אפשרויות הצעה (specs.variants, 154): ההצעה הבסיסית = א׳; כל אפשרות = ימים לפי חזית + הערות. לפני המיגרציה — לא מוצג ולא נשלח
+  const VARS = 'variants' in spec, BASEN = 'base_name' in spec;   // base_name = שם לאפשרות א׳ (154)
+  const V = (Array.isArray(spec.variants) ? spec.variants : []).map(v => ({ ...v, facade_days: (v.facade_days || []).map(x => ({ ...x })) }));
   // ברירות מחדל מההיקף בליד: "מבנים A+B+C" / "3 מבנים" → יצירת המבנים בלחיצה; "15 קומות" → מילוי מראש (לא נשמר עד שמירה)
   const scope = one ? String(s.scope_text || '') : '';
   const bl = scope.match(/(?:מבנים|בניינים)\s*:?\s*([A-Za-zא-ת0-9]{1,2}(?![A-Za-zא-ת0-9])(?:\s*[+,\/&]\s*[A-Za-zא-ת0-9]{1,2}(?![A-Za-zא-ת0-9]))+)/);
@@ -398,7 +421,7 @@ export async function renderBuilding(el, slug, bid) {
     ${b.plan_images.length ? `<h3 class="sh">${b.plan_source === 'plans' ? 'החזיתות מהתכנית' : 'מיקום בסקיצה'}</h3>
       <div class="facades">${b.plan_images.map((p, i) => `<div class="fc"><button class="fcimg" data-i="${i}"><img loading="lazy" src="${esc(plans[p.storage_path])}" alt="${esc(p.title)}"></button><div><b>${esc(p.title)}</b>${esc(p.dims_text || '')}${p.area_m2 ? ' · ' + nf(p.area_m2) + ' מ״ר' : ''}</div>${FAC.some(f => f.id === p.id) ? counter(p.id) : ''}</div>`).join('')}</div>` : ''}
     ${!imgs.length && FACON ? `<h3 class="sh">ימים לפי חזית</h3>
-      <div class="facades" id="facs"></div>` : ''}
+      <div class="fnav" id="fnav" hidden></div><div class="facades" id="facs"></div>` : ''}
     <fieldset class="fset" ${editable ? '' : 'disabled'}>
     <div class="sec"><h3>הערכת ביצוע</h3>
       <div class="field">קומות במבנה
@@ -407,6 +430,7 @@ export async function renderBuilding(el, slug, bid) {
       <div class="field">ימי עבודה צפויים למבנה<small id="dsrc"></small>
         <div class="stepper"><button type="button" id="dm">−</button><input class="days grow" id="days" type="number" inputmode="decimal" step="0.5" min="0" value="${esc(form.days_expected ?? '')}"><button type="button" id="dp">+</button></div></div>
       <div class="small muted" id="rate"></div>
+      ${VARS ? '<div class="opts" id="opts"></div>' : ''}
       <div class="field">שעות עבודה באתר ${chips('work_window', WINDOW)}</div>
       <div class="field">שיטת ביצוע ${chips('method', METHOD)}</div>
       ${WASH ? `<div class="field">מתי נשטף לאחרונה ${chips('washed_last', WASHED)}</div>
@@ -472,7 +496,7 @@ export async function renderBuilding(el, slug, bid) {
   const days = $('#days');
   // בדיקת מציאות: קצב שנגזר מהמספרים של הסוקר עצמו (שטח ÷ ימים) — לא מספר מומצא
   const rate = () => { const a = Number(b.facade_area_m2 || form.area_m2), d = Number(days.value); $('#rate').textContent = a && d ? `≈ ${nf(Math.round(a / d))} מ״ר חזית ליום עבודה` : ''; ready(); };
-  days.oninput = () => { set('days_expected', days.value === '' ? null : Number(days.value)); rate(); }; rate();
+  days.oninput = () => { set('days_expected', days.value === '' ? null : Number(days.value)); rate(); optA(); }; rate();
   // מונה ימים על כל חזית: הסה״כ למבנה = סכום החזיתות (כשסופרים לפי חזיתות, הסה״כ נעול)
   const syncTotal = (init = false) => {
     const vals = [...FD.values()].map(x => Number(x.d)).filter(v => v > 0), sum = vals.reduce((t, v) => t + v, 0);
@@ -483,6 +507,7 @@ export async function renderBuilding(el, slug, bid) {
     form.facades = vals.length && dirs.length ? [...new Set(dirs)] : null;
     // נשמר כמערך מסודר לפי סדר הכרטיסים, עם כותרת וכיוון — מנוע התכנית קורא אותו כמו שהוא
     form.facade_days = [...FD.values()].filter(x => x.d > 0 || x.dir).map(x => ({ k: x.k, t: titleOf(x.k), dir: dirOfKey(x.k), d: x.d || 0 }));
+    optA();
   };
   const bindFac = (root, onDir) => {
     $$('.fcount', root).forEach(c => $$('button', c).forEach(btn => btn.onclick = e => {
@@ -491,10 +516,18 @@ export async function renderBuilding(el, slug, bid) {
       if (v) FD.set(k, { ...(FD.get(k) || { k }), d: v }); else if (FD.has(k)) FD.get(k).d = 0;
       $('b', c).textContent = fmtD(v); c.classList.toggle('set', v > 0); dirty = true; syncTotal(); auto(); onDir?.();
     }));
-    $$('.fdir', root).forEach(c => $$('button', c).forEach(btn => btn.onclick = () => {
-      if (!editable) return; const k = c.dataset.fk; FD.set(k, { ...(FD.get(k) || { k, d: 0 }), dir: btn.dataset.v });
-      $$('button', c).forEach(x => x.setAttribute('aria-pressed', x === btn)); dirty = true; syncTotal(); auto(); onDir?.();
-    }));
+    $$('.ftag[data-tk]', root).forEach(t => t.onclick = () => pickDir(t.dataset.tk, onDir));
+  };
+  // בחירת כיוון בחלון. אפיון שהושלם: הבחירה נעולה עד לחיצה על "עריכה" — צפייה לא משנה בטעות
+  const pickDir = (k, onDir) => {
+    if (!editable) return;
+    const cur = FD.get(k)?.dir, lock = spec.status === 'done';
+    sheet(`<h3>כיוון החזית</h3><div class="dirpick">${FACES.map(f => `<button type="button" class="chip" data-v="${f}" aria-pressed="${cur === f}" ${lock ? 'disabled' : ''}><span class="ar" aria-hidden="true">${ARW[f]}</span>${f}</button>`).join('')}</div>
+      ${lock ? `<button type="button" class="btn block" id="dpe">${icon('pen', 18)} עריכה</button>` : ''}<button type="button" class="btn ghost block" data-close>סגירה</button>`, (sh, close) => {
+      const e = $('#dpe', sh); if (e) e.onclick = () => { $$('.dirpick button', sh).forEach(x => x.disabled = false); e.remove(); };
+      $$('.dirpick button', sh).forEach(x => x.onclick = () => { close(); if (x.dataset.v === cur) return;
+        FD.set(k, { ...(FD.get(k) || { k, d: 0 }), dir: x.dataset.v }); dirty = true; syncTotal(); auto(); onDir?.(); });
+    });
   };
   bindFac(el); syncTotal(true);
   // תמונות חזית של הסוקר (כולל ממתינות בתור) + כרטיסי מצפן כשאין תמונות
@@ -510,10 +543,29 @@ export async function renderBuilding(el, slug, bid) {
     const covered = () => new Set(cards.map(c => FD.get(c.id)?.dir).filter(Boolean)), cv = covered();
     const hideC = (f, cs) => cs.has(f) && !(fget(f) > 0);
     box.innerHTML = (editable ? `<label class="fc addfc">${icon('plus', 22)}<b>צילום חזית</b><input type="file" accept="image/*" capture="environment" multiple></label>` : '')
-      + cards.map(c => `<div class="fc"><button class="fcimg" type="button" data-z="${esc(c.full || c.src)}"><img src="${esc(c.src)}" data-full="${esc(c.full || c.src)}" alt=""></button>${dirChips(c.id)}${counter(c.id)}</div>`).join('')
+      + cards.map(c => `<div class="fc" data-pk="${esc(c.id)}"><button class="fcimg" type="button" data-z="${esc(c.id)}"><img src="${esc(c.src)}" data-full="${esc(c.full || c.src)}" alt=""></button>${dirTag(c.id)}${counter(c.id)}</div>`).join('')
       + FACES.map(f => `<div class="fc compass" data-cf="${esc(f)}" ${hideC(f, cv) ? 'hidden' : ''}><div class="cmp">${esc(f)}</div><div><b>חזית ${esc(f)}</b></div>${counter(f)}</div>`).join('');
-    $$('[data-z]', box).forEach(i => i.onclick = () => zoom(i.dataset.z, b.name));
-    bindFac(box, () => { const c2 = covered(); $$('[data-cf]', box).forEach(x => x.hidden = hideC(x.dataset.cf, c2)); });
+    // הגדלה = גלריה של תמונות החזית בלבד, לפי סדר הרכבת, עם הכיוון בכותרת
+    $$('[data-z]', box).forEach(i => i.onclick = () => {
+      const g = cards.map(c => ({ src: c.full || c.src, title: FD.get(c.id)?.dir ? 'חזית ' + FD.get(c.id).dir : b.name })), k = cards.findIndex(c => c.id === i.dataset.z);
+      zoom(g[k].src, g[k].title, g); });
+    // ניווט לפי כיוון מעל הרכבת: גלילה לתמונה הראשונה של הכיוון; לחיצה חוזרת = הבאה באותו כיוון. לא כותב כלום
+    let at = { f: null, i: -1 };
+    const drawNav = () => { const nb = $('#fnav'); if (!nb) return;
+      const of = f => cards.filter(c => FD.get(c.id)?.dir === f);
+      nb.hidden = cards.length < 2;
+      nb.innerHTML = FACES.map(f => { const n = of(f).length; return `<button type="button" data-nf="${f}" ${n ? '' : 'disabled'} aria-label="${f}: ${n} תמונות"><span>${f}</span><span class="n">${n}</span></button>`; }).join('');
+      $$('[data-nf]', nb).forEach(x => x.onclick = () => { const f = x.dataset.nf, L = of(f); if (!L.length) return;
+        at = { f, i: at.f === f ? (at.i + 1) % L.length : 0 };
+        const card = box.querySelector(`[data-pk="${CSS.escape(L[at.i].id)}"]`); if (!card) return;
+        card.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest', inline: 'start' });
+        $$('.hl', box).forEach(c => c.classList.remove('hl')); void card.offsetWidth; card.classList.add('hl');
+        $$('[data-nf]', nb).forEach(y => y.setAttribute('aria-current', y === x)); });
+    };
+    drawNav();
+    bindFac(box, () => { const c2 = covered(); $$('[data-cf]', box).forEach(x => x.hidden = hideC(x.dataset.cf, c2));
+      $$('.ftag[data-tk]', box).forEach(t => { const d = FD.get(t.dataset.tk)?.dir; t.classList.toggle('none', !d); t.firstElementChild.innerHTML = dirTxt(d); t.setAttribute('aria-label', 'כיוון החזית: ' + (d || 'לא סומן')); });
+      drawNav(); });
     const inp = $('input[type=file]', box);
     if (inp) inp.onchange = async () => {
       for (const f of [...inp.files]) {
@@ -550,14 +602,66 @@ export async function renderBuilding(el, slug, bid) {
     c.setAttribute('aria-pressed', i < 0); if (c.dataset.opm === 'hazards') $('#obstBox').hidden = !a.length && !(form.obstacles_text || '').trim(); opsSet(); });
   // הקלטה קולית להערות (כשהדפדפן תומך) — מדברים, הטקסט נכנס לשדה
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (SR && editable) ['notes', 'highlights', 'obstacles_text'].forEach(k => {
-    const t = $('#' + k); if (!t) return;
+  const addMic = t => {
+    if (!SR || !editable || !t) return;
     const mic = document.createElement('button'); mic.type = 'button'; mic.className = 'chip sm vmic'; mic.innerHTML = icon('M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z M5 11a7 7 0 0 0 14 0 M12 18v3', 16); mic.setAttribute('aria-label', 'הקלטה');
     t.insertAdjacentElement('afterend', mic);
     mic.onclick = () => { try { const r = new SR(); r.lang = 'he-IL'; r.interimResults = false; mic.classList.add('on');
       r.onresult = e => { const x = [...e.results].map(z => z[0].transcript).join(' '); t.value = (t.value ? t.value.trimEnd() + ' ' : '') + x; t.oninput({ target: t }); };
       r.onend = () => mic.classList.remove('on'); r.onerror = () => { mic.classList.remove('on'); toast('ההקלטה לא זמינה כרגע'); }; r.start(); } catch { toast('ההקלטה לא זמינה כרגע'); } };
-  });
+  };
+  ['notes', 'highlights', 'obstacles_text'].forEach(k => addMic($('#' + k)));
+  // ---------- אפשרויות הצעה: "+ עוד אפשרות" משכפל את החלוקה לפי חזית; כל אפשרות נפתחת בלחיצה ----------
+  function optA() { const e = $('#optA .odays'); if (e) e.textContent = fmtD(Number(form.days_expected) || 0); }
+  function baseFacs() {   // החזיתות של ההצעה הבסיסית: מה שנספר + שאר הכיוונים שצולמו (ריקים); בלי כלום — 4 כיוונים
+    const on = [...FD.values()].filter(x => x.d > 0).map(x => ({ k: x.k, t: titleOf(x.k), dir: dirOfKey(x.k), d: x.d }));
+    if (imgs.length) return FAC.map(f => ({ k: f.id, t: f.title, dir: f.dir, d: fget(f.id) }));
+    const dirs = new Set([...FD.values()].map(x => dirOfKey(x.k)).filter(Boolean)), has = new Set(on.map(x => x.dir));
+    const rest = (dirs.size ? FACES.filter(f => dirs.has(f)) : on.length ? [] : FACES).filter(f => !has.has(f)).map(f => ({ k: f, t: 'חזית ' + f, dir: f, d: 0 }));
+    return [...on, ...rest];
+  }
+  const vfmt = d => d ? fmtD(d) : '—';
+  const vdays = v => v.facade_days.reduce((t, x) => t + (Number(x.d) || 0), 0);
+  const flab = x => /מצילום/.test(x.t || '') && x.dir ? 'חזית ' + x.dir : x.t || (x.dir ? 'חזית ' + x.dir : 'חזית');
+  const openV = new Set();
+  function drawOpts() {
+    const box = $('#opts'); if (!box) return;
+    const live = V.filter(v => !v.archived);
+    const aRow = `<span class="otag">${optLabel(0)}</span><span class="grow oname">${esc(form.base_name || '')}</span><b class="odays">${fmtD(Number(form.days_expected) || 0)}</b>`;
+    box.innerHTML = (!live.length ? '' : BASEN ? `<details class="fold opt" id="optA" ${openV.has('a') ? 'open' : ''}><summary>${aRow}</summary><input type="text" class="oin" maxlength="60" value="${esc(form.base_name || '')}" placeholder="שם, למשל: מזרח · רק זכוכיות" aria-label="שם האפשרות"></details>`
+      : `<div class="lrow optrow" id="optA">${aRow}</div>`)
+      + live.map((v, i) => `<details class="fold opt" data-vid="${esc(v.id)}" ${openV.has(v.id) ? 'open' : ''}><summary><span class="otag">${optLabel(i + 1)}</span><span class="grow oname">${esc(v.name || '')}</span><b class="odays">${vfmt(vdays(v))}</b></summary>
+        <input type="text" class="oin" maxlength="60" value="${esc(v.name || '')}" placeholder="שם, למשל: רק חזית מערב" aria-label="שם האפשרות">
+        <div class="ofacs">${v.facade_days.map((x, j) => `<div class="ofrow"><span class="grow">${esc(flab(x))}</span><div class="ostep${x.d > 0 ? ' set' : ''}" data-j="${j}"><button type="button" data-d="-0.5" aria-label="פחות">−</button><b>${x.d > 0 ? fmtD(x.d) : 'לא כלול'}</b><button type="button" data-d="0.5" aria-label="יותר">+</button></div></div>`).join('')}</div>
+        <textarea class="onotes" placeholder="הערות" aria-label="הערות">${esc(v.notes || '')}</textarea>
+        ${editable ? `<div class="row-btns"><button type="button" class="btn ghost" data-act="dup">${icon('plus', 16)} שכפול</button><button type="button" class="btn ghost" data-act="rm">הסרה</button></div>` : ''}</details>`).join('')
+      + (editable ? `<button type="button" class="btn ghost block addopt" id="addopt">${icon('plus', 18)} עוד אפשרות</button>` : '');
+    const touch = () => { dirty = true; auto(); };
+    const A = $('details#optA', box); if (A) { A.ontoggle = () => A.open ? openV.add('a') : openV.delete('a');
+      const ai = $('.oin', A); ai.oninput = () => { form.base_name = ai.value.trim() || null; $('.oname', A).textContent = form.base_name || ''; touch(); }; }
+    $$('details.opt[data-vid]', box).forEach(d => {
+      const v = V.find(x => x.id === d.dataset.vid);
+      d.ontoggle = () => d.open ? openV.add(v.id) : openV.delete(v.id);
+      const nm = $('.oin', d); nm.oninput = () => { v.name = nm.value.trim(); $('.oname', d).textContent = v.name; touch(); };
+      const nt = $('.onotes', d); nt.oninput = () => { v.notes = nt.value; touch(); }; addMic(nt);
+      $$('.ostep', d).forEach(c => $$('button', c).forEach(btn => btn.onclick = () => {
+        if (!editable) return; const x = v.facade_days[+c.dataset.j]; x.d = Math.max(0, (Number(x.d) || 0) + Number(btn.dataset.d));
+        $('b', c).textContent = x.d > 0 ? fmtD(x.d) : 'לא כלול'; c.classList.toggle('set', x.d > 0); v.days = vdays(v); $('.odays', d).textContent = vfmt(v.days); touch();
+      }));
+      $$('[data-act]', d).forEach(btn => btn.onclick = async () => {
+        if (btn.dataset.act === 'dup') { const c = { ...structuredClone(v), id: crypto.randomUUID() }; V.splice(V.indexOf(v) + 1, 0, c); openV.add(c.id); touch(); return drawOpts(); }
+        if (!(await confirmBox(`להסיר את ${optLabel(live.indexOf(v) + 1)}${v.name ? ' · ' + v.name : ''}?`, { ok: 'הסרה' }))) return;
+        v.archived = true; openV.delete(v.id); touch(); drawOpts();
+      });
+    });
+    const add = $('#addopt', box); if (add) add.onclick = () => {
+      const fd = baseFacs(), v = { id: crypto.randomUUID(), name: '', facade_days: fd, days: fd.reduce((t, x) => t + (Number(x.d) || 0), 0), notes: '', archived: false };
+      V.push(v); openV.add(v.id); touch(); drawOpts();
+      setTimeout(() => $(`details.opt[data-vid="${v.id}"] .oin`)?.focus(), 50);
+    };
+  }
+  if (VARS) drawOpts();
+
   // מה חסר כדי לסיים — פס התקדמות קטן בראש הטופס. לחיצה = קפיצה לשדה
   function ready() {
     const box = $('#ready'); if (!box) return;
@@ -606,6 +710,8 @@ export async function renderBuilding(el, slug, bid) {
     patch.hydrants = OPS.water === 'הידרנט'; patch.power = OPS.power === 'שקע באתר';
     patch.obstacles = OPS.hazards.length > 0 || !!(form.obstacles_text || '').trim();
     ['obstacles', 'docking', 'hydrants', 'power', 'secure_storage'].forEach(k => patch[k] = !!patch[k]);
+    if (VARS) patch.variants = V;
+    if (BASEN) patch.base_name = form.base_name || null;   // כולל אפשרויות שהוסרו (archived) — לא נמחק כלום
     if ('area_m2' in spec) patch.area_m2 = form.area_m2 ?? null;   // העמודה מ-088; לפני כן לא נשלחת
     patch.status = done ? 'done' : (spec.status === 'done' ? 'done' : 'draft');
     patch.surveyor_id = spec.surveyor_id || state.user.id;

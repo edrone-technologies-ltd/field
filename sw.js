@@ -1,6 +1,6 @@
 // Service worker: האפליקציה נפתחת גם בלי קליטה, ותמונות שכבר נצפו זמינות מהטלפון.
-const VERSION = 'edrone-field-v137';
-const SHELL = ['./', 'index.html', 'tour/ops.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png', 'lib/audit.js', 'lib/avail.js', 'lib/bulk.js', 'lib/contacts.js', 'lib/core.js', 'lib/daytype.js', 'lib/issue.js', 'lib/labor.js', 'lib/night.js', 'lib/pay.js', 'lib/photo.js', 'lib/service.js', 'lib/share.js', 'lib/store.js', 'lib/sun.js', 'lib/track.js', 'lib/viewer.js', 'lib/views.js', 'lib/ws.js', 'lib/wx.js', 'modules/activity.js', 'modules/admin.js', 'modules/attendance.js', 'modules/attention.js', 'modules/chat.js', 'modules/clientreport.js', 'modules/clients.js', 'modules/closereq.js', 'modules/compliance.js', 'modules/costs.js', 'modules/dayadmin.js', 'modules/decks.js', 'modules/desk.js', 'modules/dispatch.js', 'modules/equipment.js', 'modules/expenses.js', 'modules/files.js', 'modules/home.js', 'modules/inbox.js', 'modules/knowledge.js', 'modules/live.js', 'modules/login.js', 'modules/master.js', 'modules/news.js', 'modules/onboarding.js', 'modules/ops.js', 'modules/pfiles.js', 'modules/plan.js', 'modules/prestart.js', 'modules/projects.js', 'modules/purchase.js', 'modules/repairs.js', 'modules/reports.js', 'modules/signoff.js', 'modules/specs.js', 'modules/staff.js', 'modules/tasks.js', 'modules/today.js', 'modules/tour.js', 'modules/visits.js', 'modules/weather.js', 'modules/welcome.js', 'modules/wizard.js', 'modules/zones.js'];
+const VERSION = 'edrone-field-v138';
+const SHELL = ['./', 'index.html', 'tour/ops.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png', 'lib/audit.js', 'lib/avail.js', 'lib/bulk.js', 'lib/contacts.js', 'lib/core.js', 'lib/daytype.js', 'lib/issue.js', 'lib/labor.js', 'lib/night.js', 'lib/pay.js', 'lib/photo.js', 'lib/report.js', 'lib/service.js', 'lib/share.js', 'lib/store.js', 'lib/sun.js', 'lib/track.js', 'lib/viewer.js', 'lib/views.js', 'lib/ws.js', 'lib/wx.js', 'modules/activity.js', 'modules/admin.js', 'modules/appreports.js', 'modules/attendance.js', 'modules/attention.js', 'modules/chat.js', 'modules/clientreport.js', 'modules/clients.js', 'modules/closereq.js', 'modules/compliance.js', 'modules/costs.js', 'modules/dayadmin.js', 'modules/decks.js', 'modules/desk.js', 'modules/dispatch.js', 'modules/equipment.js', 'modules/expenses.js', 'modules/files.js', 'modules/home.js', 'modules/inbox.js', 'modules/knowledge.js', 'modules/live.js', 'modules/login.js', 'modules/master.js', 'modules/news.js', 'modules/onboarding.js', 'modules/ops.js', 'modules/pfiles.js', 'modules/plan.js', 'modules/prestart.js', 'modules/projects.js', 'modules/purchase.js', 'modules/repairs.js', 'modules/reports.js', 'modules/signoff.js', 'modules/specs.js', 'modules/staff.js', 'modules/tasks.js', 'modules/today.js', 'modules/tour.js', 'modules/visits.js', 'modules/weather.js', 'modules/welcome.js', 'modules/wizard.js', 'modules/zones.js'];
 
 // קבצי הגרסה נשמרים בהתקנה ישירות מהשרת (cache: 'reload' — לא מהמטמון של הדפדפן), כך שכל הגרסה עקבית
 self.addEventListener('install', e => { e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting())); });
@@ -141,12 +141,12 @@ async function replay() {
     };
     // מעל 1MB — בהמשכים (TUS), ממשיך מהחלק האחרון שהגיע (גם אם האפליקציה התחילה את ההעלאה)
     const T = { 'tus-resumable': '1.0.0' }, CH = 512 << 10, b64 = v => btoa(unescape(encodeURIComponent(v)));
-    const tus = async (it, path, blob, type) => {
+    const tus = async (it, path, blob, type, bucket = 'field') => {
       let url = it.tus?.path === path && Date.now() - it.tus.at < 20 * 36e5 ? it.tus.url : null, off = 0;
       if (url) { const r = await go(url, { method: 'HEAD', headers: T }); if (r.ok) off = +r.headers.get('upload-offset') || 0; else if (r.status >= 500) throw new Error('head ' + r.status); else url = null; }
       if (!url) {
         const r = await go(A.url + '/storage/v1/upload/resumable', { method: 'POST', headers: { ...T, 'upload-length': String(blob.size), 'x-upsert': 'false',
-          'upload-metadata': `bucketName ${b64('field')},objectName ${b64(path)},contentType ${b64(type)},cacheControl ${b64('3600')}` } });
+          'upload-metadata': `bucketName ${b64(bucket)},objectName ${b64(path)},contentType ${b64(type)},cacheControl ${b64('3600')}` } });
         if (r.status === 409) return; if (!r.ok) throw new Error('upload ' + r.status);
         url = new URL(r.headers.get('location'), A.url).href; it.tus = { url, path, at: Date.now() };
         await itx(d, 'outbox', 'readwrite', st => st.put(it));
@@ -159,8 +159,9 @@ async function replay() {
       }
     };
     const upload = async (path, blob, type, it) => {
-      if (it && blob.size > 1 << 20) return tus(it, path, blob, type);
-      const u = A.url + '/storage/v1/object/field/' + path.split('/').map(encodeURIComponent).join('/');
+      const bucket = it?.bucket || 'field';
+      if (it && blob.size > 1 << 20) return tus(it, path, blob, type, bucket);
+      const u = A.url + '/storage/v1/object/' + encodeURIComponent(bucket) + '/' + path.split('/').map(encodeURIComponent).join('/');
       let r = await go(u, { method: 'POST', headers: { 'content-type': type, 'x-upsert': 'true' }, body: blob }, blob.size);
       if (!r.ok && r.status !== 409) { const t = await r.text(); if (/exist|duplicate/i.test(t)) return; if (/row-level|security|policy|unauthorized/i.test(t) || r.status === 403) r = await go(u, { method: 'POST', headers: { 'content-type': type }, body: blob }, blob.size); else throw new Error(t); }
       if (!r.ok && r.status !== 409) { const t = await r.text(); if (!/exist|duplicate/i.test(t)) throw new Error(t); }
@@ -176,6 +177,7 @@ async function replay() {
       .sort((a, b) => a.at - b.at || (a.n || 0) - (b.n || 0)).sort((a, b) => (a.kind === 'photo') - (b.kind === 'photo'));
     const failed = new Set(), keep = it => itx(d, 'outbox', 'readwrite', st => st.put({ ...it, error: 'אין קליטה' })).catch(() => {});
     for (const it of all) {
+      if (it.soft) continue;   // דיווח על בעיה (lib/report.js) — רק האפליקציה שולחת; לא עוצר את שאר התור
       if (qKeys(it).some(k => failed.has(k))) continue;
       if (it.stuck || it.tries) { failed.add(qKeys(it)[0]); continue; }   // נכשל בעבר — האפליקציה מטפלת (ומה שאחריו על אותה רשומה מחכה)
       if (it.kind === 'update') {

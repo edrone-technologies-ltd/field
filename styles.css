@@ -540,8 +540,18 @@ button.rep{width:100%;font:inherit;text-align:right;cursor:pointer;color:inherit
 .fcount button{width:44px;height:40px;border-radius:10px;border:0;background:var(--card);font-size:1.3rem;font-weight:700;color:var(--ink)}
 .fcount b{font-size:1rem;color:var(--muted)} .fcount.set{border-color:var(--lime);background:color-mix(in srgb,var(--lime) 14%,var(--card))} .fcount.set b{color:var(--ink)}
 .fc.compass{flex-basis:46%} .fc .cmp{display:flex;align-items:center;justify-content:center;aspect-ratio:2/1;font:800 1.4rem Rubik,sans-serif;color:var(--muted);background:var(--bg)}
-.fdir{display:flex;gap:4px;margin:0 10px 6px} .fdir button{flex:1;padding:6px 0;border-radius:9px;border:1px solid var(--line);background:var(--card);font-size:.8rem;color:var(--muted)}
-.fdir button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+/* ניווט לפי כיוון מעל רכבת החזיתות (לא כותב) · תווית כיוון בכרטיס (לחיצה = בחירה, רק בעריכה) */
+.fnav{display:flex;gap:6px;margin-bottom:8px}
+.fnav button{flex:1;min-width:0;min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:.9rem;font-weight:700}
+.fnav button .n{min-width:20px;height:20px;padding:0 5px;border-radius:99px;background:var(--bg);color:var(--muted);font:700 .75rem var(--f-mono);direction:ltr;unicode-bidi:isolate;display:grid;place-items:center}
+.fnav button:disabled{opacity:.4} .fnav button[aria-current="true"]{border-color:var(--ink)} .fnav button[aria-current="true"] .n{background:var(--ink);color:var(--bg)}
+.fc.hl{animation:fchl 1.2s ease-out} @keyframes fchl{0%,40%{box-shadow:0 0 0 3px var(--lime)}100%{box-shadow:0 0 0 0 transparent}}
+.ftag{display:flex;align-items:center;min-height:44px;margin:0 10px;padding:0;border:0;background:none;color:var(--ink);font-size:.85rem;font-weight:700}
+.ftag>span{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:99px;background:var(--bg);border:1px solid var(--line)}
+button.ftag>span::after{content:"";width:6px;height:6px;margin-inline-start:2px;border:solid var(--muted);border-width:0 1.5px 1.5px 0;transform:translateY(-2px) rotate(45deg)}
+.ftag.none{color:var(--muted)} .ftag.none>span{border-style:dashed} .ftag.ro{min-height:36px}
+.ftag .ar,.dirpick .ar{font-family:var(--f-mono);color:var(--muted)}
+.dirpick{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 12px} .dirpick .chip{min-height:52px;justify-content:center;gap:8px;font-size:1rem}
 .fc.addfc{flex-basis:46%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:150px;border-style:dashed;cursor:pointer;position:relative;color:var(--muted)}
 .fc.addfc input{position:absolute;inset:0;opacity:0} .fc.addfc small{font-size:.75rem}
 .sunorder{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0} .sunorder span{flex:1 1 40%;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line)} .sunorder b{display:block} .sunorder small{color:var(--muted);font-size:.78rem}
@@ -670,7 +680,7 @@ a.promo{text-decoration:none;color:inherit} a.promo b{color:var(--ink)} a.promo 
 .folder small{color:var(--muted);font-size:.78rem;line-height:1.3}
 
 
-.fcount{position:absolute;bottom:8px;inset-inline-end:8px;min-width:26px;height:26px;padding:0 8px;border-radius:99px;background:rgba(0,0,0,.55);color:#fff;font-size:.78rem;font-weight:800;display:grid;place-items:center}
+.folder .fcount{position:absolute;bottom:8px;inset-inline-end:8px;min-width:26px;height:26px;padding:0 8px;border-radius:99px;background:rgba(0,0,0,.55);color:#fff;font-size:.78rem;font-weight:800;display:grid;place-items:center}
 
 /* דוח ללקוח במסך טלפון: זורם לרוחב המסך (בלי כיווץ A4 ובלי חללים ריקים). ההדפסה/PDF נשארת A4 מדויק */
 @media screen and (max-width:800px){
@@ -2754,3 +2764,45 @@ a.alert{color:inherit;text-decoration:none} a.alert .chev{flex:none}
 .mreport .mr-part{margin-top:4mm;padding:3mm 4mm;border-inline-start:3px solid #D08A1E;background:#FFF8EC;border-radius:2mm;font-size:10pt} .mreport .mr-part small{display:block;color:#6B7280;font-size:9pt;margin-top:1mm}
 .mreport .mr-more{margin:0 0 4mm} .mreport .mr-more a{color:inherit;text-decoration:underline;text-underline-offset:2px} .mreport .mr-more a b{color:#1F2937}
 .pdf-render .mreport .mr-lessons{border:0;padding:0} .pdf-render .mreport .mr-ph{display:none}
+
+/* אפשרויות הצעה באפיון (specs.variants): א׳ = הבסיס, כל אפשרות כרטיס מקופל */
+.opts{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.optrow{cursor:default;padding:9px 12px;min-height:44px} .optrow b{flex:none;font-variant-numeric:tabular-nums}
+.otag{flex:none;font-size:.78rem;font-weight:700;padding:3px 9px;border-radius:99px;background:var(--limebg);color:var(--ink);white-space:nowrap}
+.opt summary .oname{min-width:0;font-weight:600;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.3}
+.opt summary .odays{flex:none;font-variant-numeric:tabular-nums}
+.opt[open]{display:flex;flex-direction:column;gap:10px} .opt[open] summary{margin-bottom:0}
+.opt .oin,.opt .onotes{width:100%}
+.opt .onotes{min-height:72px}
+.ofacs{display:flex;flex-direction:column;gap:6px}
+.ofrow{display:flex;align-items:center;gap:10px}
+.ostep{flex:none;display:flex;align-items:center;gap:6px;padding:3px;border-radius:12px;background:var(--bg);border:1px solid var(--line)}
+.ostep button{width:44px;height:40px;border-radius:10px;border:0;background:var(--card);font-size:1.3rem;font-weight:700;color:var(--ink)}
+.ostep b{min-width:4.6em;text-align:center;font-size:.92rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.ostep.set{border-color:var(--lime);background:color-mix(in srgb,var(--lime) 14%,var(--card))} .ostep.set b{color:var(--ink)}
+.opt .row-btns .btn{flex:1}
+.addopt{margin-top:2px}
+.optsum{margin-top:10px} .optsum .lrow{border-radius:0;border:0;border-bottom:1px solid var(--line)} .optsum .lrow:last-child{border-bottom:0}
+.list.optsum{gap:0;border:1px solid var(--line);border-radius:14px;overflow:hidden} .list.optsum small{display:inline;white-space:nowrap}
+/* הערכת מחיר: שלושת הכרטיסים נכנסים ב-390 (המספר מתכווץ, לא נחתך) */
+#price .kpis{grid-template-columns:repeat(3,minmax(0,1fr))} #price .kpi{min-width:0;padding-inline:10px}
+#price .kpi b{font-size:clamp(.92rem,3.9vw,1.35rem);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#price .row .grow>b{display:block}
+/* דיווח על בעיה (lib/report.js): כפתור קטן בתחתית החלון של +, וחלון עם צילום ממוזער ושורת טקסט */
+.rpbtn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:44px;margin-block-start:6px;padding:0;background:none;border:0;color:var(--muted);font:inherit;font-size:.86rem;cursor:pointer}
+.rpbtn svg{opacity:.75}
+.rp{display:grid;grid-template-columns:92px 1fr;gap:12px;align-items:stretch}
+.rp.noshot{grid-template-columns:1fr}
+.rp textarea{min-height:120px;height:100%;margin:0;resize:none}
+.rpshot{position:relative;align-self:start;width:100%;max-height:200px;border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--line);background:var(--card2)}
+.rpshot .skb{position:absolute;inset:0;border-radius:0}
+.rpshot img{width:100%;height:100%;object-fit:cover;object-position:top;display:block;cursor:zoom-in}
+.rpx{position:absolute;inset-block-start:0;inset-inline-end:0;width:44px;height:44px;display:grid;place-items:center;padding:0;background:none;border:0;color:#fff;cursor:pointer}
+.rpx svg{box-sizing:content-box;padding:4px;border-radius:50%;background:rgb(0 0 0 / .55)}
+.rpmono{font-family:var(--f-mono);direction:ltr;unicode-bidi:isolate;font-size:.92em}
+.rphead{align-items:flex-start}
+.rpthumb{width:56px;height:96px;flex:none;object-fit:cover;object-position:top;border-radius:var(--r-sm);border:1px solid var(--line);cursor:zoom-in}
+.rperr{margin:6px 0 0;padding:10px;max-height:220px;overflow:auto;border-radius:var(--r-sm);background:var(--card2);font:12px/1.5 var(--f-mono);white-space:pre-wrap;word-break:break-word;text-align:left}
+button.oops-home{margin-block-start:-12px;background:none;border:0;font:inherit;font-size:.9rem;color:var(--muted);text-decoration:underline;cursor:pointer;min-height:44px}
+.rpnote{display:block;margin-block:-4px 2px;font-size:.78rem;line-height:1.4;color:var(--muted)}
+body:has(.viewer) #sheet:has(#rp){z-index:30}   /* זום על צילום הדיווח — מעל החלון (המציג 60) */

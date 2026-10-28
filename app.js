@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, goUp, sheet, haptic, navDir, skeleton, freshReads, replaceHash } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, goUp, sheet, haptic, navDir, skeleton, freshReads, replaceHash, noteErr, noteRoute } from './lib/core.js';
 import { errText } from './lib/audit.js';
 import './lib/photo.js';   // בכל בחירת תמונה: צילום או מהגלריה
 
@@ -50,15 +50,20 @@ function nav(show, active = '') {
 // כפתור + : המקום היחיד ליצירת משהו חדש. רשת אחת, מילה אחת לכל פעולה; בתוך פרויקט — הדוח משויך אליו מראש
 const ADD = { daily: ['report', 'סיכום היום'], issue: ['alert', 'תקלה'], expense: ['receipt', 'הוצאה'], spec: ['clipboard', 'אפיון'], signoff: ['pen', 'החתמת לקוח'], visit: ['users', 'ביקור'], summary: ['activity', 'סיכום פרויקט'] };
 async function quickAdd() {
+  import('./lib/report.js').catch(() => {});   // מראש: דיווח על בעיה עובד גם בפעם הראשונה בלי קליטה (הספרייה עצמה נטענת בלחיצה)
   const { newReport, TYPES } = await import('./modules/reports.js');
   const pid = (location.hash.match(/^#\/p\/([0-9a-f-]{36})/) || [])[1] || null;
   const tiles = [...TYPES.filter(t => t.ok() && !(pid && t.noProject)).map(t => `<button class="ctile" data-k="${t.k}">${icon(ADD[t.k]?.[0] || t.ic, 24)}<b>${ADD[t.k]?.[1] || t.t}</b></button>`),
     `<a class="ctile" href="#/requests/new" data-close>${icon('send', 24)}<b>בקשה למשרד</b></a>`,
     can('purchase') && `<a class="ctile" href="#/purchase/new" data-close>${icon('cart', 24)}<b>רכש</b></a>`].filter(Boolean);
-  sheet(`<h3 class="sh">${pid ? 'חדש בפרויקט' : 'חדש'}</h3><div class="cgrid">${tiles.join('')}</div>`, (s, close) => {
+  sheet(`<h3 class="sh">${pid ? 'חדש בפרויקט' : 'חדש'}</h3><div class="cgrid">${tiles.join('')}</div>
+    <button class="rpbtn" id="rpopen">${icon('bug', 17)} בעיה באפליקציה</button>`, (s, close) => {
     $$('[data-k]', s).forEach(b => b.onclick = () => { close(); newReport(pid, [], b.dataset.k); });
+    $('#rpopen', s).onclick = () => { close(); report(); };
   });
 }
+// דיווח על בעיה: החלון של + נסגר לפני הצילום, כדי שהצילום יראה את המסך עצמו
+function report() { setTimeout(() => import('./lib/report.js').then(m => m.openReport()).catch(e => { noteErr(e); toast('לא נפתח — נסו שוב'); }), 200); }
 async function unread() {
   try {
     const { data } = await sb.rpc('my_inbox'); const n = (data || []).reduce((s, c) => s + (c.unread || 0), 0);
@@ -102,6 +107,7 @@ function renderMenu() {
       state.profile.role === 'admin' && ['#/decks', 'send', 'מצגות', 'מי פתח, מתי ובאילו שקפים'],
       state.profile.role === 'admin' && ['#/activity', 'clock', 'פעילות', 'מי מחובר ומה קורה'],
       state.profile.role === 'admin' && ['#/onboarding/launch', 'activity', 'השקה', 'מי נכנס, התקין והפעיל התראות'],
+      state.profile.role === 'admin' && ['#/admin/reports', 'bug', 'דיווחי תקלות', 'מה דווח מהאפליקציה'],
       can('admin') && ['#/admin', 'shield', 'הרשאות', 'צוות ותפקידים'],
     ]],
   ].map(([t, r]) => [t, r.filter(Boolean)]).filter(([, r]) => r.length);
@@ -250,7 +256,7 @@ async function route(ev) {
     if (ev !== REFRESH && WS.paneOnly(lastHash, c)) { ++navSeq; lastHash = c; return WS.paneUpdate(c); }
   }
   const my = ++navSeq;
-  const cur = location.hash || '#/', d = navDir(), prev = lastHash;
+  const cur = location.hash || '#/', d = navDir(), prev = lastHash; noteRoute(cur);
   snapSave(prev); slotSave(); slotWatch(cur.replace(/\/[0-9a-f-]{36}/g, '/:id') + '|' + (state.profile?.role || ''));
   // חזרה או מעבר בין לשוניות — אותו מקום גלילה; מסך חדש — מלמעלה
   const quiet = ev?.noAnim; if (quiet) freshReads();
@@ -262,7 +268,7 @@ async function route(ev) {
   clearTimeout(route.wd); route.wd = setTimeout(() => { if (my === navSeq && app.querySelector(':scope > .sk, :scope > .stack > .sk') && !app.querySelector('.oops')) app.insertAdjacentHTML('beforeend', oops('הטעינה לוקחת יותר מהרגיל', !navigator.onLine)); }, 15000);
   try { await routeInner(); } catch (e) {
     if (e?.name === 'StaleView' || my !== navSeq) return;
-    console.error(e);
+    console.error(e); noteErr(e, 'route');
     if (chunkErr(e)) return;
     app.innerHTML = oops('המסך לא נטען', !navigator.onLine);
   }
@@ -273,9 +279,9 @@ async function route(ev) {
 }
 // כרטיס תקלה ידידותי: בלי הודעת שגיאה טכנית, כפתור אחד שמנסה שוב באותו מסך
 function oops(t, off) {
-  return `<div class="oops" role="alert"><span class="oops-ic">${icon(off ? 'sync' : 'alert', 28)}</span><b>${off ? 'אין קליטה כרגע' : t}</b><button class="btn primary" data-retry>${icon('sync', 18)} לנסות שוב</button>${t !== 'המסך לא נטען' ? '' : '<a class="oops-home" href="#/">למסך הבית</a>'}</div>`;
+  return `<div class="oops" role="alert"><span class="oops-ic">${icon(off ? 'sync' : 'alert', 28)}</span><b>${off ? 'אין קליטה כרגע' : t}</b><button class="btn primary" data-retry>${icon('sync', 18)} לנסות שוב</button>${t !== 'המסך לא נטען' ? '' : `<a class="oops-home" href="#/">למסך הבית</a>${off ? '' : '<button class="oops-home" data-report>דיווח על הבעיה</button>'}`}</div>`;
 }
-app.addEventListener('click', e => { if (e.target.closest('[data-retry]')) { haptic('tap'); route(NOANIM); } });
+app.addEventListener('click', e => { if (e.target.closest('[data-retry]')) { haptic('tap'); route(NOANIM); } else if (e.target.closest('[data-report]')) { haptic('tap'); report(); } });
 // רטט קצר בבחירה: פעולה ראשית, לשונית, מקטע, צ׳יפ בחירה, מתג (אנדרואיד; באייפון אין API)
 document.addEventListener('click', e => { if (e.target.closest?.('.btn.primary,.tabs button,.seg button,.chip[aria-pressed],.sw,.wkd,.rdy[data-rdy]')) haptic('tap'); }, { passive: true });
 // קובץ מסך מגרסה קודמת לא נמצא (עדכון באמצע) — טעינה מחדש אחת, בלי מסך שגיאה
@@ -287,8 +293,8 @@ function chunkErr(e) {
 }
 // שגיאה שלא נתפסה בתוך מסך — אם המסך נשאר ריק (מסך לבן), מציגים כרטיס עם "לנסות שוב"
 const whiteGuard = () => setTimeout(() => { if (state.profile && !app.children.length) app.innerHTML = oops('המסך לא נטען', !navigator.onLine); }, 50);
-addEventListener('error', e => { if (e.error?.name === 'StaleView') { e.preventDefault(); return; } whiteGuard(); });
-addEventListener('unhandledrejection', e => { if (e.reason?.name === 'StaleView') { e.preventDefault(); return; } if (chunkErr(e.reason)) return; whiteGuard(); });
+addEventListener('error', e => { if (e.error?.name === 'StaleView') { e.preventDefault(); return; } if (e.error || e.message) noteErr(e.error || { message: e.message, stack: `${e.filename}:${e.lineno}:${e.colno}` }); whiteGuard(); });
+addEventListener('unhandledrejection', e => { if (e.reason?.name === 'StaleView') { e.preventDefault(); return; } noteErr(e.reason, 'promise'); if (chunkErr(e.reason)) return; whiteGuard(); });
 // מסך איטי שסיים אחרי שכבר עברו למסך אחר — לא דורס את המסך החדש. כל ניווט מקבל "חלון" משלו ל-#app;
 // כתיבה (innerHTML / הוספה) מחלון של ניווט קודם נעצרת בשקט (StaleView), והמסך הישן מפסיק באמצע
 let viewSeq = 0;
@@ -368,7 +374,8 @@ async function routeInner() {
     case 'specs': if (guard('specs')) return (await import('./modules/specs.js')).renderSites(app); return;
     case 'site': if (guard('specs')) return (await import('./modules/specs.js')).renderSite(app, h[1], h[2] === 'chat' ? 'c' : 'b'); return;
     case 'b': if (guard('specs')) return (await import('./modules/specs.js')).renderBuilding(app, h[1], h[2]); return;
-    case 'admin': if (guard('admin')) return (await import('./modules/admin.js')).renderAdmin(app); return;
+    case 'admin': if (h[1] === 'reports') return state.profile.role === 'admin' ? (await import('./modules/appreports.js')).renderAppReports(app) : deny();   // דיווחי תקלות — שותפים בלבד (db/151)
+      if (guard('admin')) return (await import('./modules/admin.js')).renderAdmin(app); return;
     default: {
       // מסך שהגרסה הטעונה לא מכירה = גרסה חדשה כבר באוויר. טוענים מחדש פעם אחת באותו מסך, ולא זורקים לבית
       const k = 'rr:' + h[0]; let tried = false; try { tried = sessionStorage.getItem(k) === '1'; sessionStorage.setItem(k, '1'); } catch { /* */ }
