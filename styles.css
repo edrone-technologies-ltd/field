@@ -2806,3 +2806,6 @@ a.alert{color:inherit;text-decoration:none} a.alert .chev{flex:none}
 button.oops-home{margin-block-start:-12px;background:none;border:0;font:inherit;font-size:.9rem;color:var(--muted);text-decoration:underline;cursor:pointer;min-height:44px}
 .rpnote{display:block;margin-block:-4px 2px;font-size:.78rem;line-height:1.4;color:var(--muted)}
 body:has(.viewer) #sheet:has(#rp){z-index:30}   /* זום על צילום הדיווח — מעל החלון (המציג 60) */
+
+/* מספרים, תאריכים וטלפונים בתוך עברית */
+.mono{font-family:var(--f-mono);direction:ltr;unicode-bidi:isolate}

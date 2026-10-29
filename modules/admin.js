@@ -20,12 +20,7 @@ export async function renderAdmin(el) {
     <div id="office"></div>
     <h3 class="sh">אנשים והרשאות</h3>
     ${people.length > 10 ? '<input type="search" id="aq" placeholder="חיפוש לפי שם או טלפון" aria-label="חיפוש">' : ''}
-    <div class="list" id="apl">${[...people].sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0)).map(p => `<div class="lrow${p.is_active ? '' : ' off'}" data-q="${esc((p.full_name || '') + ' ' + (p.phone || ''))}">
-      <span class="avatar" aria-hidden="true">${esc(initials(p.full_name))}</span>
-      <span class="grow"><b>${esc(p.full_name)}</b><small>${esc(p.phone || '')}${p.field_role ? ' · ' + FIELD_HE[p.field_role] : ''}${p.is_pilot && p.pilot_license_expiry ? ' · רישיון עד ' + new Date(p.pilot_license_expiry).toLocaleDateString('he-IL') : ''}</small></span>
-      <select data-role="${p.id}" aria-label="תפקיד" ${p.id === state.user.id ? 'disabled' : ''} class="sel-auto">${ROLES.map(r => `<option value="${r}" ${p.role === r ? 'selected' : ''}>${ROLE_HE[r]}</option>`).join('')}</select>
-      <label class="sw" title="פעיל"><input type="checkbox" data-act="${p.id}" ${p.is_active ? 'checked' : ''} ${p.id === state.user.id ? 'disabled' : ''}><i></i></label>
-    </div>`).join('')}</div>
+    <div class="list" id="apl">${[...people].sort((a, b) => (b.is_active ? 1 : 0) - (a.is_active ? 1 : 0)).map(personRow).join('')}</div>
 
     <h3 class="sh">מי רואה מה</h3>
     <div class="scroll-x card"><table class="t"><thead><tr><th>מודול</th>${ROLES.map(r => `<th>${ROLE_HE[r]}</th>`).join('')}</tr></thead><tbody>
@@ -47,11 +42,16 @@ export async function renderAdmin(el) {
         ${err.length ? `<div class="list">${err.slice(0, 5).map(l => `<div class="lrow"><span class="grow"><b>${esc(l.entity)} · ${l.direction === 'to_monday' ? 'למאנדי' : 'ממאנדי'}</b><small class="muted">${esc(String(l.error || '').slice(0, 140))} · ${timeAgo(l.created_at)}</small></span></div>`).join('')}</div>` : ''}`; })()}
     ${logs.length ? `<details class="fold"><summary><span class="sh">יומן מלא</span><span class="count">${logs.length}</span></summary><div class="scroll-x card"><table class="t"><tr><th>מתי</th><th>כיוון</th><th>מה</th><th>מצב</th></tr>${logs.map(l => `<tr><td>${new Date(l.created_at).toLocaleString('he-IL')}</td><td>${l.direction === 'to_monday' ? 'למאנדי' : 'ממאנדי'}</td><td>${esc(l.entity)}${l.status === 'error' && l.error ? `<small class="muted">${esc(String(l.error).slice(0, 120))}</small>` : ''}</td><td><span class="pill ${l.status === 'ok' ? 'ok' : l.status === 'error' ? 'bad' : 'warn'}">${l.status}</span></td></tr>`).join('')}</table></div></details>` : `<div class="empty-line">אין פעולות סנכרון</div>`}
     </div>`;
-  $$('[data-role]').forEach(s => { let prev = s.value; s.onchange = async () => { s.disabled = true; const { error } = await sb.from('profiles').update({ role: s.value }).eq('id', s.dataset.role); s.disabled = false;
-    if (error) { s.value = prev; return toast(errText(error, 'התפקיד לא עודכן — נסו שוב')); } prev = s.value; toast('התפקיד עודכן'); }; });
-  $$('[data-act]').forEach(c => c.onchange = async () => { if (!c.checked && !(await confirmBox('לחסום את הגישה?', { body: 'העובד לא יוכל להיכנס לאפליקציה.', ok: 'חסימה', danger: true }))) { c.checked = true; return; }
+  // שורת עובד: לחיצה פותחת עריכה (admin בלבד) — תפקיד, תפקיד בשטח ורישיון מטיס. המתג נשאר בשורה
+  const apl = $('#apl');
+  apl.onclick = e => { if (e.target.closest('.sw')) return; const r = e.target.closest('[data-ed]'); if (r) editPerson(people.find(p => p.id === r.dataset.ed)); };
+  apl.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-ed]')) { e.preventDefault(); e.target.click(); } };
+  apl.onchange = async e => { const c = e.target.closest('[data-act]'); if (!c) return;
+    if (!c.checked && !(await confirmBox('לחסום את הגישה?', { body: 'העובד לא יוכל להיכנס לאפליקציה.', ok: 'חסימה', danger: true }))) { c.checked = true; return; }
     c.disabled = true; const { error } = await sb.from('profiles').update({ is_active: c.checked }).eq('id', c.dataset.act); c.disabled = false;
-    if (error) { c.checked = !c.checked; return toast(errText(error, 'לא נשמר — נסו שוב')); } toast(c.checked ? 'הגישה הופעלה' : 'הגישה נחסמה'); });
+    if (error) { c.checked = !c.checked; return toast(errText(error, 'לא נשמר — נסו שוב')); }
+    const p = people.find(x => x.id === c.dataset.act); if (p) { p.is_active = c.checked; c.closest('.lrow').classList.toggle('off', !c.checked); }
+    toast(c.checked ? 'הגישה הופעלה' : 'הגישה נחסמה'); };
   $$('[data-rm]').forEach(c => c.onchange = async () => {
     const [role, module] = c.dataset.rm.split('|');
     const q = c.checked ? sb.from('role_modules').insert({ role, module }) : sb.from('role_modules').delete().eq('role', role).eq('module', module);
@@ -66,6 +66,55 @@ export async function renderAdmin(el) {
   usageCard(el); teamsCard(people); officeCard();
   // קישור עמוק ליומן הסנכרון (#/admin/sync) — מההתראה "הסנכרון נעצר" / "שליחה למאנדי נכשלה"
   if (location.hash.startsWith('#/admin/sync')) { replaceHash('#/admin', false); $('#sync')?.scrollIntoView({ block: 'start' }); }
+}
+
+const isAdmin = () => state.profile?.role === 'admin';
+const dateHe = d => `<bdi dir="ltr" class="mono">${new Date(d).toLocaleDateString('he-IL', { timeZone: 'Asia/Jerusalem' })}</bdi>`;
+function personRow(p) {
+  const ed = isAdmin(), me = p.id === state.user.id, left = p.is_pilot && p.pilot_license_expiry ? (new Date(p.pilot_license_expiry) - Date.now()) / 864e5 : null;
+  const meta = [esc(ROLE_HE[p.role] || ''), p.field_role && FIELD_HE[p.field_role], p.is_pilot && !p.field_role && 'מטיס'].filter(Boolean).join(' · ');
+  return `<div class="lrow${p.is_active ? '' : ' off'}" data-pid="${p.id}" data-q="${esc((p.full_name || '') + ' ' + (p.phone || ''))}"${ed ? ` data-ed="${p.id}" role="button" tabindex="0" aria-label="${esc('עריכת ' + (p.full_name || ''))}"` : ''}>
+      <span class="avatar" aria-hidden="true">${esc(initials(p.full_name))}</span>
+      <span class="grow"><b>${esc(p.full_name)}</b><small>${meta}</small>${left != null ? `<small class="${left < 0 ? 'bad' : left <= 45 ? 'warn' : ''}">רישיון ${left < 0 ? 'פג' : 'עד'} ${dateHe(p.pilot_license_expiry)}</small>` : ''}</span>
+      <label class="sw" title="פעיל" aria-label="גישה לאפליקציה"><input type="checkbox" data-act="${p.id}" ${p.is_active ? 'checked' : ''} ${me ? 'disabled' : ''}><i></i></label>
+      ${ed ? `<span class="chev" aria-hidden="true">${icon('chev', 18)}</span>` : ''}
+    </div>`;
+}
+
+// עריכת עובד (admin בלבד; בשרת: profiles_admin + profile_self_lock). admin לא משנה לעצמו תפקיד
+function editPerson(p) {
+  if (!p || !isAdmin()) return;
+  const me = p.id === state.user.id, f = { role: p.role, field_role: p.field_role || null, is_pilot: !!p.is_pilot };
+  const chips = (k, opts) => opts.map(([v, t]) => `<button type="button" class="chip" data-${k}="${v}" aria-pressed="${(f[k === 'r' ? 'role' : 'field_role'] || '') === v}" ${k === 'r' && me ? 'disabled' : ''}>${t}</button>`).join('');
+  sheet(`<h3>${esc(p.full_name)}</h3>${p.phone ? `<p class="small muted"><bdi dir="ltr" class="mono">${esc(p.phone)}</bdi></p>` : ''}
+    <div class="field">תפקיד<div class="chips">${chips('r', ROLES.map(r => [r, ROLE_HE[r]]))}</div></div>
+    <div class="field">בשטח<div class="chips">${chips('fr', [['', 'ללא'], ...Object.entries(FIELD_HE)])}</div></div>
+    <label class="tog"><span>מטיס</span><span class="sw"><input type="checkbox" id="epl" ${f.is_pilot ? 'checked' : ''}><i></i></span></label>
+    <div class="row" id="eplr" ${f.is_pilot ? '' : 'hidden'}><label class="field grow">מס׳ רישיון<input id="epn" dir="ltr" autocomplete="off" value="${esc(p.pilot_license_no || '')}"></label><label class="field grow">בתוקף עד<input type="date" id="epx" value="${p.pilot_license_expiry || ''}"></label></div>
+    <p class="small err" id="eer" role="alert" hidden></p>
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="esv">שמירה</button></div>`, (s, close) => {
+    const ip = $('#epl', s), sync = () => { $('#eplr', s).hidden = !ip.checked; };
+    $$('[data-r]', s).forEach(b => b.onclick = () => { f.role = b.dataset.r; $$('[data-r]', s).forEach(x => x.setAttribute('aria-pressed', x === b)); });
+    $$('[data-fr]', s).forEach(b => b.onclick = () => { f.field_role = b.dataset.fr || null; $$('[data-fr]', s).forEach(x => x.setAttribute('aria-pressed', x === b));
+      if (f.field_role === 'pilot' && !ip.checked) { ip.checked = true; sync(); } });
+    ip.onchange = sync;
+    $('#esv', s).onclick = async () => {
+      const sv = $('#esv', s); if (sv.disabled) return;
+      const want = { field_role: f.field_role, is_pilot: ip.checked, pilot_license_no: ip.checked ? $('#epn', s).value.trim() || null : p.pilot_license_no ?? null, pilot_license_expiry: ip.checked ? $('#epx', s).value || null : p.pilot_license_expiry ?? null };
+      if (!me) want.role = f.role;
+      const row = Object.fromEntries(Object.entries(want).filter(([k, v]) => (p[k] ?? null) !== v));
+      if (!Object.keys(row).length) return close();
+      sv.disabled = true; sv.textContent = 'שומר…'; $('#eer', s).hidden = true;
+      // עמודות הרישיון לא נקראות ישירות מ-profiles (db/105) → עדכון בלי returning, ואז קריאה חוזרת דרך profiles_full.
+      // אם RLS או הנעילה השאירו ערך ישן, זה לא "נשמר"
+      let data = null, { error } = await sb.from('profiles').update(row).eq('id', p.id);
+      if (!error) ({ data, error } = await sb.rpc('profiles_full', { ids: [p.id] }).maybeSingle());
+      const bad = error || !data || Object.keys(row).some(k => (data[k] ?? null) !== row[k]);
+      if (bad) { sv.disabled = false; sv.textContent = 'שמירה'; const m = errText(error, 'לא נשמר — נסו שוב'), er = $('#eer', s); er.textContent = m; er.hidden = false; return toast(m, 2600, 'error'); }
+      Object.assign(p, data); close(); toast('נשמר', 2200, 'success');
+      const old = $(`#apl [data-pid="${p.id}"]`); if (old) old.outerHTML = personRow(p);
+    };
+  });
 }
 
 // צוותי שטח: מטיס + מפעיל מערכות, ואחד מהם ראש צוות (מקבל אוטומטית הרשאת ראש צוות)

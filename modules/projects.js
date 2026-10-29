@@ -33,6 +33,14 @@ const groupDays = ds => mergePulses([...new Set(ds)].sort().map(d => [d, d]));
 const pulseLbl = ([f, t]) => f === t ? dm(f) : f.slice(5, 7) === t.slice(5, 7) ? `${+f.slice(8)}–${dm(t)}` : `${dm(f)}–${dm(t)}`;
 const pulseWd = (pl, fri = false) => { let n = 0; for (const [f, t] of pl) for (let d = f; d <= t; d = pAdd(d)) { const g = pDow(d); if (g !== 6 && (g !== 5 || fri)) n++; } return n; };
 const projPulses = p => Array.isArray(p.pulses) && p.pulses.length > 1 ? p.pulses : p.planned_from ? [[p.planned_from, p.planned_to || p.planned_from]] : [];
+// פעימות עתידיות (א׳–ה׳ מהיום) שאין בהן אף יום שטח — "נקבע תאריך, לא שובץ"
+const pulseHasWd = ([f, t], from, have) => { for (let d = f < from ? from : f; d <= t; d = pAdd(d)) if (![5, 6].includes(pDow(d)) && have.has(d)) return true; return false; };
+const emptyPulses = (pl, days, from = isoDay()) => { const have = new Set(days); return pl.filter(r => r[1] >= from && pulseHasWd(r, from, { has: () => true }) && !pulseHasWd(r, from, have)); };
+async function unscheduledPulses(pid, pl) {
+  if (pl.length < 2) return [];
+  const { data, error } = await sb.from('work_days').select('day').eq('project_id', pid).neq('status', 'cancelled');
+  return error ? [] : emptyPulses(pl, (data || []).map(w => w.day));
+}
 // עורך פעימות: שורת התחלה/סיום + "+" לעוד פעימה, × להסרה. סיום לפני התחלה = מסומן בשורה. onChange(פעימות תקינות ממוזגות, יש שגיאה)
 function pulseEditor(box, init, onChange) {
   let rows = (init.length ? init : [[isoDay(), isoDay()]]).map(r => [...r]);
@@ -435,7 +443,12 @@ export async function renderProject(el, id, tab = 'o') {
         const f = pl[0][0], to = pl.at(-1)[1];
         e.target.disabled = true; const { data: n, error } = pl.length > 1 ? await sb.rpc('set_project_pulses', { p: id, pulses: pl }) : await sb.rpc('set_project_dates', { p: id, d_from: f, d_to: to });
         if (error) { e.target.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב')); }
-        close(); toast(n ? `התאריכים עודכנו · ${n} ימי שטח הוזזו` : 'התאריכים עודכנו'); reload('o'); };
+        close(); toast(n ? `התאריכים עודכנו · ${n} ימי שטח הוזזו` : 'התאריכים עודכנו');
+        // תאריכים ≠ שיבוץ: פעימה עתידית שאין בה אף יום שטח — מציעים לשבץ עכשיו (מכון דוד 29/10: 28–29 נקבעו כפעימה ולא שובצו)
+        const empty = await unscheduledPulses(id, pl);
+        if (empty.length && await confirmBox(`${empty.map(x => '\u2068' + pulseLbl(x) + '\u2069').join(', ')} עוד לא משובצים`, { body: 'התאריכים נשמרו, אבל אין בהם ימי שטח. לשבץ צוות עכשיו?', ok: 'לשיבוץ' }))
+          return scheduleSheet({ pulses: pl.filter(r => r[1] >= isoDay()) });
+        reload('o'); };
     });
     const sm = $('#schm', box); if (sm) sm.onclick = () => openSched();
     // עריכה = ניהול היום: שעות (יציאה/הגעה/סיום באתר), יום קדימה לכל הפרויקט, יום פנוי בלחיצה, או תאריך אחר. גם ביום שהתחיל — שעות וצוות
