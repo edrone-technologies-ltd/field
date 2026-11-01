@@ -1,26 +1,28 @@
-// רכש ומלאי: חומרי ניקוי וביגוד/ציוד מגן בלבד. בקשה מהקטלוג → לוח הרכש. אישור/דחייה כאן (admin, db/159) → נדחף למאנדי; ספירת מלאי כאן (מנהלים) → לוח המלאי.
+// רכש ומלאי: חומרי ניקוי וביגוד/ציוד מגן בלבד. בקשה מהקטלוג → לוח הרכש. אישור דו-שלבי כאן (צורך → מעל הסף אישור סופי, db/162) → נדחף למאנדי; "הוזמן" כאן; ספירת מלאי כאן (מנהלים) → לוח המלאי.
 import { sb, state, isManager, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, dm, backBtn, replaceHash, mon } from '../lib/core.js';
 
-const ST = { draft: ['טיוטה', ''], submitted: ['ממתין לאישור', 'warn'], pending: ['ממתין לאישור', 'warn'], approved: ['אושר', 'lime'], sent: ['נשלח לספק', 'lime'], partial: ['התקבל חלקית', 'lime'], received: ['התקבל', 'ok'], rejected: ['נדחה', 'bad'], cancelled: ['בוטל', ''] };
+const ST = { draft: ['טיוטה', ''], submitted: ['ממתין לאישור', 'warn'], pending: ['ממתין לאישור', 'warn'], approved: ['אושר', 'lime'], sent: ['הוזמן', 'lime'], partial: ['התקבל חלקית', 'lime'], received: ['התקבל', 'ok'], rejected: ['נדחה', 'bad'], cancelled: ['בוטל', ''] };
 const nis = x => '₪' + Math.round(x || 0).toLocaleString('he-IL');
 const low = c => c.min_qty != null && c.stock != null && Number(c.stock) <= Number(c.min_qty);
 
 const isAdmin = () => state.profile?.role === 'admin';
 const OPEN = ['submitted', 'pending'];
 // שגיאות השרת (db/159) → משפט אחד
-const ERR = { forbidden: 'אין הרשאה', over_limit: 'מעל ₪1,000 — מאשר אביחי', already_decided: 'כבר הוחלט', no_lines: 'השורות עוד לא הגיעו — לנסות שוב בעוד רגע', reason_required: 'צריך לכתוב סיבה', self_approve: 'בקשה שלך — מאשר מישהו אחר', bad_qty: 'כמות לא תקינה', not_found: 'לא נמצא' };
+const ERR = { forbidden: 'הבקשה לא מחכה לך', already_decided: 'כבר הוחלט', no_lines: 'השורות עוד לא הגיעו — לנסות שוב בעוד רגע', reason_required: 'צריך לכתוב סיבה', not_approved: 'הבקשה עוד לא אושרה', bad_qty: 'כמות לא תקינה', not_found: 'לא נמצא' };
 const errMsg = e => ERR[(e?.message || '').trim()] || (/fetch|network|load failed/i.test(e?.message || '') ? 'אין קליטה — נסו שוב' : 'לא נשמר — נסו שוב');
 
 export async function renderPurchase(el) {
+  let mine = new Set();
   el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">רכש ומלאי</h1><button class="hbtn" id="padd" aria-label="בקשת רכש">${icon('plus', 20)}</button></header>
     <div id="pb" class="stack lg"><div class="skel"></div></div>`;
   const [{ data: reqs }, { data: cat }] = await Promise.all([
-    sb.from('purchase_requests').select('id,title,requested_by,project_id,needed_by,notes,status,monday_item_id,monday_stage,decided_at,decision_note,created_at,updated_at, purchase_lines(name,qty,unit), profiles:requested_by(full_name), projects(name)').order('created_at', { ascending: false }).limit(40),
+    sb.from('purchase_requests').select('id,title,requested_by,project_id,needed_by,notes,status,monday_item_id,monday_stage,decided_at,decision_note,need_at,created_at,updated_at, purchase_lines(name,qty,unit), profiles:requested_by(full_name), projects(name)').order('created_at', { ascending: false }).limit(40),
     sb.from('catalog_items').select('monday_item_id,name,unit,order_unit,units_per_order,min_qty,stock,sku,supplier_name,is_material,in_app').eq('in_app', true).order('is_material', { ascending: false }).order('name'),
-  ]);
+    isAdmin() ? sb.rpc('purchase_todo') : Promise.resolve({ data: [] }),   // רק מה שמחכה לי עכשיו (db/162)
+  ]).then(([a, b, t]) => (mine = new Set(t.data || []), [a, b]));
   const lows = (cat || []).filter(low);
-  const todo = isAdmin() ? (reqs || []).filter(r => OPEN.includes(r.status)) : [], rest = (reqs || []).filter(r => !todo.includes(r));
-  const reqRow = r => { const [t, c] = ST[r.status] || ['', ''];
+  const todo = (reqs || []).filter(r => mine.has(r.id)), rest = (reqs || []).filter(r => !todo.includes(r));
+  const reqRow = r => { const [t, c] = OPEN.includes(r.status) && r.need_at ? ['צורך אושר', 'warn'] : ST[r.status] || ['', ''];
     return `<button type="button" class="lrow" data-req="${r.id}"><span class="grow"><b>${esc(r.title)}</b><small>${dm(r.created_at.slice(0, 10))} · ${esc(r.profiles?.full_name || '')}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}</small>
       <small>${esc((r.purchase_lines || []).map(l => `${l.name} ×${l.qty}`).join(' · '))}</small></span><span class="pill ${c}">${t}</span></button>`; };
   $('#pb').innerHTML = `
@@ -44,27 +46,29 @@ async function requestSheet(r, done) {
   if (!r) return;
   let d = null;
   if (isAdmin()) { const { data, error } = await sb.rpc('purchase_review', { p_id: r.id }); if (error) return toast(errMsg(error)); d = data; }
-  const lines = d?.lines || r.purchase_lines || [], status = d?.status || r.status, [t, c] = ST[status] || ['', ''];
+  const lines = d?.lines || r.purchase_lines || [], status = d?.status || r.status, [t, c] = OPEN.includes(status) && (r.need_at || d?.need_done_by) ? ['צורך אושר', 'warn'] : ST[status] || ['', ''];   // כמו בשורה ברשימה
   const meta = [r.profiles?.full_name || d?.requester, r.projects?.name || d?.project, (d?.needed_by || r.needed_by) ? 'נדרש עד ' + dm(d?.needed_by || r.needed_by) : ''].filter(Boolean).map(esc).join(' · ');
-  const canAct = isAdmin() && OPEN.includes(status), approve = canAct && d?.can_approve && !(d?.self && !d?.can_self);
-  const why = !canAct ? '' : !d?.can_approve ? 'מעל ₪1,000 · מחכה לאישור של אביחי' : '';
-  // מה קורה אחרי האישור (שלבים שעדיין במאנדי ובמייל) — למאשר בלבד
+  const canAct = !!d?.can_act && OPEN.includes(status), fin = !!d?.approve_final;
+  // הסף ושמות המאשרים — מההגדרה בשרת (app_settings.purchase_approval), לא קשיחים
+  const why = !isAdmin() || !OPEN.includes(status) ? ''
+    // שורה בלי מחיר בקטלוג → הסכום לא ידוע → עובר לבכיר גם מתחת לסף (db/162)
+    : canAct ? (fin ? '' : d.price_unknown ? `מחיר לא ידוע · עובר ל${esc((d.senior_name || '').split(' ')[0])}` : `מעל ${nis(d.limit)} · אחרי אישור הצורך עובר ל${esc(d.senior_name || '')}`)
+    : d?.waiting_name ? `מחכה ל${esc(d.waiting_name)}${d.price_unknown ? ' · מחיר לא ידוע' : ''}${d.need_done_by ? ` · צורך אושר ע״י ${esc(d.need_done_by)}` : ''}` : '';
   const sup = [...new Set(lines.map(l => l.supplier).filter(Boolean))].join(', ');
   const after = isAdmin() && ['approved', 'sent', 'partial'].includes(status) ? `<section class="pr-next"><h4>מה עכשיו</h4><ol>
-      <li class="${status !== 'approved' ? 'done' : ''}">מייל ההזמנה נשלח אוטומטית לאביחי (מצב בדיקה)</li>
-      <li>מעבירים את ההזמנה ${sup ? `ל${esc(sup)}` : 'לספק'} בטלפון או בוואטסאפ</li>
-      <li>כשהסחורה מגיעה: ${mon('במאנדי ממלאים "התקבל" בכל שורה ומסמנים שלב "התקבל". המלאי מתעדכן לבד', 'מעדכנים את המלאי')}</li></ol></section>` : '';
+      <li class="${status !== 'approved' ? 'done' : ''}">מזמינים מ${esc(sup || 'הספק')} בטלפון או בוואטסאפ, ומסמנים "הוזמן"</li>
+      <li>כשהסחורה מגיעה: ${mon('במאנדי ממלאים "התקבל" בכל שורה ומסמנים שלב "התקבל". המלאי מתעדכן לבד', 'מעדכנים את המלאי')}</li></ol>
+      ${status === 'approved' && d?.can_order ? `<button class="btn primary block" id="rord">${icon('check', 18)} הוזמן</button>` : ''}</section>` : '';
   sheet(`<div class="pr-head"><h3 class="grow">${esc(r.title)}</h3><span class="pill ${c}">${t}</span></div>
     ${meta ? `<p class="pr-meta">${meta}</p>` : ''}
     <div class="list">${lines.map(l => `<div class="lrow"><span class="grow"><b>${esc(l.name)}</b>${l.stock != null ? `<small>במלאי ${Number(l.stock)} ${esc(l.stock_unit || '')}</small>` : ''}</span><b class="pr-q">×${Number(l.qty)} <small>${esc(l.unit || '')}</small></b></div>`).join('')}</div>
-    ${isAdmin() && d?.total != null ? `<p class="pr-tot"><span>סה״כ לפני מע״מ</span><b>${nis(d.total)}</b></p>` : ''}
+    ${isAdmin() && d?.total != null ? `<p class="pr-tot"><span>סה״כ לפני מע״מ</span><b>${d.price_unknown ? 'מחיר לא ידוע' : nis(d.total)}</b></p>` : ''}
     ${(d?.notes || r.notes) ? `<p class="pr-note">${esc(d?.notes || r.notes)}</p>` : ''}
     ${status === 'rejected' && (d?.decision_note || r.decision_note) ? `<p class="pr-note bad">סיבת הדחייה: ${esc(d?.decision_note || r.decision_note)}</p>` : ''}
     ${why ? `<p class="pr-why">${why}</p>` : ''}
-    ${d?.self && canAct && d?.can_approve && !approve ? `<p class="pr-why">בקשה שלך — מאשר מישהו אחר</p>` : ''}
     ${after}
     ${canAct ? `<div id="rj" hidden><label class="field">סיבת הדחייה<textarea id="rjn" rows="2" maxlength="300"></textarea></label></div>
-      <div class="row-btns"><button class="btn ghost" id="rno">דחייה</button>${approve ? `<button class="btn primary" id="rok">${icon('check', 18)} אישור</button>` : ''}</div>`
+      <div class="row-btns"><button class="btn ghost" id="rno">דחייה</button><button class="btn primary" id="rok">${icon('check', 18)} ${fin ? 'אישור' : 'אישור צורך'}</button></div>`
       : `<div class="row-btns"><button class="btn ghost" data-close>סגירה</button></div>`}
     ${isAdmin() && r.monday_item_id ? `<a class="pr-mon" href="https://edroneil-force.monday.com/boards/5099908084/pulses/${esc(r.monday_item_id)}" target="_blank" rel="noopener">פתיחה במאנדי</a>` : ''}`, (s, close) => {
     const decide = async (ok, btn) => {
@@ -74,14 +78,20 @@ async function requestSheet(r, done) {
       const { error } = await sb.rpc('purchase_decide', { p_id: r.id, p_approve: ok, p_note: note });
       btn.disabled = false; btn.classList.remove('busy');
       if (error) { toast(errMsg(error), 4000, 'error'); if (/already_decided/.test(error.message)) { close(); done(); } return; }
-      toast(ok ? 'אושר · המבקש קיבל הודעה' : 'נדחה · המבקש קיבל הודעה'); close(); done();
-      if (ok) setTimeout(() => requestSheet({ ...r, status: 'approved' }, done), 250);   // מיד אחרי האישור: מה עכשיו
+      toast(!ok ? 'נדחה · המבקש קיבל הודעה' : fin ? 'אושר · המבקש קיבל הודעה' : `אושר צורך · עבר ל${d.senior_name || 'אישור סופי'}`); close(); done();
+      if (ok && fin) setTimeout(() => requestSheet({ ...r, status: 'approved' }, done), 250);   // מיד אחרי האישור הסופי: מה עכשיו
     };
     const no = $('#rno', s), yes = $('#rok', s);
     if (no) no.onclick = () => { const box = $('#rj', s); if (!box.hidden) return decide(false, no);
       box.hidden = false; no.textContent = 'שליחת הדחייה'; no.classList.replace('ghost', 'danger'); $('#rjn', s).focus();
       if (yes) { yes.innerHTML = 'ביטול'; yes.className = 'btn ghost'; yes.onclick = close; } };
     if (yes) yes.onclick = () => decide(true, yes);
+    const ord = $('#rord', s);
+    if (ord) ord.onclick = async () => { if (ord.disabled) return; ord.disabled = true; ord.classList.add('busy');
+      const { error } = await sb.rpc('purchase_mark_ordered', { p_id: r.id });
+      ord.disabled = false; ord.classList.remove('busy');
+      if (error) return toast(errMsg(error), 4000, 'error');
+      toast('סומן: הוזמן'); close(); done(); };
   });
 }
 
