@@ -1005,6 +1005,7 @@ a.lrow:has(.chev)::after{display:none}
 #sheet .modal{background:rgba(10,14,12,.42);animation:fadeIn .18s ease-out}
 .modal-in{position:relative;padding-top:26px;gap:14px;border-radius:22px 22px 0 0;box-shadow:0 -8px 30px rgba(0,0,0,.14);animation:sheetUp .26s cubic-bezier(.2,.9,.25,1)}
 .modal-in::before{content:"";position:absolute;top:9px;left:50%;width:38px;height:5px;margin-left:-19px;border-radius:99px;background:var(--line)}
+.modal-in>*{flex-shrink:0}   /* חלונית ארוכה גוללת ולא מכווצת את הילדים (ביטול יום במובייל) */
 @keyframes sheetUp{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 /* מספרים ברוחב קבוע — לא "קופצים" */

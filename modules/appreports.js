@@ -9,9 +9,11 @@ const MAXV = 15 * 1024 * 1024;
 const videoUrl = async id => { try { const { data, error } = await sb.functions.invoke('report-video', { body: { action: 'url', id } }); return error ? null : data?.url || null; } catch { return null; } };
 const hms = iso => { try { return new Date(iso).toLocaleTimeString('en-GB', { timeZone: 'Asia/Jerusalem', hour12: false }); } catch { return ''; } };
 const mono = s => `<bdi dir="ltr" class="rpmono">${esc(s)}</bdi>`;
-const devLine = d => !d ? '' : [d.os, d.browser, d.vw && mono(`${d.vw}×${d.vh}`), d.standalone ? 'מותקנת' : 'בדפדפן', d.online === false ? 'בלי קליטה' : d.net && d.net !== '4g' ? mono(d.net) : null, d.desk ? 'מחשב' : null]
-  .filter(Boolean).map(x => /^</.test(x) ? x : `<bdi>${esc(x)}</bdi>`).join(' · ');
-const errBlock = e => (e || []).length ? `<details class="fold rperrs"><summary><span class="sh">${e.length === 1 ? 'שגיאה אחת' : e.length + ' שגיאות'}</span></summary>
+// device מגיע מהמדווח (jsonb חופשי): כל ערך עובר esc. לא מזהים HTML לפי "<" בתחילת מחרוזת (XSS מעובד לשותף, it-security 01/11)
+const bdi = s => `<bdi>${esc(s)}</bdi>`;
+const devLine = d => !d ? '' : [d.os && bdi(d.os), d.browser && bdi(d.browser), d.vw && mono(`${d.vw}×${d.vh}`), bdi(d.standalone ? 'מותקנת' : 'בדפדפן'), d.online === false ? bdi('בלי קליטה') : d.net && d.net !== '4g' ? mono(d.net) : null, d.desk ? bdi('מחשב') : null]
+  .filter(Boolean).join(' · ');
+const errBlock = e => Array.isArray(e) && e.length ? `<details class="fold rperrs"><summary><span class="sh">${e.length === 1 ? 'שגיאה אחת' : e.length + ' שגיאות'}</span></summary>
   <pre class="rperr" dir="ltr">${esc(e.map(x => `[${x.t ? hms(x.t) : ''} ${x.k || ''}${x.n > 1 ? ' ×' + x.n : ''}] ${x.what ? x.what + ' ' : ''}${x.m || ''}${x.r ? '  @' + x.r : ''}${x.at ? '\n   ' + x.at : ''}`).join('\n'))}</pre></details>` : '';
 
 async function version() { try { const k = (await caches.keys()).find(x => x.startsWith('edrone-field-v')); return k ? 'v' + k.split('-v')[1] : ''; } catch { return ''; } }
@@ -31,7 +33,7 @@ export async function renderAppReports(el) {
         <small class="muted">${mono(r.route || '#/')}${r.sw_version ? ' · ' + mono(r.sw_version) : ''}</small></span>
       <span class="pill ${ST[r.status]?.[1] || ''}">${ST[r.status]?.[0] || esc(r.status)}${r.status === 'fixed' && r.fixed_in ? ' ' + mono(r.fixed_in) : ''}</span></div>
     ${r.body ? `<div>${esc(r.body).replace(/\n/g, '<br>')}</div>` : ''}
-    <small class="muted">${devLine(r.device)}${r.queue_n ? ` · ${r.queue_n} ממתינים בתור` : ''}</small>
+    <small class="muted">${devLine(r.device)}${+r.queue_n ? ` · ${+r.queue_n} ממתינים בתור` : ''}</small>
     ${r.resolution ? `<div class="rpres"><b>מענה</b> ${esc(r.resolution).replace(/\n/g, '<br>')}</div>` : ''}${r.fix_video ? `<button type="button" class="slink" data-vid="${r.id}">${icon('play', 16)} סרטון המענה</button>` : ''}
     ${errBlock(r.errors)}
     ${['new', 'triaged'].includes(r.status) ? `<div class="row">${r.status === 'new' ? `<button class="chip" data-st="triaged">בטיפול</button>` : ''}<button class="chip" data-st="wontfix">לא לטיפול</button><span class="grow"></span><button class="btn primary sm" data-st="fixed">תוקן</button></div>` : ''}
