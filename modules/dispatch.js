@@ -11,6 +11,12 @@ const ABS = { vacation: 'חופשה', sick: 'מחלה', reserve: 'מילואים
 const noCome = (w, u) => (w.work_day_crew || []).find(c => c.user_id === u && c.cant_come_at);
 const openAdmin = (id, after) => import('./dayadmin.js').then(m => m.openDayAdmin(id, after));
 // יום בתוך הלו״ז של הפרויקט: בפעימות (db/127) — רק בתוך פעימה; אחרת הטווח
+// סיורי אפיון (db/157): נשלפים מהאתרים (sites.visit_date), לא מ-work_days — לכן לא נספרים כיום שטח, לא בעומס, לא בהתנגשויות ולא ב"לשבץ".
+// לפני מיגרציה 157 (אין שעה/משובץ) — רק התאריך
+const SV_SEL = 'id,slug,name,visit_date,buildings(specs(status))';
+const specVisits = (from, to) => { const q = sel => sb.from('sites').select(sel).eq('is_active', true).is('merged_into', null).gte('visit_date', from).lte('visit_date', to);
+  return q(SV_SEL + ',visit_time,visit_by').then(r => r.error ? q(SV_SEL) : r).then(r => r.data || [], () => []); };
+const svDone = v => (v.buildings || []).length > 0 && v.buildings.every(b => [].concat(b.specs || []).some(x => x.status === 'done'));
 const inPulse = (x, d) => Array.isArray(x.pulses) && x.pulses.length > 1 ? x.pulses.some(([f, t]) => f <= d && d <= t) : !!x.planned_from && x.planned_from <= d && (x.planned_to || x.planned_from) >= d;
 
 export async function renderDispatch(el, start, o = {}) {
@@ -22,13 +28,19 @@ export async function renderDispatch(el, start, o = {}) {
     <div id="db"><div class="skel tall"></div></div>`;
   $('#wp').onclick = () => replaceHash('#/dispatch/' + addDays(start, -7));
   $('#wn').onclick = () => replaceHash('#/dispatch/' + addDays(start, 7));
-  const [{ data: people }, { data: wds }, { data: abs }, { data: projects }, { data: drones }] = await Promise.all([
+  const [{ data: people }, { data: wds }, { data: abs }, { data: projects }, { data: drones }, SV] = await Promise.all([
     sb.from('profiles').select('id,full_name,role,is_pilot').eq('is_active', true).order('full_name'),
     sb.from('work_days').select('id,day,status,night,day_type,site_arrival,site_end,project_id,crew_lead_id,drone_id,report_time,gust_max,weather_alerted,projects(name,site_id),work_day_crew(user_id,confirmed_at,cant_come_at,cant_come_reason)').gte('day', start).lte('day', end).neq('status', 'cancelled'),
     sb.from('absences').select('user_id,kind,date_from,date_to,status').neq('status', 'rejected').lte('date_from', end).gte('date_to', start),
     sb.from('projects').select('id,name,status_label,monday_group,closed_summary,planned_from,planned_to,pulses,site_id').or('monday_group.is.null,monday_group.neq.group_mm5052gw').order('name').then(r => ({ ...r, data: (r.data || []).filter(isOpenProject) })),
     sb.from('equipment').select('id,name,health').eq('kind', 'drone'),
+    specVisits(start, end),
   ]);
+  const svOn = d => SV.filter(v => v.visit_date === d).sort((a, b) => (a.visit_time || '99') < (b.visit_time || '99') ? -1 : 1);
+  const svWho = v => v.visit_by ? ((people || []).find(p => p.id === v.visit_by)?.full_name || '').split(' ')[0] : '';
+  const svShort = v => (v.name || '').split(/\s[—–-]\s/)[0].trim();
+  const svChip = v => `<a class="dchip spec ${svDone(v) ? 'done' : ''}" href="#/site/${esc(v.slug)}" title="סיור אפיון · ${esc(v.name)}">${icon('clipboard', 12)}${esc([v.visit_time ? String(v.visit_time).slice(0, 5) : '', svShort(v).slice(0, 14), svWho(v)].filter(Boolean).join(' · '))}</a>`;
+  const svRow = () => SV.length ? `<tr class="svrow"><th class="who">סיורי אפיון</th>${days.map(d => `<td class="${d === isoDay() ? 'today' : ''}">${svOn(d).map(svChip).join('')}</td>`).join('')}</tr>` : '';
   // "לשבץ" — פעם אחת לכל פרויקט, בראש המסך (לא כרטיס בכל יום): ימי עבודה בטווח מהיום והלאה שמחוץ לימים שכבר משובצים.
   // חור בין ימים משובצים = החלטה (יום שבוטל), לא "חסר". עמודות הימים מציגות רק ימי שטח אמיתיים
   const t0 = isoDay(), wk = d => new Date(d + 'T12:00').getDay() < 5;
@@ -78,7 +90,7 @@ export async function renderDispatch(el, start, o = {}) {
   const conflicts = staff.flatMap(p => days.filter(d => (wds || []).filter(w => w.day === d && (w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id))).length > 1).map(d => `${p.full_name.split(' ')[0]} ב-${dm(d)}`));
   $('#db').innerHTML = `${viewTabs}${needStrip()}${conflicts.length ? `<button class="arow bad card-like" type="button" id="dconf"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>התנגשות שיבוץ</b><small>${esc(conflicts.join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
     <div class="dwrap"><table class="dgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
-      <tbody>${staff.map(p => `<tr><th class="who">${esc(p.full_name.split(' ')[0])}${p.is_pilot ? ' <small>מטיס</small>' : ''}</th>${days.map(d => cell(p, d)).join('')}</tr>`).join('')}</tbody></table></div>`;
+      <tbody>${svRow()}${staff.map(p => `<tr><th class="who">${esc(p.full_name.split(' ')[0])}${p.is_pilot ? ' <small>מטיס</small>' : ''}</th>${days.map(d => cell(p, d)).join('')}</tr>`).join('')}</tbody></table></div>`;
   bindView();
   { const c = $('td.conf', el), wr = $('.dwrap', el); if (c && wr) wr.scrollLeft += c.getBoundingClientRect().left - wr.getBoundingClientRect().left - wr.clientWidth / 2 + c.clientWidth / 2; }   // התנגשות: רק גלילה אופקית בתוך הלוח, בלי לקפוץ בדף
   const dc = $('#dconf', el); if (dc) dc.onclick = () => $('td.conf', el)?.scrollIntoView({ inline: 'center', block: 'center', behavior: 'smooth' });
@@ -125,8 +137,9 @@ export async function renderDispatch(el, start, o = {}) {
           ${dr ? `<small class="${dr.health === 'grounded' ? 'bad' : ''}">${esc(dr.name)}${dr.health === 'grounded' ? ' · מקורקע' : ''}</small>` : w.status === 'planned' ? '<small class="bad">בלי רחפן</small>' : ''}
           ${nc.length ? `<span class="pill bad">${nc.length > 1 ? nc.length + ' לא יגיעו' : 'לא יגיע'}</span>` : un ? `<span class="pill warn">${un} לא אישרו</span>` : ''}</button>`; }).join('')}</td>`;
     };
-    $('#db').innerHTML = `${viewTabs}${needStrip()}${rows.length ? `<div class="dwrap"><table class="dgrid dpgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
-      <tbody>${rows.map(r => `<tr><th class="who"><a href="#/p/${r.pid}">${esc(r.x.name)}</a></th>${days.map(d => cellP(r, d)).join('')}</tr>`).join('')}</tbody></table></div>` : '<div class="empty-line">אין עבודות השבוע</div>'}`;
+    const svCellP = d => `<td class="${d === isoDay() ? 'today' : ''}">${svOn(d).map(v => `<a class="dpday spec ${svDone(v) ? 'done' : ''}" href="#/site/${esc(v.slug)}"><b>${icon('clipboard', 13)}${esc(v.visit_time ? String(v.visit_time).slice(0, 5) : 'אפיון')}</b><small>${esc(svShort(v))}</small>${svWho(v) ? `<small>${esc(svWho(v))}</small>` : ''}</a>`).join('')}</td>`;
+    $('#db').innerHTML = `${viewTabs}${needStrip()}${rows.length || SV.length ? `<div class="dwrap"><table class="dgrid dpgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
+      <tbody>${SV.length ? `<tr class="svrow"><th class="who">סיורי אפיון</th>${days.map(svCellP).join('')}</tr>` : ''}${rows.map(r => `<tr><th class="who"><a href="#/p/${r.pid}">${esc(r.x.name)}</a></th>${days.map(d => cellP(r, d)).join('')}</tr>`).join('')}</tbody></table></div>` : '<div class="empty-line">אין עבודות השבוע</div>'}`;
     bindView(); bindNeed();
     // גרירה ליום אחר באותה שורה (אותו פרויקט) = הזזת יום השטח
     dnd('td[data-pd]', td => { const [pid, d] = td.dataset.pd.split('|'); return { pid, d }; }, async (src, t) => {
@@ -145,11 +158,12 @@ export async function renderDispatch(el, start, o = {}) {
       const dow = new Date(d + 'T12:00').getDay(), wd = (wds || []).filter(w => w.day === d);
       const ab = (abs || []).filter(a => a.date_from <= d && a.date_to >= d);
       const busy = new Map(); wd.forEach(w => new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean)).forEach(u => busy.set(u, (busy.get(u) || 0) + 1)));   // ראש צוות שגם בצוות = פעם אחת
-      const free = !wd.length && !ab.length;
+      const sv = svOn(d), free = !wd.length && !ab.length && !sv.length;
       return `<section class="dday ${d === isoDay() ? 'today' : ''} ${free ? 'free' : ''}"><div class="ddh"><b>${HE_D1[dow]} ${dm(d)}</b>${d === isoDay() ? '<span class="pill lime">היום</span>' : ''}${free ? '<span class="muted">פנוי</span>' : ''}<span class="grow"></span>${dow < 6 ? `<button class="hbtn" type="button" data-add="${d}" aria-label="שיבוץ">${icon('plus', 18)}</button>` : ''}</div>
         ${wd.map(w => { const crew = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
           const nc = w.status === 'planned' ? crew.filter(u => noCome(w, u)) : [], tag = nc.length ? 'button' : 'a';
           return `<${tag} class="dline ${w.status === 'done' ? 'done' : ''}" ${nc.length ? `type="button" data-da="${w.id}"` : `href="#/day/${w.id}"`}><span class="grow"><b>${esc(w.projects?.name || '')}${dtTag(w)}${nightTag(w)}</b><small>${crew.map(u => (noCome(w, u) ? `<s>${esc(NM.get(u) || '')}</s>` : esc(NM.get(u) || '')) + (u === w.crew_lead_id ? leadMark() : '') + ((busy.get(u) || 0) > 1 ? `<span class="dwarn" title="משובץ פעמיים" aria-label="משובץ פעמיים">${icon('alert', 14)}</span>` : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${nc.length ? `<span class="pill bad">${nc.length > 1 ? nc.length + ' לא יגיעו' : 'לא יגיע'}</span>` : w.status === 'done' ? '<span class="pill ok">בוצע</span>' : w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${d}"></span>` : ''}</${tag}>`; }).join('')}
+        ${sv.map(v => `<a class="dline spec ${svDone(v) ? 'done' : ''}" href="#/site/${esc(v.slug)}"><span class="svic">${icon('clipboard', 16)}</span><span class="grow"><b>${esc(v.name)}<span class="svtag">אפיון</span></b>${v.visit_time || v.visit_by ? `<small>${esc([v.visit_time ? String(v.visit_time).slice(0, 5) : '', svWho(v)].filter(Boolean).join(' · '))}</small>` : ''}</span>${svDone(v) ? '<span class="pill ok">בוצע</span>' : ''}</a>`).join('')}
         ${ab.map(a => `<a class="dline abs" href="#/attendance/${a.user_id}/${a.date_from.slice(0, 7)}"><span class="grow"><small>${esc(NM.get(a.user_id) || '')}: ${ABS[a.kind]}${a.status === 'pending' ? ' (ממתין לאישור)' : ''}</small></span><span class="chev">${icon('chev', 16)}</span></a>`).join('')}
 </section>`;
     }).join('');

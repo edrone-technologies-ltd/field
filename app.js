@@ -374,7 +374,7 @@ async function routeInner() {
     case 'specs': if (guard('specs')) return (await import('./modules/specs.js')).renderSites(app); return;
     case 'site': if (guard('specs')) return (await import('./modules/specs.js')).renderSite(app, h[1], h[2] === 'chat' ? 'c' : 'b'); return;
     case 'b': if (guard('specs')) return (await import('./modules/specs.js')).renderBuilding(app, h[1], h[2]); return;
-    case 'admin': if (h[1] === 'reports') return state.profile.role === 'admin' ? (await import('./modules/appreports.js')).renderAppReports(app) : deny();   // דיווחי תקלות — שותפים בלבד (db/151)
+    case 'admin': if (h[1] === 'reports') return state.profile.role === 'admin' ? (await import('./modules/appreports.js')).renderAppReports(app, h[2]) : deny();   // דיווחי תקלות — שותפים בלבד (db/151). h[2] = דיווח לפתוח (התראה, db/158)
       if (guard('admin')) return (await import('./modules/admin.js')).renderAdmin(app); return;
     default: {
       // מסך שהגרסה הטעונה לא מכירה = גרסה חדשה כבר באוויר. טוענים מחדש פעם אחת באותו מסך, ולא זורקים לבית

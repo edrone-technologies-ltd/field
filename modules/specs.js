@@ -1,5 +1,5 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls , folderGrid, coverArt, coverFor, backBtn, confirmBox } from '../lib/core.js';
+import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls , folderGrid, coverArt, coverFor, backBtn, confirmBox, isoDay, dayLabel } from '../lib/core.js';
 import { mon } from '../lib/core.js';
 import { hideMoneyText } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
@@ -29,12 +29,13 @@ const STAT = { new: ['', 'לא מולא'], draft: ['warn', 'טיוטה'], done: 
 
 // ---------- נתונים (עם מטמון לעבודה בלי קליטה) ----------
 const SITES_SEL = 'id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,kind,site_lead_private(lead_group,lead_stage,lead_owner),visit_date,service,merged_into,monday_spec_item_id,lat,lng,buildings(id,specs(status,days_expected)),projects(status_label,monday_group,closed_summary)';
-let hasArch = true;   // לפני מיגרציה 147 אין sites.archived_at — בודקים פעם אחת לטעינה, ואז בלי ארכיון
+let hasArch = true, hasSV = true;   // לפני מיגרציה 147 אין sites.archived_at, ולפני 157 אין שעת סיור — בודקים פעם אחת לטעינה, ואז בלי
 async function fetchSites() {
   try {
-    const q = sel => sb.from('sites').select(sel).eq('is_active', true).order('name');
-    let { data, error } = await q(SITES_SEL + (hasArch ? ',archived_at' : ''));
-    if (error && hasArch && /archived_at/.test(error.message || '')) { hasArch = false; ({ data, error } = await q(SITES_SEL)); }
+    const q = () => sb.from('sites').select(SITES_SEL + (hasArch ? ',archived_at' : '') + (hasSV ? ',visit_time,visit_by' : '')).eq('is_active', true).order('name');
+    let { data, error } = await q();
+    if (error && hasSV && /visit_(time|by)/.test(error.message || '')) { hasSV = false; ({ data, error } = await q()); }
+    if (error && hasArch && /archived_at/.test(error.message || '')) { hasArch = false; ({ data, error } = await q()); }
     if (error) throw error;
     data = [...new Map(data.map(x => [x.id, leadPriv(x)])).values()];   // אתר אחד = שורה אחת
     await cache.set('sites', data); return data;
@@ -98,7 +99,9 @@ export async function renderSites(el) {
   const folder = (s, k) => { const { n, done, draft } = st(s), lead = s.kind === 'lead';
     const vp = k === 'open' && lead && !done && !draft ? visitPill(s.visit_date) : null;
     // בתהליך → ישר לטופס; הושלם → סיכום האתר
-    return { href: lead && n === 1 && !done ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, img: coverFor(s, s.cover_path && urls[s.cover_path]), title: s.name,
+    // אפיון שעוד לא התחיל: לחיצה פותחת קודם "קביעת תאריך / לאפיין עכשיו" (דיווח טל 01/11)
+    const plan = canPlanVisit() && (k === 'open' || k === 'new') && notStarted(s);
+    return { href: lead && n === 1 && !done ? `#/b/${s.slug}/${s.buildings[0].id}` : '#/site/' + s.slug, data: plan ? `data-sv="${esc(s.slug)}"` : '', img: coverFor(s, s.cover_path && urls[s.cover_path]), title: s.name,
       sub: lead ? [s.contact_name, s.service].filter(Boolean).join(' · ') : `${n} מבנים`,
       pill: k === 'pilot' ? 'ממתין ללקוח' : vp ? vp[0] : n > 1 ? `${done}/${n}` : (done === n && n) || k === 'done' ? 'בוצע' : draft || done ? 'בתהליך' : '',
       tone: k === 'pilot' ? '' : vp ? vp[1] : (done === n && n) || k === 'done' ? 'ok' : done || draft ? 'warn' : '' }; };
@@ -111,6 +114,7 @@ export async function renderSites(el) {
       return (k === 'arch' || k === 'new') && !q ? `<details class="fold"><summary><span class="sh">${t}</span><span class="count">${g.length}</span></summary>${body}</details>`
         : `<section class="stack"><div class="sh-row"><h3 class="sh">${t}</h3><span class="count">${g.length}</span></div>${body}</section>`; }).join('')
       || `<div class="empty-line">לא נמצא</div>`;
+    $$('[data-sv]', $('#sl')).forEach(a => a.onclick = e => { e.preventDefault(); const s = sites.find(x => x.slug === a.dataset.sv); if (s) visitSheet(s, a.getAttribute('href'), () => { cache.set('sites', sites); draw($('#sq').value.trim()); }); });
   };
   $('#sq').oninput = e => draw(e.target.value.trim());
   draw('');
@@ -119,6 +123,70 @@ export async function renderSites(el) {
   setTimeout(() => prefetchSites(near.map(s => s.slug)), 1200);
 }
 
+
+// ---------- סיור אפיון: קביעת תאריך לפני האפיון (דיווח טל 01/11, db/157) ----------
+// התאריך נכנס ללוח השיבוץ כסיור (לא יום שטח), נדחף ל"תאריך סיור אפיון" בליד במאנדי, ומי ששובץ מקבל התראה.
+// "לאפיין עכשיו" = מה שהיה עד היום (הטופס נפתח מיד)
+const canPlanVisit = () => isManager() || can('specs');
+const notStarted = s => !!s.buildings.length && s.buildings.every(b => { const x = b.specs?.[0] || b.specs; return !x || x.status === 'new'; });
+const HM = t => t ? String(t).slice(0, 5) : '';
+let surveyorsP = null;   // מי יכול לאפיין — מהשרת (spec_surveyors → can_do_specs: מודול אפיונים לפי תפקיד או אישית, db/157). נטען פעם אחת
+const surveyors = () => surveyorsP ||= sb.rpc('spec_surveyors').then(r => r.data || [], () => []);
+// תפוס באותו יום (יום שטח / היעדרות) — רמז ליד השם, לא חסימה
+async function busyOn(d) {
+  const [{ data: w }, { data: a }] = await Promise.all([
+    sb.from('work_days').select('crew_lead_id,work_day_crew(user_id)').eq('day', d).neq('status', 'cancelled').then(r => r, () => ({ data: [] })),
+    sb.from('absences').select('user_id').in('status', ['pending', 'approved']).lte('date_from', d).gte('date_to', d).then(r => r, () => ({ data: [] }))]);
+  const m = new Map(); (a || []).forEach(x => m.set(x.user_id, 'בהיעדרות'));
+  (w || []).forEach(x => [x.crew_lead_id, ...(x.work_day_crew || []).map(c => c.user_id)].forEach(u => u && !m.has(u) && m.set(u, 'ביום שטח')));
+  return m;
+}
+async function visitSheet(s, href, after) {
+  const T = await surveyors(), me = state.profile?.id;
+  // שם פרטי; כששניים חולקים אותו שם פרטי — גם האות הראשונה של שם המשפחה ("נועה כ׳")
+  const fn = u => (u?.full_name || '').split(' ')[0], dup = u => T.filter(x => fn(x) === fn(u)).length > 1;
+  const label = u => !u ? '' : dup(u) ? `${fn(u)} ${((u.full_name || '').split(' ')[1] || '').slice(0, 1)}׳`.replace(/ ׳$/, '') : fn(u);
+  const first = id => label(T.find(u => u.id === id));
+  const when = () => [dayLabel(s.visit_date), HM(s.visit_time), s.visit_by ? first(s.visit_by) : ''].filter(Boolean).join(' · ');
+  const now = close => { close(); location.hash = href; };
+  // שלב 1: שתי אפשרויות (או התאריך שנקבע + שינוי)
+  const choose = () => sheet(`<h3>${esc(s.name)}</h3>
+    ${s.visit_date ? `<div class="svwhen"><span class="mic">${icon('clipboard', 19)}</span><span class="grow"><small>סיור אפיון</small><b>${esc(when())}</b></span><button class="chip" type="button" id="svch">שינוי</button></div>`
+      : `<button class="btn primary block" type="button" id="svch">${icon('calendar', 18)} קביעת תאריך אפיון</button>`}
+    <button class="btn ${s.visit_date ? 'primary' : 'ghost'} block" type="button" id="svnow">${icon('clipboard', 18)} לאפיין עכשיו</button>`, (sh, close) => {
+    $('#svnow', sh).onclick = () => now(close);
+    $('#svch', sh).onclick = () => form();
+  });
+  // שלב 2: תאריך, שעה, מי (לא חובה)
+  const form = () => {
+    const t0 = isoDay(); let pick = s.visit_by || null;
+    sheet(`<h3>קביעת תאריך אפיון</h3><div class="small muted">${esc(s.name)}</div>
+      <div class="row"><label class="field grow">תאריך<input type="date" id="svd" min="${t0}" value="${esc(s.visit_date && s.visit_date >= t0 ? s.visit_date : '')}"></label>
+        <label class="field grow">שעה<input type="time" id="svt" step="900" value="${esc(HM(s.visit_time))}"></label></div>
+      ${T.length ? `<div class="field"><span>מי מאפיין <span class="muted">· לא חובה</span></span><div class="chips" id="svw">${T.map(u => `<button type="button" class="chip" data-u="${u.id}" aria-pressed="${u.id === pick}"><span>${esc(label(u))}</span><small class="why"></small></button>`).join('')}</div></div>` : ''}
+      <div class="row-btns">${s.visit_date ? '<button class="btn ghost" type="button" id="svrm">הסרת התאריך</button>' : '<button class="btn ghost" data-close>ביטול</button>'}<button class="btn primary" type="button" id="svok">שמירה</button></div>`, (sh, close) => {
+      const hint = async () => { const d = $('#svd', sh).value; $$('.why', sh).forEach(x => x.textContent = ''); if (!d) return;
+        const m = await busyOn(d).catch(() => new Map()); if ($('#svd', sh)?.value !== d) return;
+        $$('[data-u]', sh).forEach(c => { const w = m.get(c.dataset.u); $('.why', c).textContent = w ? ' · ' + w : ''; }); };
+      $('#svd', sh).onchange = hint; hint();
+      $$('[data-u]', sh).forEach(c => c.onclick = () => { pick = pick === c.dataset.u ? null : c.dataset.u; $$('[data-u]', sh).forEach(x => x.setAttribute('aria-pressed', x.dataset.u === pick)); });
+      const save = async (d, btn) => {
+        if (!navigator.onLine) return toast('קביעת תאריך דורשת קליטה');
+        if (btn.disabled) return; btn.disabled = true;
+        const t = d ? $('#svt', sh).value || null : null, u = d ? pick : null;
+        const { error } = await sb.rpc('set_spec_visit', { s: s.id, d, t, u });
+        if (error) { btn.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב'), 4000); }
+        const told = u && u !== me && u !== s.visit_by;
+        Object.assign(s, { visit_date: d, visit_time: t, visit_by: u }); close(); after?.();
+        toast(!d ? 'התאריך הוסר' : told ? `נקבע · ${first(u)} קיבל הודעה` : 'נקבע · מופיע בלוח השיבוץ', 2400, 'success');
+      };
+      $('#svok', sh).onclick = e => { const d = $('#svd', sh).value; if (!d) return toast('בחרו תאריך');
+        if (new Date(d + 'T12:00').getDay() === 6) return toast('לא עובדים בשבת'); save(d, e.currentTarget); };
+      const rm = $('#svrm', sh); if (rm) rm.onclick = () => save(null, rm);   // הפיך — קובעים שוב באותו מקום
+    }, { back: choose });
+  };
+  choose();
+}
 
 // ---------- מיקום האתר (כפתור אחד לאתר) — לתחזית ולמתכנן השמש בביצוע ----------
 // ---------- מפת אתר (תצ״א / מפת מתחם): אחת לאתר, בראש העמוד ----------
@@ -409,7 +477,7 @@ export async function renderBuilding(el, slug, bid) {
   el.innerHTML = `<header class="phead"><a class="back" id="bk" data-hard="1" href="javascript:void 0" aria-label="חזרה ל${esc(s.name)}">${icon('back', 20)}</a><h1 class="grow">${esc(one ? s.name : b.name)}</h1><span class="pill ${sc}" id="stp">${st}</span></header>
     ${ctx ? `<div class="muted">${esc(ctx)}</div>` : ''}
     ${editable ? '<div class="ready" id="ready"></div>' : ''}
-    ${s.kind === 'lead' ? `<div class="menu">${[['שלב', s.lead_stage], ['היקף', noMoney(s.scope_text)], ['אחראי', s.lead_owner], ['תאריך סיור', s.visit_date ? dm(s.visit_date) : null], ['הערות מהליד', noMoney(s.lead_notes)]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}
+    ${s.kind === 'lead' ? `<div class="menu">${[['שלב', s.lead_stage], ['היקף', noMoney(s.scope_text)], ['אחראי', s.lead_owner], ['תאריך סיור', s.visit_date ? dm(s.visit_date) + (s.visit_time ? ' · ' + String(s.visit_time).slice(0, 5) : '') : null], ['הערות מהליד', noMoney(s.lead_notes)]].filter(x => x[1]).map(([k, v]) => `<div class="lrow kv"><span class="grow"><small>${k}</small><b>${esc(v)}</b></span></div>`).join('')}
       ${NAMES.length > 1 && editable ? `<button class="lrow" type="button" id="splitb"><span class="grow"><b>יצירת ${NAMES.length} מבנים</b><small>${esc(NAMES.join(' · '))}</small></span><span class="chev">${icon('plus', 18)}</span></button>` : ''}
       <a class="lrow" href="#/site/${esc(slug)}"><span class="grow"><b>${s.buildings.length > 1 ? `כל המבנים בליד (${s.buildings.length})` : 'הוספת מבנה'}</b></span><span class="chev">${icon('chev', 18)}</span></a></div>` : !b.facade_area_m2 && b.plan_source !== 'plans' ? '' : `
     <div class="kpis"><div class="kpi"><b>${b.facade_area_m2 ? nf(b.facade_area_m2) : 'למדידה'}</b><span>${b.facade_area_m2 ? 'מ״ר לפי התכנית' : 'שטח חזיתות'}</span></div>
