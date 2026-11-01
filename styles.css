@@ -2809,3 +2809,12 @@ body:has(.viewer) #sheet:has(#rp){z-index:30}   /* זום על צילום הדי
 
 /* מספרים, תאריכים וטלפונים בתוך עברית */
 .mono{font-family:var(--f-mono);direction:ltr;unicode-bidi:isolate}
+/* ביטול יום (db/155) */
+.slink.bad{color:var(--bad);text-decoration-color:color-mix(in srgb,var(--bad) 40%,transparent)}
+.rb-q{font-weight:700;font-size:1.05rem;margin:4px 0}
+.tday.cx .tcard{opacity:.72}
+.tday.cx .datebox b{color:var(--muted);text-decoration:line-through}
+/* מענה לדיווח תקלה (db/156) */
+.rpres{background:var(--okbg);border-radius:12px;padding:10px 12px;line-height:1.55} .rpres b{display:block;color:var(--ok);font-size:.85rem;margin-bottom:2px}
+.rpvid{width:100%;max-height:60vh;border-radius:12px;background:#000;display:block} .rpvid.sk{aspect-ratio:9/16;max-height:40vh;background:var(--line)}
+button.lrow[data-myrep]{width:100%;text-align:start;font:inherit;color:inherit;cursor:pointer}

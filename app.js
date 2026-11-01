@@ -347,7 +347,7 @@ async function routeInner() {
     case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
     case 'news': return (await import('./modules/news.js')).renderNews(app);
-    case 'requests': await (await import('./modules/news.js')).renderRequests(app); if (h[1] === 'new') $('#rn')?.click(); return;
+    case 'requests': await (await import('./modules/news.js')).renderRequests(app); if (h[1] === 'new') $('#rn')?.click(); if (h[1] === 'rep' && h[2]) (await import('./modules/appreports.js')).openMyReport(h[2]); return;   // מהתראת "תוקן" (db/156)
     case 'weather': return (await import('./modules/weather.js')).renderWeather(app, h[1] || '');
     case 'clients': return (await import('./modules/clients.js')).renderClients(app);
     case 'client': return (await import('./modules/clients.js')).renderClient(app, h[1]);

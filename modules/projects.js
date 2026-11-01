@@ -4,7 +4,7 @@ import { hideMoneyText as noMoney$ } from '../lib/core.js';
 import { availability } from '../lib/avail.js';
 import { facadeOrder } from '../lib/sun.js';
 import { isNight, nightRange, nightTag, nightToggleHtml, bindNight } from '../lib/night.js';
-import { dtTag, dtPickHtml, bindDtPick, isWorkDay, SHORT as DT_SHORT } from '../lib/daytype.js';
+import { dtTag, dtPickHtml, bindDtPick, isWorkDay, SHORT as DT_SHORT, cancelWhy, cancelNote } from '../lib/daytype.js';
 import { errText } from '../lib/audit.js';
 import { sb, state, can, isManager, cache, enqueue, signedUrls, covers, coverArt, folderGrid, sheet, icon, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, isoDay, dayLabel, dm, ask, confirmBox, backBtn, HE_D1, leadMark, coverFor, skeleton } from '../lib/core.js';
 
@@ -352,10 +352,12 @@ export async function renderProject(el, id, tab = 'o') {
     const box = $('#pjdays', el); if (!box) return;
     const L = live().sort((a, b) => a.day < b.day ? -1 : 1), up = upcoming();
     const legacy = legacyReps().map(r => ({ legacy: r, day: r.report_date, id: 'r' + r.monday_item_id }));
-    const rows = [...L, ...legacy].sort((a, b) => a.day < b.day ? -1 : a.day > b.day ? 1 : 0);
+    const cxd = D.days.filter(d => d.status === 'cancelled' && !L.some(o => o.day === d.day && o.crew_lead_id === d.crew_lead_id));   // יום שבוטל נשאר בהיסטוריה (db/155) — אלא אם שובץ מחדש באותו תאריך
+    const rows = [...L, ...legacy, ...cxd].sort((a, b) => a.day < b.day ? -1 : a.day > b.day ? 1 : 0);
     const doneN = L.filter(d => isPast(d) && isWorkDay(d)).length + legacy.length, leftN = up.filter(isWorkDay).length;
     const PL = projPulses(p), out = up.length && PL.length && up.some(d => !PL.some(([f, t]) => d.day >= f && d.day <= t));
-    const past = rows.filter(r => r.legacy || isPast(r)), fut = rows.filter(r => !r.legacy && !isPast(r));
+    const gone = r => r.legacy || isPast(r) || (r.status === 'cancelled' && r.day < T0);
+    const past = rows.filter(gone), fut = rows.filter(r => !gone(r));
     const hideN = past.length > 3 ? past.length - 3 : 0;
     box.innerHTML = `<div class="sh-row"><h2 class="sh">ימי שטח</h2><small class="muted">${[doneN ? doneN + ' בוצעו' : '', leftN ? leftN + ' נותרו' : ''].filter(Boolean).join(' · ')}</small></div>
       ${M && OPENP ? `<div class="row tlact">${PL.length ? `<button type="button" class="slink" id="dates">${PL.length > 1 ? PL.map(pulseLbl).join(' · ') : `${dm(PL[0][0])}–${dm(PL[0][1])}`}</button>` : `<button type="button" class="slink" id="dates">תאריכים</button>`}${out ? '<span class="pill warn">שיבוץ מחוץ לטווח</span>' : ''}<span class="grow"></span><button type="button" class="chip sm" id="schm">${icon('plus', 16)} ${up.length ? 'שיבוץ מחדש' : 'שיבוץ ימים'}</button></div>` : ''}
@@ -385,6 +387,7 @@ export async function renderProject(el, id, tab = 'o') {
     if (d.legacy) { const r = d.legacy, ex = EXP.has(d.id);
       return `<div class="tday past ${ex ? 'open' : ''}" data-did="${d.id}">${dbox}<div class="tcard"><button type="button" class="thead" data-exp="${d.id}" aria-expanded="${ex}"><span class="grow"><b>${ex ? 'סיכום היום' : 'יום שטח'} · ${dm(r.report_date)}</b><small>${esc(r.crew || '')}</small></span><span class="pill ok">בוצע</span><span class="chev">${icon('chev', 16)}</span></button>
         ${ex ? `<div class="tbody">${kpiRow([[r.hours, 'שעות'], [r.gallons, 'גלון']])}${r.work ? `<p>${esc(r.work)}</p>` : ''}${r.issues ? `<small class="issue">${esc(r.issues)}</small>` : ''}${r.notes ? `<small>${esc(r.notes)}</small>` : ''}<div class="photos" data-lph="${d.id}"></div></div>` : ''}</div></div>`; }
+    if (d.status === 'cancelled') return `<div class="tday cx" data-did="${d.id}">${dbox}<div class="tcard thead"><span class="grow"><b>יום שטח · ${dm(d.day)}${dtTag(d)}</b>${(() => { const to = d.rebooked_to && D.days.find(x => x.id === d.rebooked_to); return [cancelNote(d), to ? 'הועבר ל-' + dm(to.day) : ''].filter(Boolean).map(x => `<small>${esc(x)}</small>`).join(''); })()}</span><span class="pill muted">בוטל${cancelWhy(d) ? ' · ' + esc(cancelWhy(d)) : ''}</span></div></div>`;
     if (!isPast(d)) {
       const st = DST[d.status] || DST.planned, crew = d.work_day_crew || [], conf = crew.filter(c => c.confirmed_at).length, cc = cantCome(d).length;
       return `<div class="tday ${today ? 'today' : 'fut'}" data-did="${d.id}">${dbox}<a class="tcard thead" href="#/day/${d.id}"><span class="grow"><b>יום שטח · ${dm(d.day)}${d.is_last_day ? ' · יום אחרון' : ''}${dtTag(d)}${nightTag(d)}</b>
@@ -780,13 +783,13 @@ export async function renderProject(el, id, tab = 'o') {
   // ----- סגירה: ימים נסגרו → חתימת לקוח (סוגרת את הפרויקט) → דוח ללקוח. הצעד הבא תמיד בולט -----
   function closeFlow(SG, cs, crq) {
     const lead = state.profile.role === 'crew_lead'; if (!M && !lead) return '';
-    const open = D.days.filter(d => d.status !== 'done'), live = D.days.find(d => !['done', 'planned', 'cancelled'].includes(d.status));
-    const daysOk = (D.days.length || D.reps.length) && !open.length;
-    const doneN = D.days.length - open.length;
+    const LD = live(), open = LD.filter(d => d.status !== 'done'), liveD = LD.find(d => d.status !== 'done' && d.status !== 'planned');
+    const daysOk = (LD.length || D.reps.length) && !open.length;
+    const doneN = LD.length - open.length;
     const step = (n, ok, t, s, href, next) => `<a class="rdy rstep ${ok ? 'on' : next ? 'next' : ''}" ${href ? `href="${esc(href)}"` : ''}><span class="rbox">${ok ? icon('check', 16) : n}</span><span class="grow"><b>${t}</b>${s ? `<small>${s}</small>` : ''}</span>${href ? `<span class="chev">${icon('chev', 16)}</span>` : ''}</a>`;
     const pilot = p.engagement === 'פיילוט';
     const rows = [
-      step(1, daysOk, 'ימי השטח נסגרו', D.days.length ? `${doneN}/${D.days.length}${live ? ' · יום פתוח עכשיו' : open.length ? ` · הבא ${dm(open[0].day)}` : ''}` : D.reps.length ? `${D.reps.length} דוחות יומיים` : 'עוד אין ימי שטח', live ? `#/day/${live.id}` : '', false),
+      step(1, daysOk, 'ימי השטח נסגרו', LD.length ? `${doneN}/${LD.length}${liveD ? ' · יום פתוח עכשיו' : open.length ? ` · הבא ${dm(open[0].day)}` : ''}` : D.reps.length ? `${D.reps.length} דוחות יומיים` : 'עוד אין ימי שטח', liveD ? `#/day/${liveD.id}` : '', false),
       step(2, !!SG.length, 'חתימת לקוח', SG.length ? esc(`${SG[0].name || ''}${SG[0].at ? ' · ' + dm(isoDay(new Date(SG[0].at))) : ''}`) : '', cs && !SG.length ? '' : `#/signoff/${id}`, daysOk && !SG.length),
       M ? step(3, !!SG.length, 'דוח ללקוח', SG.length ? 'מוכן · שיתוף ללקוח או PDF' : 'נבנה לבד מהחתימה · PDF · קולאז׳ לפני/אחרי', `#/client-report/${id}`, !!cs) : '',
       M ? step(4, false, 'סיכום פנימי', 'איכות, תקלות ולקחים — לפעם הבאה', `#/summary/${id}`, !!SG.length).replace('class="rdy rstep', 'id="sumstep" class="rdy rstep') : '',
@@ -853,7 +856,7 @@ export async function renderProject(el, id, tab = 'o') {
       // פיילוט: האפליקציה רק מדווחת שבוצע. ההחלטה אם להמשיך להצעה — ניהולית, במאנדי (הליד עובר ל"פיילוט בוצע — ממתין להצעה")
       if (p.engagement === 'פיילוט') { if (!(await confirmBox('סיום הפיילוט?', { ok: 'סיום הפיילוט' }))) return;
         const { error } = await sb.rpc('close_pilot', { p: id, ok: true }); if (error) return toast(errText(error, 'לא נסגר — נסו שוב')); toast('הפיילוט הסתיים'); return reload('s'); }
-      const openDays = D.days.some(d => d.status !== 'done');
+      const openDays = live().some(d => d.status !== 'done');
       // בלי חתימת לקוח — רק הנהלה (admin), עם סיבה שנשמרת (אביחי 13/10, db/142)
       const reason = await ask('סגירה בלי חתימת לקוח — למה?', { placeholder: openDays ? 'יש ימים שלא נסגרו · למשל: הלקוח אישר בטלפון' : 'למשל: הלקוח אישר בטלפון / במייל', ok: 'סגירת פרויקט' });
       if (reason == null) return; if (!reason.trim()) return toast('חובה לכתוב סיבה');

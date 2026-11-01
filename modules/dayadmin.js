@@ -1,12 +1,13 @@
 // ניהול יום שטח מתוכנן (מנהל תפעול ומעלה): כל מה שמתקנים בבעיה של יום — במקום אחד, בלי לעבור למסך הביצוע של העובד.
 // העברת תאריך · ראש צוות · רחפן · שעת יציאה · הגעה/סיום באתר (גם ביום שהתחיל — טל 13/10: סיכם עם הלקוח שעה אחרת) · הוספה/הסרה של אנשים · ביטול היום. כל שינוי = התראה לצוות (בצד השרת).
+// ביטול (db/155): סיבה בשבב + הערה → היום נשאר בהיסטוריה כ"בוטל", הצוות מקבל הודעה אחת → הצעה להעביר ליום הפנוי הבא עם אותו צוות.
 // בלחיצה אחת (סימולציית שבוע של אוריאל, 12/10): מחליף למי שלא יכול להגיע · דחיית כל ימי הפרויקט ביום (מזג אוויר) · הזזה ליום פנוי · רחפן חלופי לכל הימים.
 // אחרי שינוי בצוות הגיליון נפתח מחדש מעודכן — ממשיכים לתקן בלי לחפש שוב את היום.
 import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, dm, dayLabel, leadMark, HE_D1, isoDay } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 import { availability } from '../lib/avail.js';
 import { isNight, nightRange, nightTag, nightToggleHtml, bindNight, wxKey } from '../lib/night.js';
-import { dtTag, dtPickHtml, bindDtPick, dtLabel } from '../lib/daytype.js';
+import { dtTag, dtPickHtml, bindDtPick, dtLabel, CANCEL_R, cancelWhy } from '../lib/daytype.js';
 
 const RANK = { crew_lead: 0, crew: 1, ops_manager: 2, admin: 3 };
 const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return isoDay(d); };
@@ -86,10 +87,11 @@ export async function openDayAdmin(id, after) {
     ${swapDr ? `<button type="button" class="arow bad" id="da-dr"><span class="aic">${icon('drone', 18)}</span><span class="grow"><b>${esc((drones || []).find(d => d.id === w.drone_id)?.name || 'הרחפן')} ${esc(drWhy)}</b><small>החלפה ל${esc(swapDr.name)}${drAll.length > 1 ? ` בכל ${drAll.length} הימים` : ''}</small></span><span class="btn primary sm">החלפה</span></button>` : ''}
     ${nightToggleHtml('da-nt', isNight(w))}
     <div class="row"><label class="field grow" id="da-lsa">הגעה לאתר<input type="time" id="da-sa" value="${hm5(w.site_arrival)}"></label><label class="field grow" id="da-lse">סיום באתר<input type="time" id="da-se" value="${hm5(w.site_end)}"></label></div>
-    ${started ? `<div class="row-btns"><a class="btn ghost" href="#/day/${id}">מסך היום</a><button class="btn primary" id="da-save">שמירת השעות</button></div>` : `<div class="row"><label class="field grow">תאריך<input type="date" id="da-day" value="${w.day}"></label><label class="field grow">יציאה<small id="da-hint"></small><input type="time" id="da-time" value="${hm5(w.report_time)}"></label></div>
+    ${started ? `<div class="row-btns"><a class="btn ghost" href="#/day/${id}">מסך היום</a><button class="btn primary" id="da-save">שמירת השעות</button></div><button type="button" class="slink bad" id="da-cancel">ביטול היום</button>` : `<div class="row"><label class="field grow">תאריך<input type="date" id="da-day" value="${w.day}"></label><label class="field grow">יציאה<small id="da-hint"></small><input type="time" id="da-time" value="${hm5(w.report_time)}"></label></div>
     <label class="field">רחפן<select id="da-drone"><option value="">בלי רחפן</option>${(drones || []).map(d => { const why = av.drone(d.id); return `<option value="${d.id}" ${d.id === w.drone_id ? 'selected' : ''} ${why ? 'disabled' : ''}>${esc(d.name)}${why ? ' — ' + esc(why) : (d.health === 'warning' ? ' — במעקב' : '') + (av.droneWarn?.(d.id) ? ' · ⚠ ' + esc(av.droneWarn(d.id)) : '')}</option>`; }).join('')}</select></label>
     <div class="row-btns"><button class="btn ghost" id="da-cancel">ביטול היום</button><button class="btn primary" id="da-save">שמירת השינויים</button></div>`}`, (s, close) => {
     const busy = b => { b.disabled = true; return () => { b.disabled = false; }; };
+    $('#da-cancel', s).onclick = () => { close(); cancelSheet(w, after, (drones || []).find(d => d.id === w.drone_id)?.health === 'grounded'); };
     // סוג היום — נשמר בלחיצה (db/138), גם ביום שהתחיל
     bindDtPick(s, 'da-dt', async t => { const { error: e } = await sb.rpc('set_day_type', { t, w: id });
       if (e) return toast(errText(e, 'לא נשמר — נסו שוב'));
@@ -152,12 +154,45 @@ export async function openDayAdmin(id, after) {
       if (d && d !== w.day) { const { error: e2 } = await sb.rpc('move_day', { w: id, d }); if (e2) { un(); return toast(errText(e2, 'היום לא הועבר — נסו שוב'), 5000); } return done(`הועבר ל${dayLabel(d)} · הצוות קיבל עדכון`, close); }
       done(ch && crew.length ? 'נשמר · הצוות קיבל עדכון' : 'נשמר', close);
     };
-    $('#da-cancel', s).onclick = async e => {
-      if (!(await confirmBox(`לבטל את יום השטח ב-${dm(w.day)}?`, { ok: 'ביטול היום', danger: true }))) return;
-      const un = busy(e.target);
-      for (const u of crew) { const { error: e3 } = await sb.rpc('unassign_day', { w: id, u }); if (e3) { un(); return toast(errText(e3, 'הביטול לא נשמר — נסו שוב')); } }   // כל אחד מקבל עדכון; היום נמחק כשאין בו אף אחד
-      if (!crew.length) await sb.from('work_days').delete().eq('id', id).eq('status', 'planned');
-      done('היום בוטל · הצוות קיבל עדכון', close);
+  });
+}
+
+// שלב 1: למה מבטלים — שבב אחד (תחזית "לא לטוס" → מזג אוויר כבר מסומן), הערה לא חובה
+// רחפן היום מקורקע → "רחפן לא כשיר" מסומן (טל 01/11); תחזית "לא לטוס" → מזג אוויר
+function cancelSheet(w, after, grounded) {
+  const pre = grounded ? 'drone' : w.weather_alerted ? 'weather' : '';
+  sheet(`<div class="stack tight"><h3 class="sh">ביטול היום</h3><small class="muted">${esc(w.projects?.name || '')} · ${sd(w.day)}</small></div>
+    <div class="chips" id="cx-r" role="radiogroup" aria-label="סיבה">${CANCEL_R.map(([k, l]) => `<button type="button" class="chip" role="radio" data-r="${k}" aria-pressed="${k === pre}" aria-checked="${k === pre}">${l}</button>`).join('')}</div>
+    <label class="field" id="cx-nl">הערה<input id="cx-n" maxlength="300" placeholder="לא חובה" autocomplete="off"></label>
+    <div class="row-btns"><button class="btn ghost" data-close>חזרה</button><button class="btn danger" id="cx-ok" ${pre ? '' : 'disabled'}>ביטול היום</button></div>`, (s, close) => {
+    let r = pre; const ok = $('#cx-ok', s);
+    $$('[data-r]', s).forEach(b => b.onclick = () => { r = b.dataset.r; ok.disabled = false;
+      $$('[data-r]', s).forEach(x => { const on = x === b; x.setAttribute('aria-pressed', on); x.setAttribute('aria-checked', on); });
+      $('#cx-nl', s).hidden = r === 'sick'; if (r === 'sick') $('#cx-n', s).value = '';   // מידע רפואי — לא נכתב ולא נשלח
+      if (r === 'other') $('#cx-n', s).focus(); });
+    ok.onclick = async () => { if (!r || ok.disabled) return; ok.disabled = true;
+      const note = r === 'sick' ? '' : $('#cx-n', s).value.trim();
+      const { data, error } = await sb.rpc('cancel_day', { w: w.id, reason: r, note: note || null });
+      if (error) { ok.disabled = false; return toast(errText(error, 'הביטול לא נשמר — נסו שוב'), 5000); }
+      close(); after?.();
+      rebookSheet({ ...w, status: 'cancelled', cancel_reason: r, cancel_note: note }, data?.suggest || null, after);
     };
+  });
+}
+// שלב 2: להעביר ליום הפנוי הבא עם אותו צוות, רחפן ושעות (rebook_day) — או יום אחר, או לא עכשיו
+function rebookSheet(w, sug, after) {
+  const tmr = isoDay(new Date(Date.now() + 864e5));
+  sheet(`<div class="stack tight"><h3 class="sh">היום בוטל</h3><small class="muted">${esc(w.projects?.name || '')} · ${sd(w.day)} · ${esc(cancelWhy(w))}</small></div>
+    ${sug ? `<p class="rb-q">להעביר ל${sd(sug)} עם אותו צוות?</p>` : '<p class="muted">אין יום שכל הצוות פנוי בו בחודש הקרוב</p>'}
+    <div class="row" id="rb-other" ${sug ? 'hidden' : ''}><label class="field grow">יום אחר<input type="date" id="rb-d" min="${tmr}"></label><button type="button" class="btn ghost" id="rb-go">העברה</button></div>
+    <div class="row-btns"><button class="btn ghost" data-close>לא עכשיו</button>${sug ? `<button class="btn primary" id="rb-ok">העברה ל${sd(sug)}</button>` : ''}</div>
+    ${sug ? '<button type="button" class="slink" id="rb-alt">יום אחר</button>' : ''}`, (s, close) => {
+    const go = async (d, b) => { if (!d || b.disabled) return; b.disabled = true;
+      const { error } = await sb.rpc('rebook_day', { w: w.id, d });
+      if (error) { b.disabled = false; return toast(errText(error, 'היום לא הועבר — נסו שוב'), 6000); }
+      close(); toast(`הועבר ל${dayLabel(d)} · הצוות קיבל עדכון`, 2600, 'success'); after?.(); };
+    const ok = $('#rb-ok', s); if (ok) ok.onclick = () => go(sug, ok);
+    const alt = $('#rb-alt', s); if (alt) alt.onclick = () => { alt.remove(); $('#rb-other', s).hidden = false; $('#rb-d', s).focus(); };
+    $('#rb-go', s).onclick = e => go($('#rb-d', s).value, e.target);
   });
 }

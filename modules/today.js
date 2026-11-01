@@ -3,7 +3,7 @@ import { coverArt, icon, leadMark, navButtons, thumbUrls } from '../lib/core.js'
 import { hideMoneyText as noMoney$ } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
 import { isNight, nightRange, nightTag, isCurrent, wxKey } from '../lib/night.js';
-import { dtTag, isWorkDay, needsPreflight, isCoord } from '../lib/daytype.js';
+import { dtTag, isWorkDay, needsPreflight, isCoord, cancelWhy, cancelNote } from '../lib/daytype.js';
 import { loadZones, dayZones, zonePrefill, zonesHtml, bindZones, zonesPayload, zkey } from './zones.js';
 import { terms, serviceOf, workChoices } from '../lib/service.js';
 import { SEC, needsDrone, pulseRoles, mySection, decideSheet, afterDecide } from './prestart.js';
@@ -77,6 +77,10 @@ export async function renderDay(el, id) {
   let D;
   try { D = await loadDay(id); } catch { D = await cache.get(ck); }
   if (!D) { el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">יום שטח</h1></header><div class="empty-line">היום לא נמצא או שאין קליטה</div>`; return; }
+  // יום שבוטל (db/155) — קישור ישן מהתראה: רק שבוטל ולמה. בלי תהליך העבודה
+  if (D.day.status === 'cancelled') { el.innerHTML = `<header class="phead"><a class="back" href="#/" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">${esc(D.day.projects?.name || 'יום שטח')}</h1></header>
+    <div class="stack"><div class="card stack tight"><b>היום בוטל · ${dayLabel(D.day.day)}</b>${cancelWhy(D.day) ? `<small class="muted">${esc(cancelWhy(D.day))}${cancelNote(D.day) ? ' · ' + esc(cancelNote(D.day)) : ''}</small>` : ''}</div>
+    <a class="btn ghost" href="#/schedule">הלו״ז שלי</a></div>`; return; }
   // תמונות שעוד בתור (צולמו בלי קליטה) נספרות ומוצגות. תמונה שכבר עלתה (קישור מקומי ישן) נשארת ברשימה בלי הקישור — לא נעלמת
   try { const pend = await pendingPhotos(m => m.work_day_id === id); D.photos = D.photos.filter(p => !pend.some(x => x.photoId === p.id)).map(p => p.url ? { id: p.id, kind: p.kind, storage_path: p.storage_path } : p).concat(pend.map(x => ({ id: x.photoId, kind: x.meta.kind, storage_path: x.path, url: URL.createObjectURL(x.blob) }))); } catch {}
   // מה שעוד בתור גובר על מה שהשרת (או העותק השמור ממנו) אומר — אחרת אחרי פתיחה מחדש בלי קליטה היום "חוזר לבוקר" ועושים הכל פעמיים
