@@ -1,5 +1,5 @@
-// רכש ומלאי: חומרי ניקוי וביגוד/ציוד מגן בלבד. בקשה מהקטלוג → לוח הרכש. אישור דו-שלבי כאן (צורך → מעל הסף אישור סופי, db/162) → נדחף למאנדי; "הוזמן" כאן; ספירת מלאי כאן (מנהלים) → לוח המלאי.
-import { sb, state, isManager, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, dm, backBtn, replaceHash, mon } from '../lib/core.js';
+// רכש ומלאי: חומרי ניקוי וביגוד/ציוד מגן בלבד. כניסה למלאי + שרשור לכל בקשה (db/163). בקשה מהקטלוג → לוח הרכש. אישור דו-שלבי כאן (צורך → מעל הסף אישור סופי, db/162) → נדחף למאנדי; "הוזמן" כאן; ספירת מלאי כאן (מנהלים) → לוח המלאי.
+import { sb, state, isManager, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, dm, backBtn, replaceHash, mon, signedUrls, zoom, fmtTime } from '../lib/core.js';
 
 const ST = { draft: ['טיוטה', ''], submitted: ['ממתין לאישור', 'warn'], pending: ['ממתין לאישור', 'warn'], approved: ['אושר', 'lime'], sent: ['הוזמן', 'lime'], partial: ['התקבל חלקית', 'lime'], received: ['התקבל', 'ok'], rejected: ['נדחה', 'bad'], cancelled: ['בוטל', ''] };
 const nis = x => '₪' + Math.round(x || 0).toLocaleString('he-IL');
@@ -8,7 +8,7 @@ const low = c => c.min_qty != null && c.stock != null && Number(c.stock) <= Numb
 const isAdmin = () => state.profile?.role === 'admin';
 const OPEN = ['submitted', 'pending'];
 // שגיאות השרת (db/159) → משפט אחד
-const ERR = { forbidden: 'הבקשה לא מחכה לך', already_decided: 'כבר הוחלט', no_lines: 'השורות עוד לא הגיעו — לנסות שוב בעוד רגע', reason_required: 'צריך לכתוב סיבה', not_approved: 'הבקשה עוד לא אושרה', bad_qty: 'כמות לא תקינה', not_found: 'לא נמצא' };
+const ERR = { received_in_monday: 'הקבלה נרשמה במאנדי. ממשיכים שם', not_ordered: 'הבקשה עוד לא אושרה', bad_photo: 'התמונה לא נשמרה — נסו שוב', bad_input: 'לא נשמר — נסו שוב', empty: 'אין מה לשלוח', too_many: 'יותר מדי הודעות — נסו בעוד שעה', forbidden: 'הבקשה לא מחכה לך', already_decided: 'כבר הוחלט', no_lines: 'השורות עוד לא הגיעו — לנסות שוב בעוד רגע', reason_required: 'צריך לכתוב סיבה', not_approved: 'הבקשה עוד לא אושרה', bad_qty: 'כמות לא תקינה', not_found: 'לא נמצא' };
 const errMsg = e => ERR[(e?.message || '').trim()] || (/fetch|network|load failed/i.test(e?.message || '') ? 'אין קליטה — נסו שוב' : 'לא נשמר — נסו שוב');
 
 export async function renderPurchase(el) {
@@ -26,6 +26,7 @@ export async function renderPurchase(el) {
     return `<button type="button" class="lrow" data-req="${r.id}"><span class="grow"><b>${esc(r.title)}</b><small>${dm(r.created_at.slice(0, 10))} · ${esc(r.profiles?.full_name || '')}${r.projects?.name ? ' · ' + esc(r.projects.name) : ''}</small>
       <small>${esc((r.purchase_lines || []).map(l => `${l.name} ×${l.qty}`).join(' · '))}</small></span><span class="pill ${c}">${t}</span></button>`; };
   $('#pb').innerHTML = `
+    ${isManager() && (cat || []).length ? `<button class="btn primary block" id="pin">${icon('plus', 18)} כניסה למלאי</button>` : ''}
     ${todo.length ? `<section><div class="sh-row"><h3 class="sh">לאישורך</h3><span class="count">${todo.length}</span></div><div class="list">${todo.map(reqRow).join('')}</div></section>` : ''}
     ${lows.length > 1 ? `<button class="btn primary block" id="plow">${icon('cart', 18)} הזמנת כל החסרים (${lows.length})</button>` : ''}
     ${lows.length ? `<section><h3 class="sh">מתחת למינימום</h3><div class="alist">${lows.map(c => `<button class="arow warn" type="button" data-quick="${c.monday_item_id}"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(c.name)}</b><small>במלאי ${c.stock} ${esc(c.unit || '')} · מינימום ${c.min_qty}</small></span><span class="pill warn">להזמין</span></button>`).join('')}</div></section>` : ''}
@@ -36,6 +37,7 @@ export async function renderPurchase(el) {
   const again = () => renderPurchase($('#app'));
   $$('[data-quick]').forEach(b => b.onclick = () => newRequest(cat || [], b.dataset.quick));
   $$('[data-stock]').forEach(b => b.onclick = () => stockSheet((cat || []).find(c => c.monday_item_id === b.dataset.stock), cat || [], again));
+  const pin = $('#pin'); if (pin) pin.onclick = () => stockSheet(null, cat || [], again);
   $$('[data-req]').forEach(b => b.onclick = () => requestSheet((reqs || []).find(r => r.id === b.dataset.req), again));
   ['#padd', '#pnew'].forEach(k => { const b = $(k); if (b) b.onclick = () => newRequest(cat || []); });
   const pl = $('#plow'); if (pl) pl.onclick = () => newRequest(cat || [], lows.map(c => c.monday_item_id));
@@ -45,7 +47,11 @@ export async function renderPurchase(el) {
 async function requestSheet(r, done) {
   if (!r) return;
   let d = null;
-  if (isAdmin()) { const { data, error } = await sb.rpc('purchase_review', { p_id: r.id }); if (error) return toast(errMsg(error)); d = data; }
+  // שרשור (db/163): שלבים עם מי ומתי, הודעות, ושורות לקבלה — לכל מי שרואה את הבקשה. בלי ₪
+  const [rv, tr] = await Promise.all([isAdmin() ? sb.rpc('purchase_review', { p_id: r.id }) : Promise.resolve({ data: null }), sb.rpc('purchase_thread', { p_id: r.id })]);
+  if (rv.error) return toast(errMsg(rv.error)); d = rv.data;
+  const th = tr.data || { events: [], lines: [] };
+  const urls = await signedUrls('field', (th.events || []).map(e => e.photo_path).filter(Boolean), 3600);
   const lines = d?.lines || r.purchase_lines || [], status = d?.status || r.status, [t, c] = OPEN.includes(status) && (r.need_at || d?.need_done_by) ? ['צורך אושר', 'warn'] : ST[status] || ['', ''];   // כמו בשורה ברשימה
   const meta = [r.profiles?.full_name || d?.requester, r.projects?.name || d?.project, (d?.needed_by || r.needed_by) ? 'נדרש עד ' + dm(d?.needed_by || r.needed_by) : ''].filter(Boolean).map(esc).join(' · ');
   const canAct = !!d?.can_act && OPEN.includes(status), fin = !!d?.approve_final;
@@ -57,7 +63,7 @@ async function requestSheet(r, done) {
   const sup = [...new Set(lines.map(l => l.supplier).filter(Boolean))].join(', ');
   const after = isAdmin() && ['approved', 'sent', 'partial'].includes(status) ? `<section class="pr-next"><h4>מה עכשיו</h4><ol>
       <li class="${status !== 'approved' ? 'done' : ''}">מזמינים מ${esc(sup || 'הספק')} בטלפון או בוואטסאפ, ומסמנים "הוזמן"</li>
-      <li>כשהסחורה מגיעה: ${mon('במאנדי ממלאים "התקבל" בכל שורה ומסמנים שלב "התקבל". המלאי מתעדכן לבד', 'מעדכנים את המלאי')}</li></ol>
+      <li>כשהסחורה מגיעה: לוחצים "התקבל" ומסמנים כמה הגיע מכל פריט. המלאי מתעדכן לבד, גם במאנדי</li></ol>
       ${status === 'approved' && d?.can_order ? `<button class="btn primary block" id="rord">${icon('check', 18)} הוזמן</button>` : ''}</section>` : '';
   sheet(`<div class="pr-head"><h3 class="grow">${esc(r.title)}</h3><span class="pill ${c}">${t}</span></div>
     ${meta ? `<p class="pr-meta">${meta}</p>` : ''}
@@ -66,7 +72,10 @@ async function requestSheet(r, done) {
     ${(d?.notes || r.notes) ? `<p class="pr-note">${esc(d?.notes || r.notes)}</p>` : ''}
     ${status === 'rejected' && (d?.decision_note || r.decision_note) ? `<p class="pr-note bad">סיבת הדחייה: ${esc(d?.decision_note || r.decision_note)}</p>` : ''}
     ${why ? `<p class="pr-why">${why}</p>` : ''}
+    ${timeline(th, status)}
     ${after}
+    ${th.can_receive ? `<button class="btn primary block" id="rrcv">${icon('check', 18)} התקבל</button>` : th.monday_receipt && isManager() ? `<p class="pr-why">הקבלה נרשמה במאנדי. ממשיכים שם</p>` : ''}
+    ${thread(th, urls)}
     ${canAct ? `<div id="rj" hidden><label class="field">סיבת הדחייה<textarea id="rjn" rows="2" maxlength="300"></textarea></label></div>
       <div class="row-btns"><button class="btn ghost" id="rno">דחייה</button><button class="btn primary" id="rok">${icon('check', 18)} ${fin ? 'אישור' : 'אישור צורך'}</button></div>`
       : `<div class="row-btns"><button class="btn ghost" data-close>סגירה</button></div>`}
@@ -86,6 +95,9 @@ async function requestSheet(r, done) {
       box.hidden = false; no.textContent = 'שליחת הדחייה'; no.classList.replace('ghost', 'danger'); $('#rjn', s).focus();
       if (yes) { yes.innerHTML = 'ביטול'; yes.className = 'btn ghost'; yes.onclick = close; } };
     if (yes) yes.onclick = () => decide(true, yes);
+    $$('[data-zoom]', s).forEach(i => i.onclick = () => zoom(i.src, 'תמונה'));
+    const rcv = $('#rrcv', s); if (rcv) rcv.onclick = () => { close(); receiveSheet(r, th, done); };
+    bindComposer(s, r.id, () => { close(); done(); setTimeout(() => requestSheet(r, done), 200); });
     const ord = $('#rord', s);
     if (ord) ord.onclick = async () => { if (ord.disabled) return; ord.disabled = true; ord.classList.add('busy');
       const { error } = await sb.rpc('purchase_mark_ordered', { p_id: r.id });
@@ -95,30 +107,148 @@ async function requestSheet(r, done) {
   });
 }
 
-// ---------- שורת מלאי: עדכון כמות (ספירה) או בקשת רכש ----------
-function stockSheet(c, cat, done) {
-  if (!c) return;
-  const can = isManager(), cur = c.stock == null ? 0 : Number(c.stock);
-  if (!can) return newRequest(cat, c.monday_item_id);
-  sheet(`<h3>${esc(c.name)}</h3>
-    <p class="pr-meta">במלאי ${c.stock ?? '—'} ${esc(c.unit || '')}${c.min_qty != null ? ` · מינימום ${Number(c.min_qty)}` : ''}</p>
-    <label class="field">כמה יש עכשיו${c.unit ? ` (${esc(c.unit)})` : ''}
-      <span class="qty pr-count"><button type="button" id="sm" aria-label="פחות">−</button><input id="sq" type="number" inputmode="decimal" min="0" step="any" value="${cur}"><button type="button" id="sp" aria-label="יותר">+</button></span></label>
-    <div class="row-btns"><button class="btn ghost" id="sbuy">${icon('cart', 18)} בקשת רכש</button><button class="btn primary" id="sgo">עדכון מלאי</button></div>`, (s, close) => {
-    const q = $('#sq', s), val = () => Number(String(q.value).replace(',', '.'));
-    $('#sm', s).onclick = () => { q.value = Math.max(0, (val() || 0) - 1); };
-    $('#sp', s).onclick = () => { q.value = (val() || 0) + 1; };
-    q.onfocus = () => q.select();
-    $('#sbuy', s).onclick = () => { close(); newRequest(cat, c.monday_item_id); };
-    $('#sgo', s).onclick = async () => {
-      const v = val(), go = $('#sgo', s);
-      if (!Number.isFinite(v) || v < 0 || q.value === '') { q.focus(); return toast('כמות לא תקינה'); }
-      if (go.disabled) return; go.disabled = true; go.classList.add('busy');
-      const { error } = await sb.rpc('stock_set', { p_item: c.monday_item_id, p_qty: v });
+// ---------- שרשור הבקשה ----------
+// ציר זמן קבוע לפי שלבי הרכש. כל שלב: מי ומתי. נדחה/בוטל — סוף הציר
+const EV = { submitted: 'הוגש', need_ok: 'צורך אושר', approved: 'אושר', ordered: 'הוזמן', received_partial: 'התקבל חלקית', received: 'התקבל', rejected: 'נדחה', cancelled: 'בוטל' };
+function timeline(th, status) {
+  const ev = th.events || [], first = k => ev.find(e => e.kind === k), lastOf = ks => [...ev].reverse().find(e => ks.includes(e.kind));
+  const step = (label, e, extra = '') => `<li class="${e ? 'done' : ''}"><b>${label}</b>${e ? `<small>${esc(e.who || (e.body === 'סומן במאנדי' ? 'במאנדי' : ''))}${e.who || e.body === 'סומן במאנדי' ? ' · ' : ''}<bdi dir="ltr">${fmtTime(e.at)}</bdi>${extra}</small>` : ''}</li>`;
+  const end = first('rejected') || first('cancelled');
+  const rc = lastOf(['received', 'received_partial']);
+  const stocked = th.moves > 0 ? { who: '', at: th.monday_at && !th.moves_pending ? th.monday_at : th.stocked_at } : null;
+  const rows = [step('הוגש', first('submitted')),
+    first('need_ok') || OPEN.includes(status) ? step('צורך אושר', first('need_ok')) : '',
+    end ? `<li class="done end"><b>${EV[end.kind]}</b><small>${esc(end.who || '')}${end.who ? ' · ' : ''}<bdi dir="ltr">${fmtTime(end.at)}</bdi></small></li>` : step('אושר', first('approved')),
+    end ? '' : step('הוזמן', first('ordered')),
+    end ? '' : step(rc ? EV[rc.kind] : 'התקבל', rc),
+    end ? '' : `<li class="${stocked ? 'done' : ''}"><b>נכנס למלאי</b>${stocked ? `<small><bdi dir="ltr">${fmtTime(stocked.at)}</bdi> · ${th.moves_pending ? 'מתעדכן במאנדי' : 'עודכן בלוח המלאי'}</small>` : ''}</li>`];
+  return `<ol class="pr-tl">${rows.join('')}</ol>`;
+}
+function thread(th, urls) {
+  const items = (th.events || []).filter(e => e.kind === 'message' || ((e.kind === 'received' || e.kind === 'received_partial') && e.body) || (e.kind === 'rejected' && e.body));
+  const bub = e => e.kind === 'message'
+    ? `<div class="msg ${e.mine ? 'me' : ''}">${e.mine ? '' : `<div class="who">${esc(e.who || '')}</div>`}${e.body ? `<div class="tx">${esc(e.body)}</div>` : ''}${e.photo_path && urls[e.photo_path] ? `<img src="${esc(urls[e.photo_path])}" alt="תמונה" loading="lazy" data-zoom>` : ''}<div class="when"><bdi dir="ltr">${fmtTime(e.at)}</bdi></div></div>`
+    : `<div class="rpsys pr-sys">${icon(e.kind === 'rejected' ? 'x' : 'check', 15)} <span><b>${EV[e.kind]}</b> · ${esc(e.body)}${e.who ? ' · ' + esc(e.who) : ''}${e.photo_path && urls[e.photo_path] ? ` · <a href="#" data-zoomsrc="${esc(urls[e.photo_path])}">תעודת משלוח</a>` : ''}</span></div>`;
+  return `<section class="pr-thread"><h4 class="sh">שרשור</h4>${items.length ? `<div class="chat">${items.map(bub).join('')}</div>` : ''}
+    <div class="rpcomp"><label class="cbtn" aria-label="צירוף תמונה">${icon('photo', 22)}<input type="file" accept="image/*" id="pm-f"></label>
+      <textarea id="pm-t" rows="1" maxlength="1000" placeholder="הודעה בבקשה…" aria-label="הודעה"></textarea>
+      <button class="cbtn send" id="pm-s" aria-label="שליחה">${icon('send', 20)}</button></div><div id="pm-pv" class="rppv" hidden></div></section>`;
+}
+// תמונה: הדלי field, התיקייה שלי/requests (policies קיימים). עולה קודם, ורק אז ההודעה
+async function upPhoto(file) {
+  const { shrink } = await import('../lib/store.js'); const blob = await shrink(file);
+  const path = `${state.user.id}/requests/${uid()}.jpg`;
+  const { error } = await sb.storage.from('field').upload(path, blob, { contentType: 'image/jpeg' }); if (error) throw error;
+  return path;
+}
+function bindComposer(s, id, again) {
+  $$('[data-zoomsrc]', s).forEach(a => a.onclick = e => { e.preventDefault(); zoom(a.dataset.zoomsrc, 'תעודת משלוח'); });
+  const f = $('#pm-f', s), t = $('#pm-t', s), send = $('#pm-s', s), pv = $('#pm-pv', s); let file = null;
+  if (!send) return;
+  t.oninput = () => { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 140) + 'px'; };
+  f.onchange = () => { file = f.files[0] || null; f.value = ''; pv.hidden = !file; pv.innerHTML = file ? `<small>תמונה צורפה</small> <button type="button" class="chip" id="pm-x">בלי תמונה</button>` : '';
+    const x = $('#pm-x', s); if (x) x.onclick = () => { file = null; pv.hidden = true; pv.innerHTML = ''; }; };
+  send.onclick = async () => {
+    const body = t.value.trim().slice(0, 1000) || null; if ((!body && !file) || send.disabled) return;
+    send.disabled = true; let path = null;
+    if (file) try { path = await upPhoto(file); } catch { send.disabled = false; return toast('התמונה לא עלתה — נסו שוב'); }
+    const { error } = await sb.rpc('purchase_msg', { p_id: id, p_body: body, p_photo: path });
+    send.disabled = false; if (error) return toast(errMsg(error), 4000, 'error');
+    again();
+  };
+}
+
+// ---------- "התקבל" בבקשה: כמה הגיע מכל שורה (ברירת מחדל: מה שנשאר להגיע) → כניסה למלאי לכל שורה ----------
+function receiveSheet(r, th, done) {
+  const L = (th.lines || []).map(l => ({ ...l, left: Math.max(0, Number(l.qty) - Number(l.received_qty || 0)) }));
+  const Q = Object.fromEntries(L.map(l => [l.id, l.left]));
+  const cid = uid();   // מזהה לחיצה אחד לחלון: שמירה חוזרת אחרי תשובה שאבדה לא קולטת פעמיים (db/163)
+  const eq = l => Number(l.conv) > 1 && l.stock_unit ? `= ${Math.round(Q[l.id] * Number(l.conv) * 100) / 100} ${esc(l.stock_unit)}` : '';
+  let file = null;
+  sheet(`<h3>התקבל · ${esc(r.title)}</h3>
+    <p class="pr-meta">כמה הגיע מכל פריט. מה שלא הגיע — 0, והבקשה נשארת פתוחה</p>
+    <div class="list">${L.map(l => `<div class="lrow"><span class="grow"><b>${esc(l.name)}</b><small>הוזמנו ${Number(l.qty)} ${esc(l.unit || '')}${Number(l.received_qty) ? ` · כבר הגיעו ${Number(l.received_qty)}` : ''}${l.in_stock ? '' : ' · לא במלאי'}</small></span>
+      <span class="qty"><button type="button" data-m="${l.id}" aria-label="פחות">−</button><b id="q-${l.id}">${Q[l.id]}</b><button type="button" data-p="${l.id}" aria-label="יותר">+</button></span><small class="qeq" id="qe-${l.id}">${eq(l)}</small></div>`).join('')}</div>
+    <label class="field">הערה (לא חובה)<input id="rcn" maxlength="300"></label>
+    <label class="field pr-file">${icon('photo', 18)} <span id="rcfl">צילום תעודת משלוח (לא חובה)</span><input type="file" accept="image/*" id="rcf"></label>
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="rcgo">${icon('check', 18)} שמירה ועדכון מלאי</button></div>`, (s, close) => {
+    const set = (id, v) => { Q[id] = Math.max(0, Math.round(v * 100) / 100); $('#q-' + id, s).textContent = Q[id]; $('#qe-' + id, s).textContent = eq(L.find(l => l.id === id)); };
+    $$('[data-p]', s).forEach(b => b.onclick = () => set(b.dataset.p, Q[b.dataset.p] + 1));
+    $$('[data-m]', s).forEach(b => b.onclick = () => set(b.dataset.m, Q[b.dataset.m] - 1));
+    $('#rcf', s).onchange = e => { file = e.target.files[0] || null; $('#rcfl', s).textContent = file ? 'תעודת משלוח צורפה' : 'צילום תעודת משלוח (לא חובה)'; };
+    $('#rcgo', s).onclick = async () => {
+      const go = $('#rcgo', s); if (go.disabled) return;
+      if (!L.some(l => Q[l.id] > 0)) return toast('לא סומן שום דבר שהגיע');
+      go.disabled = true; go.classList.add('busy'); let path = null;
+      if (file) try { path = await upPhoto(file); } catch { toast('התמונה לא עלתה — נשמר בלעדיה'); }
+      const { data, error } = await sb.rpc('purchase_receive', { p_id: r.id, p_lines: L.map(l => ({ line_id: l.id, qty: Q[l.id] })), p_note: $('#rcn', s).value.trim() || null, p_photo: path, p_client: cid });
       go.disabled = false; go.classList.remove('busy');
       if (error) return toast(errMsg(error), 4000, 'error');
-      toast(`המלאי עודכן: ${v} ${c.unit || ''}`); close(); done();
+      toast(data?.status === 'received' ? 'התקבל · המלאי עודכן' : 'התקבל חלקית · המלאי עודכן'); close(); done();
     };
+  });
+}
+
+// ---------- מלאי: חלון אחד, שתי לשוניות — "התקבל חומר" (מוסיף, ברירת מחדל) ו"ספירה" (מחליף). c ריק = בוחרים פריט ----------
+function stockSheet(c, cat, done, tab = 'in') {
+  if (c && !isManager()) return newRequest(cat, c.monday_item_id);
+  if (!isManager()) return;
+  const per = x => Number(x?.units_per_order || 0) > 1 ? Number(x.units_per_order) : 1;
+  let file = null, fixMode = false;
+  const cid = uid();   // מזהה לחיצה לכניסה למלאי (ניסיון חוזר באותו חלון = אותו מזהה)
+  sheet(`<div id="stk"></div>`, (s, close) => {
+    const box = $('#stk', s);
+    const draw = () => {
+      const byOrder = c && per(c) > 1 && c.order_unit;
+      box.innerHTML = `<h3>${c ? esc(c.name) : 'כניסה למלאי'}</h3>
+        ${c ? `<p class="pr-meta">במלאי ${c.stock ?? '—'} ${esc(c.unit || '')}${c.min_qty != null ? ` · מינימום ${Number(c.min_qty)}` : ''}</p>` : ''}
+        <div class="tabs" role="tablist"><button role="tab" data-tab="in" aria-selected="${tab === 'in'}">התקבל חומר</button><button role="tab" data-tab="count" aria-selected="${tab === 'count'}">ספירה</button></div>
+        ${!c ? `<label class="field">איזה פריט<select id="si"><option value="">בחירה…</option>${cat.map(x => `<option value="${x.monday_item_id}">${esc(x.name)}</option>`).join('')}</select></label>` : ''}
+        ${c && tab === 'in' ? `
+          <p class="pr-hint">${fixMode ? 'תיקון כניסה שגויה: כמה להוריד, ולמה. נרשם כתנועה נפרדת, שום דבר לא נמחק' : 'מה שהגיע נוסף למה שיש במלאי'}</p>
+          <label class="field">${fixMode ? 'כמה להוריד' : 'כמה הגיע'}${(byOrder && !fixMode) ? ` · ${esc(c.order_unit)}` : c.unit ? ` · ${esc(c.unit)}` : ''}
+            <span class="qty pr-count"><button type="button" id="sm" aria-label="פחות">−</button><input id="sq" type="number" inputmode="decimal" min="0" step="any" value="${fixMode ? '' : 1}"><button type="button" id="sp" aria-label="יותר">+</button></span>
+            ${(byOrder && !fixMode) ? `<small class="qeq" id="sqe"></small>` : ''}</label>
+          ${fixMode ? `<label class="field">סיבה<input id="sr" maxlength="300" placeholder="למשל: נרשם פעמיים"></label>` : `
+          <label class="field">ספק (לא חובה)<input id="ss" maxlength="120" value="${esc(c.supplier_name || '')}"></label>
+          <label class="field">הערה (לא חובה)<input id="sn" maxlength="300"></label>
+          <label class="field pr-file">${icon('photo', 18)} <span id="sfl">${file ? 'תעודת משלוח צורפה' : 'צילום תעודת משלוח (לא חובה)'}</span><input type="file" accept="image/*" id="sf"></label>`}
+          <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn ${fixMode ? 'danger' : 'primary'}" id="sgo">${fixMode ? 'רישום תיקון' : `${icon('plus', 18)} הוספה למלאי`}</button></div>
+          ${isAdmin() ? `<button type="button" class="pr-link" id="sfix">${fixMode ? 'חזרה לכניסה רגילה' : 'תיקון כניסה שגויה (admin)'}</button>` : ''}` : ''}
+        ${c && tab === 'count' ? `
+          <p class="pr-hint">ספירה: כמה יש עכשיו בפועל. המספר מחליף את מה שרשום</p>
+          <label class="field">כמה יש עכשיו${c.unit ? ` (${esc(c.unit)})` : ''}
+            <span class="qty pr-count"><button type="button" id="sm" aria-label="פחות">−</button><input id="sq" type="number" inputmode="decimal" min="0" step="any" value="${c.stock == null ? 0 : Number(c.stock)}"><button type="button" id="sp" aria-label="יותר">+</button></span></label>
+          <div class="row-btns"><button class="btn ghost" id="sbuy">${icon('cart', 18)} בקשת רכש</button><button class="btn primary" id="sgo">עדכון מלאי</button></div>` : ''}`;
+      $$('[data-tab]', box).forEach(b => b.onclick = () => { tab = b.dataset.tab; fixMode = false; draw(); });
+      const si = $('#si', box); if (si) si.onchange = () => { c = cat.find(x => x.monday_item_id === si.value) || null; draw(); };
+      $$('[data-close]', box).forEach(b => b.onclick = close);
+      if (!c) return;
+      const q = $('#sq', box), val = () => Number(String(q.value).replace(',', '.'));
+      const upd = () => { const e = $('#sqe', box); if (e) e.textContent = `= ${Math.round((val() || 0) * per(c) * 100) / 100} ${c.unit || ''}`; };
+      $('#sm', box).onclick = () => { q.value = Math.max(0, (val() || 0) - 1); upd(); };
+      $('#sp', box).onclick = () => { q.value = (val() || 0) + 1; upd(); };
+      q.oninput = upd; q.onfocus = () => q.select(); upd();
+      const buy = $('#sbuy', box); if (buy) buy.onclick = () => { close(); newRequest(cat, c.monday_item_id); };
+      const fx = $('#sfix', box); if (fx) fx.onclick = () => { fixMode = !fixMode; draw(); };
+      const sf = $('#sf', box); if (sf) sf.onchange = e => { file = e.target.files[0] || null; $('#sfl', box).textContent = file ? 'תעודת משלוח צורפה' : 'צילום תעודת משלוח (לא חובה)'; };
+      $('#sgo', box).onclick = async () => {
+        const v = val(), go = $('#sgo', box);
+        if (!Number.isFinite(v) || q.value === '' || v < 0 || (tab === 'in' && v <= 0)) { q.focus(); return toast('כמות לא תקינה'); }
+        if (go.disabled) return;
+        let res;
+        if (tab === 'count') res = await (go.disabled = true, sb.rpc('stock_set', { p_item: c.monday_item_id, p_qty: v }));
+        else if (fixMode) { const why = $('#sr', box).value.trim(); if (!why) { $('#sr', box).focus(); return toast('צריך לכתוב סיבה'); }
+          go.disabled = true; res = await sb.rpc('stock_fix', { p_item: c.monday_item_id, p_qty: v, p_reason: why }); }
+        else { go.disabled = true; go.classList.add('busy'); let path = null;
+          if (file) try { path = await upPhoto(file); } catch { toast('התמונה לא עלתה — נשמר בלעדיה'); }
+          res = await sb.rpc('stock_in', { p_item: c.monday_item_id, p_qty: v, p_by_order: !!byOrder, p_supplier: $('#ss', box).value.trim() || null, p_note: $('#sn', box).value.trim() || null, p_photo: path, p_client: cid }); }
+        go.disabled = false; go.classList.remove('busy');
+        if (res.error) return toast(errMsg(res.error), 4000, 'error');
+        toast(tab === 'count' ? `המלאי עודכן: ${v} ${c.unit || ''}` : fixMode ? `נרשם תיקון: −${v} ${c.unit || ''}` : `נוסף למלאי · עכשיו ${res.data?.stock ?? ''} ${c.unit || ''}`); close(); done();
+      };
+    };
+    draw();
   });
 }
 

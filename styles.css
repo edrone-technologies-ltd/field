@@ -2870,3 +2870,29 @@ button.lrow[data-myrep]{width:100%;text-align:start;font:inherit;color:inherit;c
 .pr-mon{display:block;text-align:center;margin-top:10px;font-size:.82rem;color:var(--muted);text-decoration:underline}
 .pr-count{margin-top:6px} .pr-count input{width:110px;height:44px;text-align:center;font-size:1.25rem;font-weight:800;font-family:var(--f-display);border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink)}
 .pr-count button{width:44px;height:44px}
+
+/* v144 · כניסה למלאי + שרשור בקשת רכש (db/163) */
+.pr-tl{list-style:none;margin:12px 0;padding:0 14px 0 0;border-inline-start:2px solid var(--line);display:grid;gap:10px}
+.pr-tl li{position:relative;padding-inline-start:14px;color:var(--faint)}
+.pr-tl li::before{content:"";position:absolute;inset-inline-start:-21px;top:5px;width:12px;height:12px;border-radius:50%;background:var(--card);border:2px solid var(--line)}
+.pr-tl li.done{color:var(--ink)} .pr-tl li.done::before{background:var(--lime);border-color:var(--lime)}
+.pr-tl li.end::before{background:var(--bad);border-color:var(--bad)}
+.pr-tl b{display:block;font-size:.92rem} .pr-tl small{display:block;color:var(--muted);font-size:.78rem}
+.pr-thread{margin-top:14px;display:grid;gap:8px} .pr-thread .sh{margin:0}
+.pr-sys{justify-content:flex-start;text-align:start;background:var(--card2);border-radius:10px;padding:6px 10px;line-height:1.4}
+.pr-sys a{color:inherit;text-decoration:underline}
+.pr-hint{color:var(--muted);font-size:.86rem;margin:10px 2px 4px}
+.pr-file{position:relative;flex-direction:row;align-items:center;gap:8px;border:1px dashed var(--line);border-radius:12px;padding:12px;cursor:pointer;color:var(--muted)}
+.pr-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.pr-link{display:block;margin:10px auto 0;background:none;border:0;color:var(--muted);font-size:.82rem;text-decoration:underline;cursor:pointer;min-height:44px}
+#stk .tabs{margin:8px 0 4px}
+
+/* ---- הלו״ז שלי (agenda.js): שעה בצד השורה, פס הימים עם סיור/משימה ---- */
+.agt{width:52px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:40px;border-radius:12px;background:var(--card2);color:var(--ink)}
+.agt b{font-family:var(--f-mono);font-size:.98rem;line-height:1.1;direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+.agt small{font-size:.68rem;color:var(--muted)}
+.agt.bad{background:var(--badbg);color:var(--bad)} .agt.bad small{color:var(--bad)}
+.lrow .agt b{font-size:.98rem}
+button.wkc{font:inherit;cursor:pointer;padding:0}
+.wkc.vis{border-color:var(--blue);border-width:2px}
+.agday .lrow.slim{min-height:56px}

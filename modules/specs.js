@@ -1,5 +1,5 @@
 // מודול אפיונים: אתרים ← מבנים ← טופס אפיון למבנה שלם.
-import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls , folderGrid, coverArt, coverFor, backBtn, confirmBox, isoDay, dayLabel } from '../lib/core.js';
+import { sb, state, can, isManager, cache, enqueue, signedUrls, pendingPhotos, $, $$, esc, nf, toast, zoom, contactCard, bindCopy, icon, ask, dm, navButtons, sheet, replaceHash, goUp, thumbUrls , folderGrid, coverArt, coverFor, backBtn, confirmBox, isoDay, dayLabel, heAnd } from '../lib/core.js';
 import { mon } from '../lib/core.js';
 import { hideMoneyText } from '../lib/core.js';
 import { shrink } from '../lib/store.js';
@@ -29,11 +29,12 @@ const STAT = { new: ['', 'לא מולא'], draft: ['warn', 'טיוטה'], done: 
 
 // ---------- נתונים (עם מטמון לעבודה בלי קליטה) ----------
 const SITES_SEL = 'id,slug,name,subtitle,cover_path,contact_name,contact_phone,group_word,classification,kind,site_lead_private(lead_group,lead_stage,lead_owner),visit_date,service,merged_into,monday_spec_item_id,lat,lng,buildings(id,specs(status,days_expected)),projects(status_label,monday_group,closed_summary)';
-let hasArch = true, hasSV = true;   // לפני מיגרציה 147 אין sites.archived_at, ולפני 157 אין שעת סיור — בודקים פעם אחת לטעינה, ואז בלי
+let hasArch = true, hasSV = true, hasVW = true;   // לפני מיגרציה 147 אין sites.archived_at, לפני 157 אין שעת סיור, לפני 165 אין כמה מאפיינים — בודקים פעם אחת לטעינה, ואז בלי
 async function fetchSites() {
   try {
-    const q = () => sb.from('sites').select(SITES_SEL + (hasArch ? ',archived_at' : '') + (hasSV ? ',visit_time,visit_by' : '')).eq('is_active', true).order('name');
+    const q = () => sb.from('sites').select(SITES_SEL + (hasArch ? ',archived_at' : '') + (hasSV ? ',visit_time,visit_by' : '') + (hasSV && hasVW ? ',visit_with' : '')).eq('is_active', true).order('name');
     let { data, error } = await q();
+    if (error && hasVW && /visit_with/.test(error.message || '')) { hasVW = false; ({ data, error } = await q()); }
     if (error && hasSV && /visit_(time|by)/.test(error.message || '')) { hasSV = false; ({ data, error } = await q()); }
     if (error && hasArch && /archived_at/.test(error.message || '')) { hasArch = false; ({ data, error } = await q()); }
     if (error) throw error;
@@ -147,7 +148,10 @@ async function visitSheet(s, href, after) {
   const fn = u => (u?.full_name || '').split(' ')[0], dup = u => T.filter(x => fn(x) === fn(u)).length > 1;
   const label = u => !u ? '' : dup(u) ? `${fn(u)} ${((u.full_name || '').split(' ')[1] || '').slice(0, 1)}׳`.replace(/ ׳$/, '') : fn(u);
   const first = id => label(T.find(u => u.id === id));
-  const when = () => [dayLabel(s.visit_date), HM(s.visit_time), s.visit_by ? first(s.visit_by) : ''].filter(Boolean).join(' · ');
+  // מי מאפיין (db/165: כמה). לפני המיגרציה — visit_by בלבד
+  const withOf = () => s.visit_with?.length ? s.visit_with : s.visit_by ? [s.visit_by] : [];
+  const names = ids => heAnd(ids.map(first).filter(Boolean));
+  const when = () => [dayLabel(s.visit_date), HM(s.visit_time), names(withOf())].filter(Boolean).join(' · ');
   const now = close => { close(); location.hash = href; };
   // שלב 1: שתי אפשרויות (או התאריך שנקבע + שינוי)
   const choose = () => sheet(`<h3>${esc(s.name)}</h3>
@@ -159,26 +163,29 @@ async function visitSheet(s, href, after) {
   });
   // שלב 2: תאריך, שעה, מי (לא חובה)
   const form = () => {
-    const t0 = isoDay(); let pick = s.visit_by || null;
+    const t0 = isoDay(); let picks = [...withOf()];   // לפי סדר הבחירה — הראשון נשמר גם כ-visit_by
     sheet(`<h3>קביעת תאריך אפיון</h3><div class="small muted">${esc(s.name)}</div>
       <div class="row"><label class="field grow">תאריך<input type="date" id="svd" min="${t0}" value="${esc(s.visit_date && s.visit_date >= t0 ? s.visit_date : '')}"></label>
         <label class="field grow">שעה<input type="time" id="svt" step="900" value="${esc(HM(s.visit_time))}"></label></div>
-      ${T.length ? `<div class="field"><span>מי מאפיין <span class="muted">· לא חובה</span></span><div class="chips" id="svw">${T.map(u => `<button type="button" class="chip" data-u="${u.id}" aria-pressed="${u.id === pick}"><span>${esc(label(u))}</span><small class="why"></small></button>`).join('')}</div></div>` : ''}
+      ${T.length ? `<div class="field"><span>מי מאפיין <span class="muted">· אפשר כמה · לא חובה</span></span><div class="chips" id="svw" role="group">${T.map(u => `<button type="button" class="chip" data-u="${esc(u.id)}" aria-pressed="${picks.includes(u.id)}"><span>${esc(label(u))}</span><small class="why"></small></button>`).join('')}</div></div>` : ''}
       <div class="row-btns">${s.visit_date ? '<button class="btn ghost" type="button" id="svrm">הסרת התאריך</button>' : '<button class="btn ghost" data-close>ביטול</button>'}<button class="btn primary" type="button" id="svok">שמירה</button></div>`, (sh, close) => {
       const hint = async () => { const d = $('#svd', sh).value; $$('.why', sh).forEach(x => x.textContent = ''); if (!d) return;
         const m = await busyOn(d).catch(() => new Map()); if ($('#svd', sh)?.value !== d) return;
         $$('[data-u]', sh).forEach(c => { const w = m.get(c.dataset.u); $('.why', c).textContent = w ? ' · ' + w : ''; }); };
       $('#svd', sh).onchange = hint; hint();
-      $$('[data-u]', sh).forEach(c => c.onclick = () => { pick = pick === c.dataset.u ? null : c.dataset.u; $$('[data-u]', sh).forEach(x => x.setAttribute('aria-pressed', x.dataset.u === pick)); });
+      $$('[data-u]', sh).forEach(c => c.onclick = () => { const u = c.dataset.u;
+        if (picks.includes(u)) picks = picks.filter(x => x !== u); else if (picks.length >= 4) return toast('עד 4 מאפיינים לסיור'); else picks.push(u);
+        c.setAttribute('aria-pressed', picks.includes(u)); });
       const save = async (d, btn) => {
         if (!navigator.onLine) return toast('קביעת תאריך דורשת קליטה');
         if (btn.disabled) return; btn.disabled = true;
-        const t = d ? $('#svt', sh).value || null : null, u = d ? pick : null;
-        const { error } = await sb.rpc('set_spec_visit', { s: s.id, d, t, u });
+        const t = d ? $('#svt', sh).value || null : null, us = d ? [...picks] : [];
+        // לפני מיגרציה 165 — הגרסה עם מאפיין אחד
+        const { error } = await sb.rpc('set_spec_visit', hasVW ? { s: s.id, d, t, us } : { s: s.id, d, t, u: us[0] || null });
         if (error) { btn.disabled = false; return toast(errText(error, 'לא נשמר — נסו שוב'), 4000); }
-        const told = u && u !== me && u !== s.visit_by;
-        Object.assign(s, { visit_date: d, visit_time: t, visit_by: u }); close(); after?.();
-        toast(!d ? 'התאריך הוסר' : told ? `נקבע · ${first(u)} קיבל הודעה` : 'נקבע · מופיע בלוח השיבוץ', 2400, 'success');
+        const before = withOf(), told = us.filter(u => u !== me && !before.includes(u));   // השרת מודיע רק למי שנוסף
+        Object.assign(s, { visit_date: d, visit_time: t, visit_with: hasVW ? us : us.slice(0, 1), visit_by: us[0] || null }); close(); after?.();
+        toast(!d ? 'התאריך הוסר' : told.length ? `נקבע · ${names(told)} ${told.length > 1 ? 'קיבלו' : 'קיבל'} הודעה` : 'נקבע · מופיע בלוח השיבוץ', 2400, 'success');
       };
       $('#svok', sh).onclick = e => { const d = $('#svd', sh).value; if (!d) return toast('בחרו תאריך');
         if (new Date(d + 'T12:00').getDay() === 6) return toast('לא עובדים בשבת'); save(d, e.currentTarget); };

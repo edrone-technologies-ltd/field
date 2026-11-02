@@ -220,7 +220,7 @@ export async function renderOps(el) {
   const nextDay = days.find(w => w.day > tm);
   const none = (title, sub) => `<div class="empty-card"><span class="ei">${icon('drone', 24)}</span><span><b>${title}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></div>`;
   const hmBox = $('#hm', el); if (!hmBox) return;   // עברו למסך אחר בזמן הטעינה
-  hmBox.innerHTML = `
+  hmBox.innerHTML = `<div id="myday"></div>
       ${pushA ? pushA.href ? `<a class="lrow slim" id="pushA" href="${pushA.href}"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span></a>`
         : `<div class="lrow slim" id="pushA"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span>${pushA.btn ? `<button class="btn ghost sm" id="pushOn">${pushA.btn}</button>` : ''}</div>` : ''}
       ${chatA ? `<a class="lrow slim chatA" href="${chatA.list ? '#/inbox' : chatA.href}"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(chatA.title)}</b>${chatA.sub ? `<small>${esc(chatA.sub)}</small>` : ''}</span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
@@ -258,6 +258,7 @@ export async function renderOps(el) {
     try { await enablePush(); toast('ההתראות הופעלו'); $('#pushA', el)?.remove(); } catch (e) { po.disabled = false; toast(errText(e, 'ההתראות לא הופעלו — בדקו את הרשאות הטלפון')); } };
   $$('[data-nmore]', el).forEach(b => b.onclick = KPI.needs);   // "עוד" = הפירוט המלא (כולל הצעד הבא)   // "עוד" בבית = אותו פירוט מלא
   home.extras();
+  import('./agenda.js').then(m => m.todayCard($('#myday', el))).catch(() => {});   // היום שלי: מה ששובץ לי אישית (סיור, משימה, יום שטח)
   import('../lib/wx.js').then(m => m.fillWx(el)).catch(() => {});
   const again = () => renderOps(el);
   bindAppr(el, again);

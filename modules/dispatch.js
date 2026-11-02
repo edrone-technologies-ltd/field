@@ -1,5 +1,5 @@
 // לוח שיבוץ שבועי (מנהלים): מי עובד איפה בכל יום. התנגשויות (שני פרויקטים באותו יום) והיעדרויות מסומנות. הקשה על תא ריק = שיבוץ.
-import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, HE_D1, isoDay, dm, replaceHash, leadMark, isOpenProject } from '../lib/core.js';
+import { sb, isManager, sheet, icon, $, $$, esc, toast, confirmBox, HE_D1, isoDay, dm, replaceHash, leadMark, isOpenProject, heAnd } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
 import { availability } from '../lib/avail.js';
 import { nightTag, wxKey } from '../lib/night.js';
@@ -15,7 +15,7 @@ const openAdmin = (id, after) => import('./dayadmin.js').then(m => m.openDayAdmi
 // לפני מיגרציה 157 (אין שעה/משובץ) — רק התאריך
 const SV_SEL = 'id,slug,name,visit_date,buildings(specs(status))';
 const specVisits = (from, to) => { const q = sel => sb.from('sites').select(sel).eq('is_active', true).is('merged_into', null).gte('visit_date', from).lte('visit_date', to);
-  return q(SV_SEL + ',visit_time,visit_by').then(r => r.error ? q(SV_SEL) : r).then(r => r.data || [], () => []); };
+  return q(SV_SEL + ',visit_time,visit_by,visit_with').then(r => r.error ? q(SV_SEL + ',visit_time,visit_by') : r).then(r => r.error ? q(SV_SEL) : r).then(r => r.data || [], () => []); };   // 165 → 157 → לפני
 const svDone = v => (v.buildings || []).length > 0 && v.buildings.every(b => [].concat(b.specs || []).some(x => x.status === 'done'));
 const inPulse = (x, d) => Array.isArray(x.pulses) && x.pulses.length > 1 ? x.pulses.some(([f, t]) => f <= d && d <= t) : !!x.planned_from && x.planned_from <= d && (x.planned_to || x.planned_from) >= d;
 
@@ -37,9 +37,10 @@ export async function renderDispatch(el, start, o = {}) {
     specVisits(start, end),
   ]);
   const svOn = d => SV.filter(v => v.visit_date === d).sort((a, b) => (a.visit_time || '99') < (b.visit_time || '99') ? -1 : 1);
-  const svWho = v => v.visit_by ? ((people || []).find(p => p.id === v.visit_by)?.full_name || '').split(' ')[0] : '';
+  // כל המאפיינים (db/165), בשם פרטי: "טל ואוריאל"
+  const svWho = v => heAnd((v.visit_with?.length ? v.visit_with : v.visit_by ? [v.visit_by] : []).map(u => ((people || []).find(p => p.id === u)?.full_name || '').split(' ')[0]).filter(Boolean));
   const svShort = v => (v.name || '').split(/\s[—–-]\s/)[0].trim();
-  const svChip = v => `<a class="dchip spec ${svDone(v) ? 'done' : ''}" href="#/site/${esc(v.slug)}" title="סיור אפיון · ${esc(v.name)}">${icon('clipboard', 12)}${esc([v.visit_time ? String(v.visit_time).slice(0, 5) : '', svShort(v).slice(0, 14), svWho(v)].filter(Boolean).join(' · '))}</a>`;
+  const svChip = v => `<a class="dchip spec ${svDone(v) ? 'done' : ''}" href="#/site/${esc(v.slug)}" title="סיור אפיון · ${esc([v.name, svWho(v)].filter(Boolean).join(' · '))}">${icon('clipboard', 12)}${esc([v.visit_time ? String(v.visit_time).slice(0, 5) : '', svShort(v).slice(0, 14), svWho(v)].filter(Boolean).join(' · '))}</a>`;
   const svRow = () => SV.length ? `<tr class="svrow"><th class="who">סיורי אפיון</th>${days.map(d => `<td class="${d === isoDay() ? 'today' : ''}">${svOn(d).map(svChip).join('')}</td>`).join('')}</tr>` : '';
   // "לשבץ" — פעם אחת לכל פרויקט, בראש המסך (לא כרטיס בכל יום): ימי עבודה בטווח מהיום והלאה שמחוץ לימים שכבר משובצים.
   // חור בין ימים משובצים = החלטה (יום שבוטל), לא "חסר". עמודות הימים מציגות רק ימי שטח אמיתיים

@@ -23,7 +23,7 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'compliance', 'purchase', 'expenses', 'dispatch', 'tasks', 'costs']);
+const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'compliance', 'purchase', 'expenses', 'dispatch', 'tasks', 'costs', 'my']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -81,6 +81,7 @@ function renderMenu() {
   // שלוש קבוצות קבועות: מה שלי · עבודה בשטח · ניהול. אייקון אחר לכל פריט
   const groups = [
     ['שלי', [
+      (isManager() || !can('today')) && ['#/my', 'calendar', 'הלו״ז שלי', 'ימי שטח, סיורים ומשימות'],   // עובד עם לשונית לו״ז — שם
       ['#/hours', 'clock', 'השעות שלי', 'כניסה, יציאה ובקשות תיקון'],
       ['#/myfile', 'file', 'התיק שלי', 'תלושים ומסמכים'],
       ['#/expenses', 'receipt', 'הוצאות', 'דלק, חניה, אוכל ולינה'],
@@ -316,7 +317,7 @@ async function routeInner() {
   $('#sheet').hidden = true;
   // מסך שורש של לשונית (בלי תת-נתיב) — בלי כפתור חזרה בכותרת
   if (h.length === 1 && TABS.some(t => t.k === h[0] && t.ok())) document.body.dataset.root = ''; else delete document.body.dataset.root;
-  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' || h[0] === 'tasks' ? '' : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'kb', 'news', 'requests', 'weather', 'costs'].includes(h[0]) ? 'menu' : h[0]);
+  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' || h[0] === 'tasks' ? '' : h[0] === 'my' ? (isManager() ? '' : 'schedule') : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'kb', 'news', 'requests', 'weather', 'costs'].includes(h[0]) ? 'menu' : h[0]);
   // מסך בלי הרשאה — מסך אחד אחיד (כותרת, חזרה, הסבר קצר), בלי לטעון את המודול
   const deny = () => { app.innerHTML = `<header class="phead">${backBtn('#/')}</header><div class="empty-card"><span class="ei">${icon('shield', 26)}</span><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; };
   const guard = m => can(m) || deny();
@@ -332,6 +333,7 @@ async function routeInner() {
     case 'wizard': if (!isManager()) return deny(); return (await import('./modules/wizard.js')).renderWizard(app, h[1]);   // הקוסם — הצעת שיבוץ לשבוע
     case 'compliance': if (!isManager()) return deny(); return (await import('./modules/compliance.js')).renderCompliance(app);
     case 'schedule': case 'today': return (await home()).renderSchedule(app);
+    case 'my': return (await import('./modules/agenda.js')).renderMy(app);   // הלו״ז שלי — לכל תפקיד (עובד: גם הלשונית לו״ז)
     case 'alerts': return (await home()).renderAlerts(app);
     case 'reports': return (await home()).renderReports(app);
     case 'inbox': return (await import('./modules/inbox.js')).renderInbox(app);
