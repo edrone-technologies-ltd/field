@@ -285,9 +285,9 @@ function oops(t, off) {
 app.addEventListener('click', e => { if (e.target.closest('[data-retry]')) { haptic('tap'); route(NOANIM); } else if (e.target.closest('[data-report]')) { haptic('tap'); report(); } });
 // רטט קצר בבחירה: פעולה ראשית, לשונית, מקטע, צ׳יפ בחירה, מתג (אנדרואיד; באייפון אין API)
 document.addEventListener('click', e => { if (e.target.closest?.('.btn.primary,.tabs button,.seg button,.chip[aria-pressed],.sw,.wkd,.rdy[data-rdy]')) haptic('tap'); }, { passive: true });
-// קובץ מסך מגרסה קודמת לא נמצא (עדכון באמצע) — טעינה מחדש אחת, בלי מסך שגיאה
+// קובץ מסך מגרסה קודמת לא נמצא, או מסך חדש שמבקש מ-core.js ישן שבזיכרון פונקציה שעוד לא הייתה בו (עדכון באמצע) — טעינה מחדש אחת, בלי מסך שגיאה
 function chunkErr(e) {
-  if (!/dynamically imported module|Importing a module script failed|error loading dynamically|Failed to fetch/i.test(String(e?.message || e)) || !navigator.onLine) return false;
+  if (!/dynamically imported module|Importing a module script failed|error loading dynamically|Failed to fetch|Importing binding name|does not provide an export named|ambiguous indirect export/i.test(String(e?.message || e)) || !navigator.onLine) return false;
   let tried = false; try { tried = sessionStorage.getItem('rr:chunk') === '1'; sessionStorage.setItem('rr:chunk', '1'); } catch { /* */ }
   if (tried) return false;
   location.reload(); return true;
