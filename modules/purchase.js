@@ -1,4 +1,4 @@
-// רכש ומלאי: חומרי ניקוי וביגוד/ציוד מגן בלבד. כניסה למלאי + שרשור לכל בקשה (db/163). בקשה מהקטלוג → לוח הרכש. אישור דו-שלבי כאן (צורך → מעל הסף אישור סופי, db/162) → נדחף למאנדי; "הוזמן" כאן; ספירת מלאי כאן (מנהלים) → לוח המלאי.
+// רכש ומלאי: חומרי ניקוי וביגוד/ציוד מגן, ופריטים שנפתחו כאן ("פריט חדש", db/168 + פונקציית stock-item). כניסה למלאי + שרשור לכל בקשה (db/163). בקשה מהקטלוג → לוח הרכש. אישור דו-שלבי כאן (צורך → מעל הסף אישור סופי, db/162) → נדחף למאנדי; "הוזמן" כאן; ספירת מלאי כאן (מנהלים) → לוח המלאי.
 import { sb, state, isManager, enqueue, flush, sheet, uid, icon, $, $$, esc, toast, dm, backBtn, replaceHash, mon, signedUrls, zoom, fmtTime } from '../lib/core.js';
 
 const ST = { draft: ['טיוטה', ''], submitted: ['ממתין לאישור', 'warn'], pending: ['ממתין לאישור', 'warn'], approved: ['אושר', 'lime'], sent: ['הוזמן', 'lime'], partial: ['התקבל חלקית', 'lime'], received: ['התקבל', 'ok'], rejected: ['נדחה', 'bad'], cancelled: ['בוטל', ''] };
@@ -8,7 +8,9 @@ const low = c => c.min_qty != null && c.stock != null && Number(c.stock) <= Numb
 const isAdmin = () => state.profile?.role === 'admin';
 const OPEN = ['submitted', 'pending'];
 // שגיאות השרת (db/159) → משפט אחד
-const ERR = { received_in_monday: 'הקבלה נרשמה במאנדי. ממשיכים שם', not_ordered: 'הבקשה עוד לא אושרה', bad_photo: 'התמונה לא נשמרה — נסו שוב', bad_input: 'לא נשמר — נסו שוב', empty: 'אין מה לשלוח', too_many: 'יותר מדי הודעות — נסו בעוד שעה', forbidden: 'הבקשה לא מחכה לך', already_decided: 'כבר הוחלט', no_lines: 'השורות עוד לא הגיעו — לנסות שוב בעוד רגע', reason_required: 'צריך לכתוב סיבה', not_approved: 'הבקשה עוד לא אושרה', bad_qty: 'כמות לא תקינה', not_found: 'לא נמצא' };
+const ERR = { received_in_monday: 'הקבלה נרשמה במאנדי. ממשיכים שם', not_ordered: 'הבקשה עוד לא אושרה', bad_photo: 'התמונה לא נשמרה — נסו שוב', bad_input: 'לא נשמר — נסו שוב', empty: 'אין מה לשלוח', too_many: 'יותר מדי הודעות — נסו בעוד שעה', forbidden: 'הבקשה לא מחכה לך', already_decided: 'כבר הוחלט', no_lines: 'השורות עוד לא הגיעו — לנסות שוב בעוד רגע', reason_required: 'צריך לכתוב סיבה', not_approved: 'הבקשה עוד לא אושרה', bad_qty: 'כמות לא תקינה', not_found: 'לא נמצא',
+  exists: 'כבר יש פריט בשם הזה', bad_name: 'צריך שם לפריט', bad_unit: 'צריך יחידה', bad_category: 'צריך קטגוריה', cat_admin: 'קטגוריה חדשה נפתחת רק ע״י שותף — בחרו מהקיימות', busy: 'כבר נשלח — רגע', monday: 'מאנדי לא ענה — נסו שוב', not_ready: 'לא נשמר — נסו שוב' };
+const NOCAT = 'ללא קטגוריה';
 const errMsg = e => ERR[(e?.message || '').trim()] || (/fetch|network|load failed/i.test(e?.message || '') ? 'אין קליטה — נסו שוב' : 'לא נשמר — נסו שוב');
 
 export async function renderPurchase(el) {
@@ -17,7 +19,7 @@ export async function renderPurchase(el) {
     <div id="pb" class="stack lg"><div class="skel"></div></div>`;
   const [{ data: reqs }, { data: cat }] = await Promise.all([
     sb.from('purchase_requests').select('id,title,requested_by,project_id,needed_by,notes,status,monday_item_id,monday_stage,decided_at,decision_note,need_at,created_at,updated_at, purchase_lines(name,qty,unit), profiles:requested_by(full_name), projects(name)').order('created_at', { ascending: false }).limit(40),
-    sb.from('catalog_items').select('monday_item_id,name,unit,order_unit,units_per_order,min_qty,stock,sku,supplier_name,is_material,in_app').eq('in_app', true).order('is_material', { ascending: false }).order('name'),
+    sb.from('catalog_items').select('monday_item_id,name,unit,order_unit,units_per_order,min_qty,stock,sku,supplier_name,is_material,in_app,category').eq('in_app', true).order('is_material', { ascending: false }).order('name'),
     isAdmin() ? sb.rpc('purchase_todo') : Promise.resolve({ data: [] }),   // רק מה שמחכה לי עכשיו (db/162)
   ]).then(([a, b, t]) => (mine = new Set(t.data || []), [a, b]));
   const lows = (cat || []).filter(low);
@@ -31,13 +33,15 @@ export async function renderPurchase(el) {
     ${lows.length > 1 ? `<button class="btn primary block" id="plow">${icon('cart', 18)} הזמנת כל החסרים (${lows.length})</button>` : ''}
     ${lows.length ? `<section><h3 class="sh">מתחת למינימום</h3><div class="alist">${lows.map(c => `<button class="arow warn" type="button" data-quick="${c.monday_item_id}"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>${esc(c.name)}</b><small>במלאי ${c.stock} ${esc(c.unit || '')} · מינימום ${c.min_qty}</small></span><span class="pill warn">להזמין</span></button>`).join('')}</div></section>` : ''}
     ${rest.length ? `<section><h3 class="sh">הבקשות${isManager() ? '' : ' שלי'}</h3><div class="list">${rest.map(reqRow).join('')}</div></section>` : todo.length || lows.length ? '' : `<div class="ecta"><span class="ei">${icon('cart', 28)}</span><b>המלאי תקין</b><button class="btn primary" id="pnew">${icon('plus', 18)} בקשת רכש</button></div>`}
-    ${(cat || []).length ? `<section><div class="sh-row"><h3 class="sh">מלאי</h3><span class="count">${cat.length}</span></div><div class="list">${[...cat].sort((a, b) => low(b) - low(a)).map(c => { const pct = c.min_qty ? Math.min(100, Math.round(Number(c.stock || 0) / (Number(c.min_qty) * 2) * 100)) : null;
-      return `<button type="button" class="lrow stockrow" data-stock="${c.monday_item_id}"><span class="grow"><b>${esc(c.name)}</b>${pct != null ? `<span class="meter ${low(c) ? 'warn' : 'ok'}"><i style="width:${Math.max(4, pct)}%"></i></span>` : ''}</span><span class="pill ${low(c) ? 'warn' : 'ok'}">${c.stock ?? '—'} ${esc(c.unit || '')}</span></button>`; }).join('')}</div></section>` : ''}`;
+    ${(cat || []).length || isManager() ? `<section><div class="sh-row"><h3 class="sh">מלאי</h3>${(cat || []).length ? `<span class="count">${cat.length}</span>` : ''}${isManager() ? `<button type="button" class="btn ghost sm more" id="pnewitem">${icon('plus', 16)} פריט חדש</button>` : ''}</div>
+      ${byCat(cat || []).map(([k, list], _, all) => `${all.length > 1 ? `<h4 class="pr-cat">${esc(k)}</h4>` : ''}<div class="list">${list.map(c => { const pct = c.min_qty ? Math.min(100, Math.round(Number(c.stock || 0) / (Number(c.min_qty) * 2) * 100)) : null;
+      return `<button type="button" class="lrow stockrow" data-stock="${c.monday_item_id}"><span class="grow"><b>${esc(c.name)}</b>${pct != null ? `<span class="meter ${low(c) ? 'warn' : 'ok'}"><i style="width:${Math.max(4, pct)}%"></i></span>` : ''}</span><span class="pill ${low(c) ? 'warn' : 'ok'}">${c.stock ?? '—'} ${esc(c.unit || '')}</span></button>`; }).join('')}</div>`).join('')}</section>` : ''}`;
   if (/^#\/purchase\/new/.test(location.hash)) { replaceHash('#/purchase', false); newRequest(cat || []); }   // מה"+" — בלי כפתור במסך
   const again = () => renderPurchase($('#app'));
   $$('[data-quick]').forEach(b => b.onclick = () => newRequest(cat || [], b.dataset.quick));
   $$('[data-stock]').forEach(b => b.onclick = () => stockSheet((cat || []).find(c => c.monday_item_id === b.dataset.stock), cat || [], again));
   const pin = $('#pin'); if (pin) pin.onclick = () => stockSheet(null, cat || [], again);
+  const pni = $('#pnewitem'); if (pni) pni.onclick = () => newItemSheet(again);
   $$('[data-req]').forEach(b => b.onclick = () => requestSheet((reqs || []).find(r => r.id === b.dataset.req), again));
   ['#padd', '#pnew'].forEach(k => { const b = $(k); if (b) b.onclick = () => newRequest(cat || []); });
   const pl = $('#plow'); if (pl) pl.onclick = () => newRequest(cat || [], lows.map(c => c.monday_item_id));
@@ -190,6 +194,70 @@ function receiveSheet(r, th, done) {
 }
 
 // ---------- מלאי: חלון אחד, שתי לשוניות — "התקבל חומר" (מוסיף, ברירת מחדל) ו"ספירה" (מחליף). c ריק = בוחרים פריט ----------
+// קבוצות לפי קטגוריה (= הקבוצה בלוח המלאי). בתוך קבוצה: מתחת למינימום קודם. "ללא קטגוריה" בסוף
+function byCat(cat) {
+  const m = new Map();
+  for (const c of cat) { const k = (c.category || '').trim() || NOCAT; if (!m.has(k)) m.set(k, []); m.get(k).push(c); }
+  for (const l of m.values()) l.sort((a, b) => low(b) - low(a));
+  return [...m.entries()].sort(([a], [b]) => (a === NOCAT) - (b === NOCAT) || a.localeCompare(b, 'he'));
+}
+
+// ---------- פריט חדש: שם · יחידה · קטגוריה · כמות התחלתית. נוצר קודם בלוח המלאי במאנדי (פונקציית stock-item), לכן רק עם קליטה ----------
+async function newItemSheet(done) {
+  if (!isManager()) return;
+  if (!navigator.onLine) return toast('פריט חדש נפתח רק עם קליטה', 4000, 'error');
+  // הצעות: כל הקטגוריות והיחידות שכבר קיימות בקטלוג (גם מה שלא מוצג במסך)
+  const { data: all } = await sb.from('catalog_items').select('unit,category');
+  const uniq = k => [...new Set((all || []).map(x => (x[k] || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'));
+  const cats = uniq('category'), units = uniq('unit');
+  let cid = uid(), q = 0;
+  sheet(`<h3>פריט חדש</h3>
+    <label class="field">שם הפריט<input id="ni-n" maxlength="80" autocomplete="off" placeholder="למשל: כפפות ניטריל"></label>
+    <div class="field">קטגוריה${cats.length ? `<div class="chips" id="ni-cc">${cats.map(c => `<button type="button" class="chip" data-cat="${esc(c)}" aria-pressed="false">${esc(c)}</button>`).join('')}</div>` : ''}
+      ${isAdmin() || !cats.length ? `<input id="ni-c" maxlength="40" autocomplete="off" placeholder="${cats.length ? 'או קטגוריה חדשה' : 'למשל: ציוד בטיחות'}">` : '<input id="ni-c" type="hidden">'}</div>
+    <label class="field">יחידה<input id="ni-u" maxlength="20" autocomplete="off" list="ni-ul" placeholder="יחידה / גלון / זוג"><datalist id="ni-ul">${units.map(u => `<option value="${esc(u)}">`).join('')}</datalist></label>
+    <label class="field">כמות התחלתית
+      <span class="qty pr-count"><button type="button" id="ni-m" aria-label="פחות">−</button><input id="ni-q" type="number" inputmode="decimal" min="0" step="any" value="0"><button type="button" id="ni-p" aria-label="יותר">+</button></span></label>
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="ni-go">${icon('plus', 18)} פתיחת הפריט</button></div>`, (s, close) => {
+    const n = $('#ni-n', s), c = $('#ni-c', s), u = $('#ni-u', s), qi = $('#ni-q', s);
+    const val = () => Number(String(qi.value).replace(',', '.'));
+    const mark = () => $$('[data-cat]', s).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cat === c.value.trim())));
+    $$('[data-cat]', s).forEach(b => b.onclick = () => { c.value = b.dataset.cat; mark(); });
+    c.oninput = mark;
+    $('#ni-m', s).onclick = () => { qi.value = Math.max(0, (val() || 0) - 1); };
+    $('#ni-p', s).onclick = () => { qi.value = (val() || 0) + 1; };
+    qi.onfocus = () => qi.select();
+    $$('[data-close]', s).forEach(b => b.onclick = close);
+    setTimeout(() => n.focus(), 50);
+    $('#ni-go', s).onclick = async () => {
+      const go = $('#ni-go', s); if (go.disabled) return;
+      const name = n.value.trim(), cat = c.value.trim(), unit = u.value.trim(); q = val();
+      if (name.length < 2) { n.focus(); return toast('צריך שם לפריט'); }
+      if (!cat) { c.focus(); return toast('צריך קטגוריה'); }
+      if (!unit) { u.focus(); return toast('צריך יחידה'); }
+      if (!Number.isFinite(q) || qi.value === '' || q < 0) { qi.focus(); return toast('כמות לא תקינה'); }
+      if (!navigator.onLine) return toast('פריט חדש נפתח רק עם קליטה', 4000, 'error');
+      go.disabled = true; go.classList.add('busy');
+      let data = null, code = '';
+      try {
+        const r = await sb.functions.invoke('stock-item', { body: { name, unit, category: cat, qty: q, client: cid } });
+        data = r.data;
+        if (r.error) { try { code = (await r.error.context?.json())?.error || ''; } catch { /* */ } code = code || 'net'; }
+      } catch { code = 'net'; }
+      go.disabled = false; go.classList.remove('busy');
+      if (code) {
+        // שגיאת תוכן → לחיצה חדשה אחרי תיקון. תקלת רשת / מאנדי → אותו מזהה, כדי שניסיון חוזר לא יפתח פריט שני
+        if (['exists', 'bad_name', 'bad_unit', 'bad_category', 'cat_admin', 'bad_qty', 'too_many'].includes(code)) cid = uid();
+        return toast(code === 'net' ? 'אין קליטה — נסו שוב' : ERR[code] || 'לא נשמר — נסו שוב', 4000, 'error');
+      }
+      close();
+      if (data?.dry) return toast(`בדיקה: "${data.name}" לא נפתח במאנדי (משתמש בדיקה)`);
+      toast(`נפתח: ${data?.name || name}${q > 0 ? ` · ${q} ${data?.unit || unit}` : ''}`);
+      done();
+    };
+  });
+}
+
 function stockSheet(c, cat, done, tab = 'in') {
   if (c && !isManager()) return newRequest(cat, c.monday_item_id);
   if (!isManager()) return;
@@ -253,7 +321,7 @@ function stockSheet(c, cat, done, tab = 'in') {
 }
 
 export async function newRequest(cat, preselect) {
-  if (!cat) { const { data } = await sb.from('catalog_items').select('monday_item_id,name,unit,order_unit,units_per_order,min_qty,stock,sku,supplier_name,is_material,in_app').eq('in_app', true).order('is_material', { ascending: false }).order('name'); cat = data || []; }
+  if (!cat) { const { data } = await sb.from('catalog_items').select('monday_item_id,name,unit,order_unit,units_per_order,min_qty,stock,sku,supplier_name,is_material,in_app,category').eq('in_app', true).order('is_material', { ascending: false }).order('name'); cat = data || []; }
   const { data: projects } = await sb.from('projects').select('id,name,status_label,monday_group').neq('monday_group', 'group_mm5052gw').order('name');
   // כמות מוצעת = עד פעמיים המינימום. בלי בחירה מראש — כל מה שמתחת למינימום כבר בסל
   // כמות מוצעת (ביחידות הזמנה — קרטון/גלון): מה שחסר עד המינימום + יחידת הזמנה אחת מעליו, כדי שלא נהיה שוב "נמוך" ביום ההגעה.

@@ -141,7 +141,7 @@ textarea{min-height:90px;resize:vertical}
 .bar .btn{flex:1;max-width:360px}
 
 /* הודעות */
-.toast{position:fixed;bottom:calc(92px + var(--safe-b));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 18px;border-radius:999px;font-weight:500;z-index:20;max-width:90vw;text-align:center}
+.toast{position:fixed;bottom:calc(92px + var(--safe-b));left:50%;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 18px;border-radius:999px;font-weight:500;z-index:35;max-width:90vw;text-align:center;pointer-events:none}
 .net{position:fixed;bottom:calc(84px + var(--safe-b));left:50%;transform:translateX(-50%);background:var(--warnbg);color:var(--warn);border:1px solid var(--warn);border-radius:999px;padding:5px 14px;font-size:.82rem;font-weight:700;z-index:20}
 .sheet{position:fixed;inset:0;z-index:30;background:#000d;display:flex;flex-direction:column}
 
@@ -211,7 +211,7 @@ section h3{font-size:1.1rem}
 .stars{display:flex;gap:6px} .stars button{font-size:1.8rem;background:none;border:0;color:var(--line);cursor:pointer;padding:0 2px} .stars button[aria-pressed="true"]{color:var(--warn)}
 .sig{width:100%;height:180px;background:#fff;border-radius:12px;touch-action:none;border:1px solid var(--line)}
 .big-ok{width:64px;height:64px;margin:0 auto;border-radius:50%;background:var(--okbg);color:var(--ok);display:grid;place-items:center;font-size:2rem;font-weight:800}
-.toast .undo{background:transparent;border:0;color:var(--lime);font-weight:800;margin-inline-start:8px;cursor:pointer;text-decoration:underline}
+.toast .undo{background:transparent;border:0;color:var(--lime);font-weight:800;margin-inline-start:8px;cursor:pointer;text-decoration:underline;pointer-events:auto}
 .confetti{position:fixed;inset:0;pointer-events:none;z-index:40;overflow:hidden}
 .confetti i{position:absolute;top:-10px;left:var(--x);width:8px;height:14px;background:var(--c);border-radius:2px;animation:fall var(--d) ease-in forwards}
 @keyframes fall{to{transform:translateY(105vh) rotate(540deg)}}
@@ -2885,6 +2885,7 @@ button.lrow[data-myrep]{width:100%;text-align:start;font:inherit;color:inherit;c
 .pr-file{position:relative;flex-direction:row;align-items:center;gap:8px;border:1px dashed var(--line);border-radius:12px;padding:12px;cursor:pointer;color:var(--muted)}
 .pr-file input{position:absolute;inset:0;opacity:0;cursor:pointer}
 .pr-link{display:block;margin:10px auto 0;background:none;border:0;color:var(--muted);font-size:.82rem;text-decoration:underline;cursor:pointer;min-height:44px}
+.pr-cat{color:var(--muted);font-size:.82rem;font-weight:600;margin:14px 4px 6px}
 #stk .tabs{margin:8px 0 4px}
 
 /* ---- הלו״ז שלי (agenda.js): שעה בצד השורה, פס הימים עם סיור/משימה ---- */

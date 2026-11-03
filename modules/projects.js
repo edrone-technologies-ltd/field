@@ -330,7 +330,7 @@ export async function renderProject(el, id, tab = 'o') {
     const dayTxt = tot ? (doneW >= tot ? (tot === 1 ? 'יום העבודה בוצע' : `${mono(String(tot))} ימי עבודה בוצעו`) : `יום ${mono(String(cur))} מתוך ${mono(String(tot))} ימי עבודה`) : '';
     $('#pjstat', el).innerHTML = `${p.engagement === 'פיילוט' ? '<b class="sttxt pilot">פיילוט</b>' : ''}${pill}
       ${dayTxt ? `<button type="button" class="slink" data-goday="${curDay?.id || ''}">${dayTxt}</button>` : ''}
-      ${nx ? `<a class="slink strong" href="#/day/${nx.id}">${nx.day === T0 ? 'היום' : 'הבא: ' + esc(dayLabel(nx.day))}${nx.report_time ? ', יציאה ' + mono(nx.report_time.slice(0, 5)) : ''}</a>` : ''}`;
+      ${nx ? `<a class="slink strong" href="#/day/${nx.id}">${nx.day === T0 ? 'היום' : 'הבא: ' + esc(dayLabel(nx.day))}${nx.report_time ? ', יציאה ' + mono(nx.report_time.slice(0, 5)) : ''}${nx.site_arrival ? ' · באתר ' + mono(nx.site_arrival.slice(0, 5)) : ''}</a>` : ''}`;
     const g = $('[data-goday]', el); if (g) g.onclick = () => focusDay(g.dataset.goday);
     const C = counts(), ns = nextStep();
     const cnt = (k, n, t, tone) => n ? `<button type="button" class="cnt ${tone}" data-cnt="${k}"><b>${mono(String(n))}</b><span>${t}</span></button>` : `<div class="cnt zero"><b>${mono('0')}</b><span>${t}</span></div>`;   // 0 = אין מקור ללחוץ אליו → טקסט
@@ -731,11 +731,15 @@ export async function renderProject(el, id, tab = 'o') {
       pulseEditor($('#spl', s), pre.pulses?.length ? pre.pulses : [[start, pre.end || endOf(start, pre.n || maxDay)]], (pl, bad) => { PLcur = pl; PLbad = bad; syncN(); });
       $('#sfr', s).onchange = syncN; $('#se', s).onchange = drawWx;
       // יציאה מהמשרד = הגעה − נסיעה (כביש × מקדם תנועה) − העמסה. המנהל יכול לשנות ידנית
-      let travelMin = null, touched = !!prev?.report_time; const Dp = { office: [31.2203, 34.8041], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15 };
+      // שיבוץ מחדש: היציאה של הימים הקיימים נשמרת כל עוד ההגעה לא זזה. ההגעה זזה ← היציאה מחושבת מחדש (אוריאל 03/11: יציאה 06:15 נשארה מול הגעה 06:30)
+      let travelMin = null, touched = false; const Dp = { office: [31.2203, 34.8041], office_name: 'המשרד', load_min: 20, traffic_factor: 1.15 };
+      const m5 = t => +t.slice(0, 2) * 60 + +t.slice(3, 5), base = prev?.report_time ? { arr: (prev.site_arrival || '07:00').slice(0, 5), dep: prev.report_time.slice(0, 5) } : null;
       const recalc = () => {
         const a = hr('#sa'); if (a == null) return;
-        const tot = (travelMin ?? 0) + Dp.load_min, dep = ((a * 60 - tot) % 1440 + 1440) % 1440, r5 = Math.floor(dep / 5) * 5;
-        if (!touched) $('#st', s).value = `${String(Math.floor(r5 / 60)).padStart(2, '0')}:${String(r5 % 60).padStart(2, '0')}`;
+        // בלי מרחק (אין מיקום לאתר / OSRM נכשל): היציאה זזה כמו ההגעה, לא "הגעה פחות העמסה"
+        const shift = travelMin == null && base, keep = base && $('#sa', s).value === base.arr;
+        const tot = (travelMin ?? 0) + Dp.load_min, dep = shift ? m5(base.dep) + a * 60 - m5(base.arr) : a * 60 - tot, r5 = Math.floor(((dep % 1440 + 1440) % 1440) / 5) * 5;
+        if (!touched && !keep) $('#st', s).value = `${String(Math.floor(r5 / 60)).padStart(2, '0')}:${String(r5 % 60).padStart(2, '0')}`;
         $('#sthint', s).textContent = travelMin != null ? `מומלץ: נסיעה ${Math.floor(travelMin / 60)}:${String(travelMin % 60).padStart(2, '0')} מ${Dp.office_name} + ${Dp.load_min} דק׳ העמסה` : lat ? 'מחשב מרחק…' : `${Dp.load_min} דק׳ העמסה`;
       };
       $('#sa', s).onchange = () => { recalc(); drawWx(); }; $('#st', s).oninput = () => { touched = true; };

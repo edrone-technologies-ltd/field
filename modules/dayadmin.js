@@ -136,7 +136,9 @@ export async function openDayAdmin(id, after) {
     if (started) { $('#da-save', s).onclick = async e => { const un = busy(e.target), ch = timesChanged(); if (!(await saveTimes())) return un(); done(ch ? 'השעות עודכנו' : 'נשמר', close); }; return; }
     // הגעה לאתר זזה → יציאה מומלצת מחושבת מחדש (אלא אם שינו את היציאה ידנית)
     let tv = null, depTouched = false; const dep = $('#da-time', s), hint = $('#da-hint', s);
-    const recalc = () => { const a = mins($('#da-sa', s).value); if (!tv || a == null) return; const r = hhmmOf(a - (tv.tr ?? 0) - tv.load);
+    // בלי מרחק: היציאה זזה כמו ההגעה (לא "הגעה פחות העמסה" בלבד, שצמוד מדי להגעה)
+    const gap = w.report_time && w.site_arrival ? mins(hm5(w.report_time)) - mins(hm5(w.site_arrival)) : null;
+    const recalc = () => { const a = mins($('#da-sa', s).value); if (!tv || a == null) return; const r = hhmmOf(tv.tr == null && gap != null ? a + gap : a - (tv.tr ?? 0) - tv.load);
       hint.textContent = tv.tr != null ? `מומלץ ${r}` : ''; if (!depTouched && $('#da-sa', s).value !== hm5(w.site_arrival)) dep.value = r; };
     dep.oninput = () => { depTouched = true; }; $('#da-sa', s).addEventListener('change', recalc);
     travelFrom(lat, lng).then(x => { tv = x; if (s.isConnected) recalc(); });
