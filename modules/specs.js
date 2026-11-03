@@ -639,21 +639,51 @@ export async function renderBuilding(el, slug, bid) {
         $$('[data-nf]', nb).forEach(y => y.setAttribute('aria-current', y === x)); });
     };
     drawNav();
-    bindFac(box, () => { const c2 = covered(); $$('[data-cf]', box).forEach(x => x.hidden = hideC(x.dataset.cf, c2));
+    const onDir = () => { const c2 = covered(); $$('[data-cf]', box).forEach(x => x.hidden = hideC(x.dataset.cf, c2));
       $$('.ftag[data-tk]', box).forEach(t => { const d = FD.get(t.dataset.tk)?.dir; t.classList.toggle('none', !d); t.firstElementChild.innerHTML = dirTxt(d); t.setAttribute('aria-label', 'כיוון החזית: ' + (d || 'לא סומן')); });
-      drawNav(); });
+      drawNav(); };
+    bindFac(box, onDir);
+    // אחרי עדכון מחוץ לכרטיס (גיליון הפרטים): המונה של הכרטיס מתחלף, התווית/המצפן/הניווט מתעדכנים
+    facFresh = k => { const c = box.querySelector(`[data-pk="${CSS.escape(k)}"]`);
+      if (c) { const t = document.createElement('template'); t.innerHTML = counter(k); c.querySelector('.fcount')?.replaceWith(t.content.firstElementChild); bindFac(c, onDir); }
+      onDir(); };
     const inp = $('input[type=file]', box);
     if (inp) inp.onchange = async () => {
+      const added = [];
       for (const f of [...inp.files]) {
         try { const blob = await shrink(f), photoId = crypto.randomUUID();
           await enqueue({ kind: 'photo', blob, photoId, path: `${state.user.id}/spec/${spec.id}/${photoId}.jpg`, meta: { spec_id: spec.id, building_id: b.id, site_id: s.id, kind: 'facade' } });
-          FD.set(photoId, { k: photoId, d: 0 });
+          FD.set(photoId, { k: photoId, d: 0 }); added.push(photoId);
         } catch { toast('תמונה אחת לא נשמרה'); }
       }
       dirty = true; if (spec.status === 'new') form.status = 'draft'; await save(false, true); await drawFacades(); geoSilent();
-      const fb = $('#facs'); if (fb) fb.scrollLeft = 0;   // הרכבת חוזרת להתחלה: החדשה ליד כפתור הצילום
+      // מיד אחרי הצילום: הרכבת גוללת לתמונה החדשה, ונפתח גיליון קצר של כיוון + ימים לתמונה הזו (טל ואוריאל, fb1e54f4)
+      if (added.length) facDetails(added, 0); else { const fb = $('#facs'); if (fb) fb.scrollLeft = 0; }
     };
   }
+  let facFresh = null;
+  // גיליון פרטי חזית לתמונה שצולמה עכשיו: אותם שדות כמו בכרטיס (FD: dir + d), שמירה/דילוג. כמה תמונות — אחת אחרי השנייה
+  const facDetails = (ids, i) => {
+    const k = ids[i], box = $('#facs'); if (!k || !box || !editable) return;
+    const card = box.querySelector(`[data-pk="${CSS.escape(k)}"]`);
+    if (card) { card.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest', inline: 'start' });
+      $$('.hl', box).forEach(c => c.classList.remove('hl')); void card.offsetWidth; card.classList.add('hl'); }
+    let dir = FD.get(k)?.dir || null, d = fget(k);
+    const src = card?.querySelector('img')?.getAttribute('src');
+    const go = j => setTimeout(() => facDetails(ids, j), 200);
+    sheet(`<div class="fdet">${src ? `<img class="fdimg" src="${esc(src)}" alt="">` : ''}<div class="grow"><h3 class="sh">פרטי החזית</h3>${ids.length > 1 ? `<small class="muted"><bdi dir="ltr" class="fdn">${i + 1}/${ids.length}</bdi></small>` : ''}</div></div>
+      <div class="field">כיוון<div class="dirpick">${FACES.map(f => `<button type="button" class="chip" data-v="${f}" aria-pressed="${dir === f}"><span class="ar" aria-hidden="true">${ARW[f]}</span>${f}</button>`).join('')}</div></div>
+      <div class="field">ימי עבודה לחזית<div class="stepper"><button type="button" data-dd="-0.5" aria-label="פחות">−</button><b class="sval grow" id="fdv">${fmtD(d)}</b><button type="button" data-dd="0.5" aria-label="יותר">+</button></div></div>
+      <div class="row-btns"><button type="button" class="btn ghost" id="fdskip">דילוג</button><button type="button" class="btn primary" id="fdok">שמירה</button></div>`, (sh, close) => {
+      $$('.dirpick button', sh).forEach(x => x.onclick = () => { dir = dir === x.dataset.v ? null : x.dataset.v; $$('.dirpick button', sh).forEach(y => y.setAttribute('aria-pressed', y.dataset.v === dir)); });
+      $$('[data-dd]', sh).forEach(x => x.onclick = () => { d = Math.max(0, d + Number(x.dataset.dd)); $('#fdv', sh).textContent = fmtD(d); });
+      const next = () => { close(); if (ids[i + 1]) go(i + 1); };
+      $('#fdskip', sh).onclick = next;
+      $('#fdok', sh).onclick = () => {
+        if (dir !== (FD.get(k)?.dir || null) || d !== fget(k)) { FD.set(k, { ...(FD.get(k) || { k }), dir, d }); dirty = true; syncTotal(); auto(); facFresh?.(k); }
+        next(); };
+    }, i ? { back: () => go(i - 1) } : undefined);
+  };
   drawFacades();
   $('#dm').onclick = () => { days.value = Math.max(0, (Number(days.value) || 0) - 0.5); days.oninput(); };
   $('#dp').onclick = () => { days.value = (Number(days.value) || 0) + 0.5; days.oninput(); };

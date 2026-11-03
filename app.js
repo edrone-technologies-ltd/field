@@ -23,7 +23,7 @@ const TABS = [
   { k: 'menu', t: 'עוד', ic: 'menu', ok: () => true },
 ];
 // מסכים עם ניווט תחתון (השאר = מסכי עבודה עם כפתור חזרה ופעולות משלהם)
-const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'compliance', 'purchase', 'expenses', 'dispatch', 'tasks', 'costs', 'my']);
+const WITH_NAV = new Set(['live', 'kb', 'news', 'requests', 'weather', '', 'ops', 'schedule', 'projects', 'p', 'client', 'clients', 'inbox', 'menu', 'alerts', 'reports', 'equipment', 'specs', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'compliance', 'purchase', 'expenses', 'dispatch', 'tasks', 'costs', 'my', 'myreports']);
 
 // ---------- כניסה ----------
 function renderLogin(msg = '') {
@@ -87,6 +87,7 @@ function renderMenu() {
       ['#/expenses', 'receipt', 'הוצאות', 'דלק, חניה, אוכל ולינה'],
       ['#/news', 'inbox', 'עדכוני הנהלה', 'עדכונים והוקרה'],
       !isManager() && ['#/requests', 'send', 'בקשה למשרד', 'שכר, ציוד, מסמכים'],
+      p.role !== 'admin' && myRepKnown() && ['#/myreports', 'bug', 'הדיווחים שלי', 'בעיות באפליקציה ששלחתי'],   // רק כשיש (שותפים: דיווחי תקלות)
     ]],
     ['שטח', [
       state.profile.role !== 'crew' && ['#/weather', 'sun', 'מזג אוויר וטיסה', 'לכל אתר ולכל מקום — רוח, משבים, גשם, Kp'],   // עובד שטח: התחזית בכרטיס היום
@@ -117,7 +118,7 @@ function renderMenu() {
     <div class="stack lg">
       <div class="card prof"><span class="avatar lg">${esc(initials(p.full_name))}</span><div class="grow"><b>${esc(p.full_name)}</b><small>${esc([ROLE_HE[p.role], p.phone].filter(Boolean).join(' · '))}</small>
         ${p.is_pilot && p.pilot_license_expiry ? `<small class="${new Date(p.pilot_license_expiry) - Date.now() < 45 * 864e5 ? 'err' : ''}">רישיון מטיס ${esc(p.pilot_license_no || '')} · בתוקף עד ${new Date(p.pilot_license_expiry).toLocaleDateString('he-IL')}</small>` : ''}</div></div>
-      ${groups.map(([g, rows]) => `<section><h3 class="sh">${g}</h3><div class="mgrid">${rows.map(([h, ic, t]) => `<a class="mtile" href="${h}"><span class="mic">${icon(ic, 20)}</span><b>${t}</b></a>`).join('')}</div></section>`).join('')}
+      ${groups.map(([g, rows]) => `<section${g === 'שלי' ? ' id="g-mine"' : ''}><h3 class="sh">${g}</h3><div class="mgrid">${rows.map(([h, ic, t]) => `<a class="mtile" href="${h}"><span class="mic">${icon(ic, 20)}</span><b>${t}</b></a>`).join('')}</div></section>`).join('')}
       <section><h3 class="sh">הגדרות</h3><div class="menu"><div class="lrow"><span class="mic">${icon('settings', 20)}</span><span class="grow"><b>תצוגה</b></span>
         <span class="seg">${[['', 'אוטומטי'], ['light', 'בהיר'], ['dark', 'כהה']].map(([v, l]) => `<button data-th="${v}" aria-pressed="${th === v}">${l}</button>`).join('')}</span></div>
         <button class="lrow" id="qrow"><span class="mic">${icon('sync', 20)}</span><span class="grow"><b>סנכרון</b></span><span class="chev">${icon('chev', 18)}</span></button>
@@ -130,8 +131,19 @@ function renderMenu() {
   $$('[data-th]').forEach(c => c.onclick = () => { setTheme(c.dataset.th); renderMenu(); });
   $('#so').onclick = signOut;
   $('#qrow').onclick = async () => (await import('./lib/core.js')).showQueue();
-  installHint(); pushRow();
+  installHint(); pushRow(); if (p.role !== 'admin') myRepTile();
   caches.keys().then(k => { const v = k.find(x => x.startsWith('edrone-field-v')); const e = $('#ver'); if (v && e) e.textContent = 'E-Drone שטח · גרסה ' + v.split('-v')[1]; }).catch(() => {});
+}
+// "הדיווחים שלי" בתפריט — רק למי שדיווח. הידוע האחרון נשמר (מוצג מיד, בלי קפיצה), ומתעדכן ברקע
+const MYREP_K = () => 'edrone-myrep:' + (state.user?.id || '');
+const myRepKnown = () => { try { return localStorage.getItem(MYREP_K()) === '1'; } catch { return false; } };
+async function myRepTile() {
+  const n = await import('./modules/appreports.js').then(m => m.myReportsCount()).catch(() => null);
+  if (n == null) return;
+  try { localStorage.setItem(MYREP_K(), n ? '1' : '0'); } catch { /* */ }
+  const g = $('#g-mine .mgrid'), t = g?.querySelector('a[href="#/myreports"]');
+  if (n && g && !t) g.insertAdjacentHTML('beforeend', `<a class="mtile" href="#/myreports"><span class="mic">${icon('bug', 20)}</span><b>הדיווחים שלי</b></a>`);
+  else if (!n && t) t.remove();
 }
 const PUSH_TXT = { on: 'פועלות', off: 'כבויות', denied: 'חסומות בהגדרות הטלפון', install: 'זמינות אחרי התקנה במסך הבית', unsupported: 'לא נתמך בטלפון הזה' };
 async function pushRow() {
@@ -317,7 +329,7 @@ async function routeInner() {
   $('#sheet').hidden = true;
   // מסך שורש של לשונית (בלי תת-נתיב) — בלי כפתור חזרה בכותרת
   if (h.length === 1 && TABS.some(t => t.k === h[0] && t.ok())) document.body.dataset.root = ''; else delete document.body.dataset.root;
-  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' || h[0] === 'tasks' ? '' : h[0] === 'my' ? (isManager() ? '' : 'schedule') : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'kb', 'news', 'requests', 'weather', 'costs'].includes(h[0]) ? 'menu' : h[0]);
+  nav(WITH_NAV.has(h[0]), h[0] === 'ops' ? '' : h[0] === 'dispatch' ? 'schedule' : h[0] === 'p' ? 'projects' : ['client', 'clients'].includes(h[0]) ? 'menu' : h[0] === 'alerts' || h[0] === 'tasks' ? '' : h[0] === 'my' ? (isManager() ? '' : 'schedule') : h[0] === 'reports' ? 'menu' : ['specs', 'equipment', 'admin', 'hours', 'attendance', 'myfile', 'staff', 'purchase', 'expenses', 'kb', 'news', 'requests', 'myreports', 'weather', 'costs'].includes(h[0]) ? 'menu' : h[0]);
   // מסך בלי הרשאה — מסך אחד אחיד (כותרת, חזרה, הסבר קצר), בלי לטעון את המודול
   const deny = () => { app.innerHTML = `<header class="phead">${backBtn('#/')}</header><div class="empty-card"><span class="ei">${icon('shield', 26)}</span><span><b>אין לך גישה למסך הזה</b><small>אם צריך, המשרד יעדכן את ההרשאות</small></span></div>`; return false; };
   const guard = m => can(m) || deny();
@@ -349,7 +361,9 @@ async function routeInner() {
     case 'kb': { const m = await import('./modules/knowledge.js'); return h[1] === 'c' ? m.renderKb(app, decodeURIComponent(h[2] || '')) : h[1] ? m.renderKbItem(app, h[1]) : m.renderKb(app); }
     case 'onboarding': return (await import('./modules/onboarding.js')).renderOnboarding(app);
     case 'news': return (await import('./modules/news.js')).renderNews(app);
-    case 'requests': await (await import('./modules/news.js')).renderRequests(app); if (h[1] === 'new') $('#rn')?.click(); if (h[1] === 'rep' && h[2]) (await import('./modules/appreports.js')).openMyReport(h[2]); return;   // מהתראת "תוקן" (db/156)
+    case 'requests': if (h[1] === 'rep' && h[2]) return replaceHash('#/myreports/' + h[2]);   // התראות "תוקן"/"תשובה" (notify) — לדיווחים שלי
+      await (await import('./modules/news.js')).renderRequests(app); if (h[1] === 'new') $('#rn')?.click(); return;
+    case 'myreports': return (await import('./modules/appreports.js')).renderMyReports(app, h[1]);   // הדיווחים שלי (#/myreports/<id> = לפתוח דיווח)
     case 'weather': return (await import('./modules/weather.js')).renderWeather(app, h[1] || '');
     case 'clients': return (await import('./modules/clients.js')).renderClients(app);
     case 'client': return (await import('./modules/clients.js')).renderClient(app, h[1]);

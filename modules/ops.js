@@ -224,6 +224,7 @@ export async function renderOps(el) {
       ${pushA ? pushA.href ? `<a class="lrow slim" id="pushA" href="${pushA.href}"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span></a>`
         : `<div class="lrow slim" id="pushA"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(pushA.title)}</b></span>${pushA.btn ? `<button class="btn ghost sm" id="pushOn">${pushA.btn}</button>` : ''}</div>` : ''}
       ${chatA ? `<a class="lrow slim chatA" href="${chatA.list ? '#/inbox' : chatA.href}"><span class="mic">${icon('chat', 18)}</span><span class="grow"><b>${esc(chatA.title)}</b>${chatA.sub ? `<small>${esc(chatA.sub)}</small>` : ''}</span><span class="chev">${icon('chev', 18)}</span></a>` : ''}
+      <div id="repfix"></div>
       <div class="kpis opk">${kpi(dToday.length, 'בשטח היום', 'today')}${kpi(open.length, 'במשמרת', 'shift')}${kpi(N.length, 'לטיפול', 'needs', N.some(i => i.tone === 'bad') ? 'bad' : N.length ? 'warn' : '')}${kpi(approvals.length, 'לאישור', 'appr', approvals.length ? 'warn' : '')}</div>
       ${NS ? (NS.href ? `<a class="btn primary nstep ${NS.tone === 'bad' ? 'bad' : ''}" id="hnstep" href="${esc(NS.href)}"${/^https?:/.test(NS.href) ? ' target="_blank" rel="noopener"' : ''}>${esc(NS.title)}</a>` : `<button type="button" class="btn primary nstep ${NS.tone === 'bad' ? 'bad' : ''}" id="hnstep">${esc(NS.title)}</button>`) : ''}
       ${week}
@@ -246,6 +247,7 @@ export async function renderOps(el) {
     appr: () => sheet(`${shead('לאישורך', approvals.length)}${approvals.join('') || none('אין מה לאשר', '')}`, (s2, close) => bindAppr(s2, () => { close(); again(); })),
   };
   $$('[data-kpi]', el).forEach(b => b.onclick = () => KPI[b.dataset.kpi]());
+  import('./appreports.js').then(m => m.fixedHome($('#repfix', el))).catch(() => {});   // דיווח שתוקן ומחכה לאישור שלי
   $$('[data-wk]', el).forEach(b => b.onclick = () => wkSheet(b.dataset.wk));
 
   bindNeeds(el, N2, () => renderOps(el));

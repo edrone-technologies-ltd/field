@@ -1,5 +1,5 @@
 // Service worker: האפליקציה נפתחת גם בלי קליטה, ותמונות שכבר נצפו זמינות מהטלפון.
-const VERSION = 'edrone-field-v147';
+const VERSION = 'edrone-field-v148';
 const SHELL = ['./', 'index.html', 'tour/ops.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png', 'lib/audit.js', 'lib/avail.js', 'lib/bulk.js', 'lib/contacts.js', 'lib/core.js', 'lib/daytype.js', 'lib/issue.js', 'lib/labor.js', 'lib/night.js', 'lib/pay.js', 'lib/photo.js', 'lib/report.js', 'lib/service.js', 'lib/share.js', 'lib/store.js', 'lib/sun.js', 'lib/track.js', 'lib/viewer.js', 'lib/views.js', 'lib/ws.js', 'lib/wx.js', 'modules/activity.js', 'modules/admin.js', 'modules/agenda.js', 'modules/appreports.js', 'modules/attendance.js', 'modules/attention.js', 'modules/chat.js', 'modules/clientreport.js', 'modules/clients.js', 'modules/closereq.js', 'modules/compliance.js', 'modules/costs.js', 'modules/dayadmin.js', 'modules/decks.js', 'modules/desk.js', 'modules/dispatch.js', 'modules/equipment.js', 'modules/expenses.js', 'modules/files.js', 'modules/home.js', 'modules/inbox.js', 'modules/knowledge.js', 'modules/live.js', 'modules/login.js', 'modules/master.js', 'modules/news.js', 'modules/onboarding.js', 'modules/ops.js', 'modules/pfiles.js', 'modules/plan.js', 'modules/prestart.js', 'modules/projects.js', 'modules/purchase.js', 'modules/repairs.js', 'modules/reports.js', 'modules/signoff.js', 'modules/specs.js', 'modules/staff.js', 'modules/tasks.js', 'modules/today.js', 'modules/tour.js', 'modules/visits.js', 'modules/weather.js', 'modules/welcome.js', 'modules/wizard.js', 'modules/zones.js'];
 
 // קבצי הגרסה נשמרים בהתקנה ישירות מהשרת, כך שכל הגרסה עקבית: cache: 'reload' עוקף את מטמון הדפדפן, ו-?v=גרסה עוקף את ה-CDN של GitHub,
@@ -89,12 +89,22 @@ self.addEventListener('push', e => {
   e.waitUntil(self.registration.showNotification(d.title || 'E-Drone שטח', {
     body: d.body || '', icon: 'icon-192.png', badge: 'icon-192.png', dir: 'rtl', lang: 'he', tag: d.tag, renotify: !!d.tag, data: { url: d.url || './' } }));
 });
+// לחיצה על התראה: חלון פתוח — focus, ואז הודעה לאפליקציה שתעבור למסך בעצמה (location.hash).
+// באייפון WindowClient.navigate נכשל בשקט; הוא נשאר גיבוי רק כשהאפליקציה לא אישרה תוך 1.5 שניות. אין חלון — openWindow עם הכתובת המלאה
+const navAck = (w, url) => new Promise(ok => {
+  let ch; try { ch = new MessageChannel(); } catch { w.postMessage({ type: 'nav', url }); return ok(false); }
+  const t = setTimeout(() => ok(false), 1500);
+  ch.port1.onmessage = () => { clearTimeout(t); ok(true); };
+  w.postMessage({ type: 'nav', url }, [ch.port2]);
+});
 self.addEventListener('notificationclick', e => {
   e.notification.close();
-  const url = e.notification.data?.url || './';
-  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ws => {
-    for (const w of ws) { if ('focus' in w) { w.navigate(url).catch(() => {}); return w.focus(); } }
-    return clients.openWindow(url);
+  const url = new URL(e.notification.data?.url || './', self.registration.scope).href;
+  e.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async ws => {
+    const w = ws.find(x => x.focused) || ws.find(x => x.visibilityState === 'visible') || ws[0];
+    if (!w) return clients.openWindow(url);
+    const f = await w.focus().catch(() => w) || w;
+    if (!(await navAck(f, url))) await f.navigate?.(url).catch(() => {});
   }));
 });
 

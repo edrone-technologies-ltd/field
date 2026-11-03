@@ -110,8 +110,7 @@ export async function renderRequests(el) {
     if (error) { b.disabled = false; return toast(errText(error)); } toast('נשלח לעובד'); renderRequests(el);
   });
   ['#rn', '#rn2'].forEach(k => { const b = $(k); if (b) b.onclick = () => newRequest(() => renderRequests(el)); });
-  // בעיות באפליקציה שדיווחתי (שותפים רואים את כולן ב-#/admin/reports)
-  if (state.profile.role !== 'admin') import('./appreports.js').then(m => m.myReports()).then(h => { if (h && el.isConnected) el.querySelector('.stack.lg')?.insertAdjacentHTML('beforeend', h); }).catch(() => {});
+  // בעיות באפליקציה שדיווחתי — במסך משלהן: #/myreports (תפריט "הדיווחים שלי" + כרטיס בבית)
 }
 
 export async function newRequest(done, pre) {

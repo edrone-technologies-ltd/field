@@ -185,7 +185,7 @@ export async function renderHome(el) {
   heroDays.forEach(w => { if (PS[w.id]) LS[w.id] = { ...(LS[w.id] || {}), hold: PS[w.id] }; });
   // סדר = כרטיס אחד דומיננטי "מה הבא שלי" ← משמרת ← מחכה לך (עד 3) ← משימות ← דוח פתוח ← השעות שלי
   box.innerHTML = `${heroToday ? '' : '<div id="myday"></div>'}${heroDays.map(w => dayHero(w, byId.get(w.project_id) || {}, cov[w.project_id], LS[w.id], w.status === 'done' && ahead[0] && !needsOk(ahead[0]) ? { ...ahead[0], pname: byId.get(ahead[0].project_id)?.name } : null)).join('') || (sv.length ? '' : empty('calendar', 'אין שיבוץ בשבועיים הקרובים', 'שיבוץ חדש יופיע כאן'))}
-    ${heroToday ? '<div id="myday"></div>' : ''}<div id="hclock"></div><div id="qown"></div><div id="attn"></div>
+    ${heroToday ? '<div id="myday"></div>' : ''}<div id="hclock"></div><div id="repfix"></div><div id="qown"></div><div id="attn"></div>
     <div id="mytasks"></div><div id="openpast"></div>
     ${pendRest.length === 1 ? `<div class="list">${dayRow(pendRest[0], byId)}</div>` : pendRest.length > 1 ? `<div class="okall" data-act="all"><span class="grow"><b>${pendRest.length} ימים מחכים לאישור הגעה</b><small>${pendRest.map(w => dayWord(w.day).replace('יום ', '')).join(' · ')}</small></span><button class="btn primary" data-confirm-all="${pendRest.map(x => x.id).join(',')}">אגיע לכולם ✓</button></div>` : ''}
     ${sv.length ? `<section><div class="sh-row"><h3 class="sh">סיורי אפיון</h3><a class="more" href="#/specs">כל האפיונים</a></div><div class="list">${sv.map(x => `<a class="lrow" href="${esc(x.href)}"><span class="grow"><b>${esc(x.name)}</b><small>${esc([x.visit_date === t ? 'היום' : dayWord(x.visit_date).replace('יום ', ''), x.scope_text, x.contact_name].filter(Boolean).join(' · '))}</small></span><span class="pill ${x.st === 'draft' ? 'warn' : ''}">${x.st === 'draft' ? 'בטיוטה' : 'לאפיון'}</span><span class="chev">${icon('chev', 18)}</span></a>`).join('')}</div></section>` : ''}
@@ -193,6 +193,7 @@ export async function renderHome(el) {
   const gone = openToday.find(w => w.status !== 'planned' && w.crew_lead_id !== state.user.id);
   import('./agenda.js').then(m => m.todayCard($('#myday'), { skip: heroDays.map(w => w.id) })).catch(() => {});   // היום שלי: סיורים ומשימות לצד יום השטח
   bindConfirm(box); bindNext(box, heroDays); extras(gone ? { label: `${(byId.get(gone.project_id)?.name || 'הצוות')} · הצוות ${gone.status === 'en_route' ? 'בדרך' : 'באתר'}`, project_id: gone.project_id } : null); pastOpen($('#openpast'));
+  import('./appreports.js').then(m => m.fixedHome($('#repfix'))).catch(() => {});   // דיווח שתוקן ומחכה לאישור שלי
   othersPending().then(o => { const b = $('#qown'); if (b && o.length) b.innerHTML = o.map(othersCard).join(''); }).catch(() => {});
   fillGlance(box, P);
   pulse($('#pulse'), ahead.length + mine.filter(w => w.status !== 'done').length);

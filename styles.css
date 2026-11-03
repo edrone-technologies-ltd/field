@@ -554,6 +554,7 @@ button.ftag>span::after{content:"";width:6px;height:6px;margin-inline-start:2px;
 .dirpick{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:4px 0 12px} .dirpick .chip{min-height:52px;justify-content:center;gap:8px;font-size:1rem}
 .fc.addfc{flex-basis:46%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;min-height:150px;border-style:dashed;cursor:pointer;position:relative;color:var(--muted)}
 .fc.addfc input{position:absolute;inset:0;opacity:0} .fc.addfc small{font-size:.75rem}
+.fdet{display:flex;align-items:center;gap:12px;margin-bottom:10px} .fdimg,.sheet .fdimg{width:104px;aspect-ratio:4/3;object-fit:cover;border-radius:10px;background:#fff;flex:none} .fdn{font-family:var(--f-mono);direction:ltr;unicode-bidi:isolate}
 .sunorder{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0} .sunorder span{flex:1 1 40%;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line)} .sunorder b{display:block} .sunorder small{color:var(--muted);font-size:.78rem}
 .wxs{display:flex;flex-wrap:wrap;gap:6px} .wxday{flex:1 1 30%;display:flex;flex-direction:column;align-items:flex-start;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);text-align:right;color:var(--ink)}
 .wxday small{font-size:.75rem;color:var(--muted)} .wxday.bad{border-color:var(--warn)} .wxday.skip{opacity:.55;text-decoration:line-through}
@@ -2819,6 +2820,7 @@ body:has(.viewer) #sheet:has(#rp){z-index:30}   /* זום על צילום הדי
 .rpres{background:var(--okbg);border-radius:12px;padding:10px 12px;line-height:1.55} .rpres b{display:block;color:var(--ok);font-size:.85rem;margin-bottom:2px}
 .rpvid{width:100%;max-height:60vh;border-radius:12px;background:#000;display:block} .rpvid.sk{aspect-ratio:9/16;max-height:40vh;background:var(--line)}
 button.lrow[data-myrep]{width:100%;text-align:start;font:inherit;color:inherit;cursor:pointer}
+button.promo{width:100%;text-align:start;font:inherit;color:inherit;cursor:pointer} .promo.repfix b{color:var(--ink)} .promo.repfix small{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
 
 /* סיור אפיון בלוח השיבוץ (db/157) — טורקיז, אייקון לוח: נפרד מימי שטח (ליים) ומיום תיאום (כחול). לא נגרר ולא נספר */
 :root{--sv:#7fe0d6;--svbg:#10302e;--svline:#1f4e4a}

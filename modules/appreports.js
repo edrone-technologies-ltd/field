@@ -1,4 +1,4 @@
-// דיווחי תקלות מהאפליקציה. שותפים: #/admin/reports (RLS ב-db/151: dg_is_partner). המדווח: "בעיות שדיווחתי" במסך הבקשות.
+// דיווחי תקלות מהאפליקציה. שותפים: #/admin/reports (RLS ב-db/151: dg_is_partner). המדווח: "הדיווחים שלי" (#/myreports) + כרטיס בבית כשתוקן.
 // כל דיווח הוא שרשור (db/158, אביחי 01/11): הדיווח המקורי למעלה, הודעות מתחת, שדה עם תמונה.
 // סטטוס: חדש → בטיפול → תוקן → נסגר. "תוקן" הוא לא סגירה: המדווח מאשר (נסגר) או כותב מה עוד לא (חוזר לטיפול).
 // רק המדווח סוגר, ורק מ"תוקן" — נאכף בשרת (dg_app_reports_guard + dg_report_approve). שותף לא סוגר, ושום דבר לא נסגר לבד.
@@ -178,19 +178,49 @@ async function fixSheet(r, after) {
   });
 }
 
-// המדווח: מהרשימה או מהתראה (#/requests/rep/<id>)
-export const openMyReport = id => openThread(id);
-let bound = false;
+// ---------- המדווח: "הדיווחים שלי" (#/myreports, כל מי שאינו admin) ----------
+// מהתראה: #/requests/rep/<id> (notify) מועבר ל-#/myreports/<id>
+export const openMyReport = (id, after) => openThread(id, { after });
+const mineQ = () => sb.from('dg_app_reports').select('id,created_at,status,body,fixed_in').eq('user_id', state.user.id).order('created_at', { ascending: false });
+const myRow = un => r => `<button type="button" class="lrow rprow${un[r.id] ? ' unread' : ''}" data-myrep="${r.id}"><span class="grow"><b>${esc(r.body || 'דיווח מהמסך')}</b><small>${timeAgo(r.created_at)}</small></span>
+  ${un[r.id] ? `<span class="badge" aria-label="${un[r.id]} הודעות חדשות">${un[r.id]}</span>` : ''}${pill(r, true)}</button>`;
 
-// "בעיות שדיווחתי" — בתחתית מסך הבקשות: 30 יום, ותמיד מה שעוד לא נסגר. כשל = לא מציגים כלום
-export async function myReports() {
+export async function renderMyReports(el, openId) {
+  el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">הדיווחים שלי</h1></header>${skeleton('list', 3)}`;
+  const { data, error } = await mineQ().limit(60);
+  if (!el.isConnected) return;
+  if (error) {
+    el.querySelector('.sk').outerHTML = `<div class="oops" role="alert"><span class="oops-ic">${icon(navigator.onLine ? 'alert' : 'sync', 28)}</span><b>${navigator.onLine ? 'הדיווחים לא נטענו' : 'אין קליטה כרגע'}</b><button class="btn primary" data-retry>${icon('sync', 18)} לנסות שוב</button></div>`;
+    return;
+  }
+  const rows = data || [], un = await unreadMap(rows.map(r => r.id)), row = myRow(un);
+  if (!el.isConnected) return;
+  const wait = rows.filter(r => r.status === 'fixed'), open = rows.filter(r => r.status === 'new' || r.status === 'triaged'), done = rows.filter(r => r.status === 'archived' || r.status === 'wontfix');
+  el.querySelector('.sk').outerHTML = `<div class="stack lg">
+    ${wait.length ? `<section class="stack"><h3 class="sh">מחכים לאישור שלך</h3><div class="list">${wait.map(row).join('')}</div></section>` : ''}
+    ${open.length ? `<section class="stack"><h3 class="sh">בטיפול</h3><div class="list">${open.map(row).join('')}</div></section>` : ''}
+    ${done.length ? `<details class="fold"${wait.length || open.length ? '' : ' open'}><summary><span class="sh">נסגרו</span><span class="count">${done.length}</span></summary><div class="list">${done.map(row).join('')}</div></details>` : ''}
+    ${rows.length ? '' : `<div class="ecta"><span class="ei ok">${icon('check', 28)}</span><b>אין דיווחים</b></div>`}</div>`;
+  const reload = () => { if (el.isConnected) renderMyReports(el); };
+  $$('[data-myrep]', el).forEach(b => b.onclick = () => openMyReport(b.dataset.myrep, reload));
+  if (openId) openMyReport(openId, reload);
+}
+
+// לתפריט: האם יש לי דיווחים בכלל (null = לא ידוע: בלי קליטה / כשל)
+export async function myReportsCount() {
+  try { const { count, error } = await sb.from('dg_app_reports').select('id', { count: 'exact', head: true }).eq('user_id', state.user.id); return error ? null : count || 0; } catch { return null; }
+}
+
+// בבית: דיווח שתוקן ומחכה לאישור שלי. אחד = פותח אותו; כמה = לרשימה. כשל = כלום
+export async function fixedHome(box) {
+  if (!box) return;
   try {
-    if (!bound) { bound = true; document.addEventListener('click', e => { const b = e.target.closest?.('[data-myrep]'); if (b) openMyReport(b.dataset.myrep); }); }
-    const { data, error } = await sb.from('dg_app_reports').select('id,created_at,status,body,fixed_in').eq('user_id', state.user.id)
-      .or(`created_at.gte.${new Date(Date.now() - 30 * 864e5).toISOString()},status.in.(new,triaged,fixed)`).order('created_at', { ascending: false }).limit(10);
-    if (error || !data?.length) return '';
-    const un = await unreadMap(data.map(r => r.id));
-    return `<section><h3 class="sh">בעיות שדיווחתי</h3><div class="list">${data.map(r => `<button type="button" class="lrow rprow${un[r.id] ? ' unread' : ''}" data-myrep="${r.id}"><span class="grow"><b>${esc(r.body || 'דיווח מהמסך')}</b><small>${timeAgo(r.created_at)}${r.status === 'fixed' ? ' · מחכה לאישור שלך' : ''}</small></span>
-      ${un[r.id] ? `<span class="badge" aria-label="${un[r.id]} הודעות חדשות">${un[r.id]}</span>` : ''}${pill(r, true)}</button>`).join('')}</div></section>`;
-  } catch { return ''; }
+    const { data, error } = await mineQ().eq('status', 'fixed').limit(10);
+    if (!box.isConnected) return;
+    if (error || !data?.length) { box.innerHTML = ''; return; }
+    const one = data.length === 1 ? data[0] : null;
+    const inner = `<span class="mic">${icon('check', 20)}</span><span class="grow"><b>${one ? 'תוקן, מחכה לאישור שלך' : `<bdi dir="ltr" class="rpmono">${data.length}</bdi> תיקונים מחכים לאישור שלך`}</b><small>${esc(one ? one.body || 'דיווח מהמסך' : data.map(r => r.body || 'דיווח מהמסך').join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span>`;
+    box.innerHTML = one ? `<button type="button" class="promo repfix" data-fixrep="${one.id}">${inner}</button>` : `<a class="promo repfix" href="#/myreports">${inner}</a>`;
+    const b = box.querySelector('[data-fixrep]'); if (b) b.onclick = () => openMyReport(b.dataset.fixrep, () => fixedHome(box));
+  } catch { box.innerHTML = ''; }
 }
