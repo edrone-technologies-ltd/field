@@ -171,7 +171,7 @@ function receiveSheet(r, th, done) {
       <span class="qty"><button type="button" data-m="${l.id}" aria-label="פחות">−</button><b id="q-${l.id}">${Q[l.id]}</b><button type="button" data-p="${l.id}" aria-label="יותר">+</button></span><small class="qeq" id="qe-${l.id}">${eq(l)}</small></div>`).join('')}</div>
     <label class="field">הערה (לא חובה)<input id="rcn" maxlength="300"></label>
     <label class="field pr-file">${icon('photo', 18)} <span id="rcfl">צילום תעודת משלוח (לא חובה)</span><input type="file" accept="image/*" id="rcf"></label>
-    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="rcgo">${icon('check', 18)} שמירה ועדכון מלאי</button></div>`, (s, close) => {
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="rcgo">${icon('check', 18)} עדכון מלאי</button></div>`, (s, close) => {
     const set = (id, v) => { Q[id] = Math.max(0, Math.round(v * 100) / 100); $('#q-' + id, s).textContent = Q[id]; $('#qe-' + id, s).textContent = eq(L.find(l => l.id === id)); };
     $$('[data-p]', s).forEach(b => b.onclick = () => set(b.dataset.p, Q[b.dataset.p] + 1));
     $$('[data-m]', s).forEach(b => b.onclick = () => set(b.dataset.m, Q[b.dataset.m] - 1));

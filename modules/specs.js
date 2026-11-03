@@ -612,7 +612,8 @@ export async function renderBuilding(el, slug, bid) {
     try { const { data } = await sb.from('photos').select('id,storage_path').eq('spec_id', spec.id).eq('kind', 'facade').order('created_at'); rows = data || []; } catch {}
     const urls = await thumbUrls('field', rows.map(r => r.storage_path));
     const pend = await pendingPhotos(m => m.spec_id === spec.id && m.kind === 'facade');
-    const cards = [...rows.map(r => ({ id: r.id, src: urls[r.storage_path].t, full: urls[r.storage_path].f })), ...pend.map(p => ({ id: p.photoId, src: URL.createObjectURL(p.blob) }))];
+    // החדשה ביותר ראשונה, צמודה לכפתור הצילום (אוריאל 03/11). רק סדר תצוגה; בשרת לפי created_at כמו קודם
+    const cards = [...rows.map(r => ({ id: r.id, src: urls[r.storage_path].t, full: urls[r.storage_path].f })), ...pend.map(p => ({ id: p.photoId, src: URL.createObjectURL(p.blob) }))].reverse();
     NPH.facade = cards.length; ready();
     // כרטיס מצפן לכל כיוון שעוד אין לו צילום — סופרים ימים גם בלי צילום לכל חזית
     const covered = () => new Set(cards.map(c => FD.get(c.id)?.dir).filter(Boolean)), cv = covered();
@@ -649,7 +650,8 @@ export async function renderBuilding(el, slug, bid) {
           FD.set(photoId, { k: photoId, d: 0 });
         } catch { toast('תמונה אחת לא נשמרה'); }
       }
-      dirty = true; if (spec.status === 'new') form.status = 'draft'; await save(false, true); drawFacades(); geoSilent();
+      dirty = true; if (spec.status === 'new') form.status = 'draft'; await save(false, true); await drawFacades(); geoSilent();
+      const fb = $('#facs'); if (fb) fb.scrollLeft = 0;   // הרכבת חוזרת להתחלה: החדשה ליד כפתור הצילום
     };
   }
   drawFacades();

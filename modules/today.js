@@ -2,7 +2,7 @@
 import { coverArt, icon, leadMark, navButtons, thumbUrls } from '../lib/core.js';
 import { hideMoneyText as noMoney$ } from '../lib/core.js';
 import { sunPlan, sunAdvice, facadeOrder } from '../lib/sun.js';
-import { isNight, nightRange, nightTag, isCurrent, wxKey } from '../lib/night.js';
+import { isNight, nightRange, nightTag, isCurrent, wxKey, add1 } from '../lib/night.js';
 import { dtTag, isWorkDay, needsPreflight, isCoord, cancelWhy, cancelNote } from '../lib/daytype.js';
 import { loadZones, dayZones, zonePrefill, zonesHtml, bindZones, zonesPayload, zkey } from './zones.js';
 import { terms, serviceOf, workChoices } from '../lib/service.js';
@@ -93,20 +93,28 @@ export async function renderDay(el, id) {
   const go = () => draw();
 
   const REPORT = D.day.kind === 'report';
+  // יום שתאריכו עבר ולא נסגר (טל 03/11): ישר לטופס סגירה "יבש" — שעות, מה בוצע, הערות, תמונות אם יש. בלי בוקר/העמסה/אתר.
+  // אותם שדות כמו סגירה רגילה (דוחות, שכר, מאנדי). השרת לא דורש את השלבים לסגירה (השומרים רק במעבר ל'בעבודה')
+  const stale = () => !REPORT && D.day.status !== 'done' && D.day.day < isoDay() && !isCurrent(D.day);
+  // תיקון סיכום של יום סגור — מנהל בלבד (טל 03/11). בשרת: days_mgr + wd_concurrency מתירים למנהל, audit_log רושם כל שינוי
+  let amend = false;
+  const light = () => stale() || amend;              // בלי חובת תמונת אחרי ובלי חתימת לקוח (את זה סוגרים במסך ההחתמה)
+  const dry = () => light() && !REPORT;              // טופס מקוצר: שעות + מה בוצע למעלה, בלי שלבים
   // סגירת היום = ראש הצוות (או מנהל). שאר הצוות ממשיכים לעבוד ורואים שראש הצוות סוגר
   const canClose = () => isManager() || !D.day.crew_lead_id || D.day.crew_lead_id === state.user.id;
   const leadName = () => (D.day.work_day_crew.find(c => c.user_id === D.day.crew_lead_id)?.profiles?.full_name || '').split(' ')[0];
   function stage() {
     const d = D.day;
-    if (d.status === 'done') return 5;
-    if (REPORT) return 4;
+    if (d.status === 'done') return amend ? 4 : 5;
+    if (REPORT || stale()) return 4;
     if ((D.local.stage === 4 && canClose()) || d.finished_at) return 4;
     if (d.status === 'working' || (d.status === 'issue' && d.opened_at)) return 3;   // הופסק לפני שהתחילו (דופק לפני עבודה) — נשארים ב"באתר"
     if (d.arrived_at || d.status === 'on_site' || d.departed_at) return 2;
     return D.local.stage === 1 && !isCoord(d) ? 1 : 0;   // יום תיאום — בלי שלב העמסה
   }
   // חזרה לשלב שעבר (אביחי 17/10): עד סגירת היום אפשר לפתוח כל שלב קודם ולהשלים/לתקן — בלי להזיז את היום אחורה
-  const viewing = () => { const v = D.local.view, s = stage(); return v != null && v < s && s < 5 && !REPORT ? v : null; };
+  const VIEWS = 3;   // אפשר לחזור לצפייה רק לבוקר, העמסה ואתר (לשלב העבודה אין מסך צפייה — לחיצה עליו הפילה את המסך, אוריאל 03/11)
+  const viewing = () => { const v = D.local.view, s = stage(); return v != null && v < s && v < VIEWS && s < 5 && !REPORT && !stale() ? v : null; };
   const reqEquip = () => D.day.equip_required?.length ? D.day.equip_required : (D.S.equip_default || []);
   const openMissing = () => D.missing.filter(m => m.status !== 'handled');
   const noBefore = () => isWorkDay(D.day) && !D.photos.some(p => p.kind === 'before');
@@ -128,10 +136,10 @@ export async function renderDay(el, id) {
     const s = stage();
     return `<div class="phero sm"><span class="img" style="background-image:url('${coverUrl || coverArt(P.name || '')}')"></span>
         <a class="back glass" href="${P.id ? '#/p/' + P.id : '#/'}" ${P.id ? 'data-up="1"' : ''} aria-label="${P.id ? 'לפרויקט' : 'חזרה'}">${icon('back', 20)}</a>
-        <span class="ph-bottom"><span class="row"><span class="chip-dark">${REPORT ? 'סיכום היום · ' : ''}${isNight(D.day) ? nightTag(D.day) + ' ' + esc(nightRange(D.day)) : dayLabel(D.day.day)}${dtTag(D.day)}</span>${statusPill(D.day)}</span>
+        <span class="ph-bottom"><span class="row"><span class="chip-dark">${REPORT || dry() ? 'סיכום היום · ' : ''}${isNight(D.day) ? nightTag(D.day) + ' ' + esc(nightRange(D.day)) : dayLabel(D.day.day)}${dtTag(D.day)}</span>${statusPill(D.day)}</span>
         <b>${esc(P.name || '')}</b>${D.day.day_goal ? `<small>${esc(noMoney$(D.day.day_goal))}</small>` : ''}</span></div>
-      ${REPORT ? '' : `<ol class="steps">${STEPS.map((t, i) => [t, i]).filter(([, i]) => i !== 1 || !isCoord(D.day)).map(([t, i], n) => {
-        const back = i < s && s < 5, inner = `<i>${i < s ? icon('check', 16) : n + 1}</i><span>${t}</span>${back && gap(i) ? '<em class="gap"></em>' : ''}`;
+      ${REPORT || dry() ? '' : `<ol class="steps">${STEPS.map((t, i) => [t, i]).filter(([, i]) => i !== 1 || !isCoord(D.day)).map(([t, i], n) => {
+        const back = i < s && i < VIEWS && s < 5, inner = `<i>${i < s ? icon('check', 16) : n + 1}</i><span>${t}</span>${back && gap(i) ? '<em class="gap"></em>' : ''}`;
         return `<li class="${i < s ? 'done' : i === s ? 'now' : ''}${i === viewing() ? ' view' : ''}">${back ? `<button type="button" data-view="${i}" aria-label="${gap(i) ? 'חסר ב' : 'חזרה ל'}${t}">${inner}</button>` : inner}</li>`; }).join('')}</ol>`}`;
   }
   // הכותרת מתעדכנת גם מהסקר (בלי ציור מחדש) — לכן הקישור לכפתורי השלבים כאן
@@ -348,7 +356,7 @@ export async function renderDay(el, id) {
       <div class="sec">${photoStrip('general', 'תמונות מהעבודה')}</div>`;
   }
   // סגירת יום: ערכים נגזרים מחושבים מחדש בכל כניסה (שעון, משימות, שעות); נשמר רק מה שהמשתמש שינה (D.local.close)
-  let C = null;
+  let C = null, T0 = null;   // T0 = שעות ההתחלה/סיום כפי שנשמרו — בתיקון כותבים זמן רק אם שונה
   function closeVals() {
     if (D.local.close && !D.local.close._v) D.local.close = null;   // מבנה ישן (שמר גם ערכים נגזרים) — מתחילים נקי
     const LM = last.get('mat:' + D.day.project_id);
@@ -360,11 +368,12 @@ export async function renderDay(el, id) {
       hours: Object.fromEntries(D.day.work_day_crew.map(c => [c.user_id, c.hours ?? D.clockH?.[c.user_id] ?? null])),
       tomorrow: D.day.tomorrow ?? D.tasks.filter(t => !['done', 'dropped'].includes(t.status) && t.phase !== 'הכנה').map(t => t.title).join(' · '),   // הכנות לפני יציאה אינן "עבודה למחר"
       sign: { name: site.contact_name || '', role: '', satisfied: true, notes: '' },
-      start: D.day.arrived_at ? hm(D.day.arrived_at) : isNight(D.day) ? (D.day.site_arrival || '22:00').slice(0, 5) : '07:00', end: D.day.finished_at ? hm(D.day.finished_at) : (isCurrent(D.day) ? hm(new Date().toISOString()) : isNight(D.day) ? '06:00' : '15:00'),
+      start: D.day.arrived_at ? hm(D.day.arrived_at) : isNight(D.day) ? (D.day.site_arrival || '22:00').slice(0, 5) : stale() && D.day.site_arrival ? D.day.site_arrival.slice(0, 5) : '07:00',
+      end: D.day.finished_at ? hm(D.day.finished_at) : (isCurrent(D.day) ? hm(new Date().toISOString()) : isNight(D.day) ? '06:00' : stale() && D.day.site_end ? D.day.site_end.slice(0, 5) : '15:00'),
       crew: D.day.work_day_crew.map(c => c.user_id),
       zones: zonePrefill(D.zones, D.tasks, D.day.id),   // אילו חזיתות הושלמו היום — לפי המשימות שבוצעו
     };
-    C = { ...base, ...O, sign: { ...base.sign, ...(O.sign || {}) } };
+    C = { ...base, ...O, sign: { ...base.sign, ...(O.sign || {}) } }; T0 = [base.start, base.end];
     if (REPORT) { const [a, b] = [C.start, C.end].map(x => x.split(':').map(Number)), sp = Math.round(Math.max(0, (b[0] * 60 + b[1] - a[0] * 60 - a[1]) / 60) * 2) / 2;   // דוח ידני: לפי שעות ההתחלה/סיום
       C.crew.forEach(u => base.hours[u] ??= sp); }
     C.hours = { ...base.hours, ...(O.hours || {}) };
@@ -376,13 +385,13 @@ export async function renderDay(el, id) {
   function closeMissing() {
     const m = [];
     // יום טסטים/תיאום/הכנה: סגירה פשוטה — בלי תמונת אחרי וגלונים (שעות וחתימה — כרגיל)
-    if (isWorkDay(D.day) && !D.photos.some(p => p.kind === 'after')) m.push(['תמונת אחרי', 'label.addph:has(input[data-kind="after"])']);
+    if (isWorkDay(D.day) && !light() && !D.photos.some(p => p.kind === 'after')) m.push(['תמונת אחרי', 'label.addph:has(input[data-kind="after"])']);
     if (isWorkDay(D.day) && C.gallons == null) m.push(['גלונים', '#gal']);
-    if (REPORT && C.start >= C.end) m.push(['שעות התחלה/סיום', '#re']);
+    if ((REPORT || (dry() && !isNight(D.day))) && C.start >= C.end) m.push(['שעות התחלה/סיום', '#re']);
     const noH = crewRows().filter(c => C.hours[c.user_id] == null);
     if (noH.length) m.push([noH.length === 1 ? `שעות · ${(noH[0].profiles?.full_name || '').split(' ')[0]}` : 'שעות צוות', noH.map(c => `.hrs[data-u="${c.user_id}"]`).join(',')]);
-    if (D.day.is_last_day && !(C.sign.name || '').trim()) m.push(['שם החותם', '#sn']);
-    if (D.day.is_last_day && !C.sign.img) m.push(['חתימת הלקוח', '#sig']);
+    if (D.day.is_last_day && !light() && !(C.sign.name || '').trim()) m.push(['שם החותם', '#sn']);
+    if (D.day.is_last_day && !light() && !C.sign.img) m.push(['חתימת הלקוח', '#sig']);
     return m;
   }
   function sClose() {
@@ -396,18 +405,24 @@ export async function renderDay(el, id) {
         <b>מי עבד</b><div class="chips">${D.team.filter(u => ['crew_lead', 'crew', 'ops_manager', 'admin'].includes(u.role)).map(u => `<button class="chip" data-crew="${u.id}" aria-pressed="${C.crew.includes(u.id)}" ${u.id === D.day.crew_lead_id ? 'disabled' : ''}>${esc(u.full_name)}</button>`).join('')}</div></div>
       ${D.tasks.length ? `<div class="sec"><h3>מה בוצע מהתכנית</h3><div class="list">${D.tasks.map(t => `<button class="task ${t.status}" data-rt="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : ''}</span><span class="t"><b>${esc(t.title)}</b><small>${esc(t.phase || '')}</small></span></button>`).join('')}</div></div>` : ''}
       ${baBlock()}`;
+    const doneList = L => L.length ? `<div class="sec"><h3>מה בוצע</h3><div class="list">${L.map(t => `<button class="task ${t.status}" data-rt="${t.id}"><span class="tick">${t.status === 'done' ? icon('check', 16) : ''}</span><span class="t"><b>${esc(t.title)}</b><small>${esc(t.phase || '')}</small></span></button>`).join('')}</div></div>` : '';
+    const hoursSec = `<div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => { const v = C.hours[c.user_id], clk = D.clockH?.[c.user_id];
+          return `<div class="row hrow"><span class="grow"><b>${esc(c.profiles?.full_name || '')}</b>${clk != null ? `<small class="muted">מהשעון ${nf(clk)}</small>` : ''}</span>
+          ${clk == null && !REPORT ? `<button type="button" class="chip sm" data-h0="${c.user_id}" aria-pressed="${v === 0}">לא הגיע</button>${dh && v == null ? `<button type="button" class="chip sm" data-hd="${c.user_id}">${nf(dh)} ש׳</button>` : ''}` : ''}
+          <input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${v ?? ''}"></div>`; }).join('')}</div>`;
+    // טופס יבש (יום שעבר / תיקון של מנהל): מתי · מה בוצע · שעות — למעלה, פתוח
+    const dryTop = !dry() ? '' : `<div class="sec"><h3>מתי</h3>
+        <div class="row"><label class="field grow">התחלה<input type="time" id="rs" value="${C.start}"></label><label class="field grow">סיום<input type="time" id="re" value="${C.end}"></label></div></div>
+      ${doneList(dayList())}${hoursSec}`;
     // הכל ממולא מראש (שעון, תכנית, משימות) — העריכה מקופלת, ונפתחת לבד כשחסר בה משהו
-    const inEdit = miss.some(([, s]) => s === '#gal' || s.includes('.hrs'));
+    const inEdit = miss.some(([, s]) => s === '#gal' || (!dry() && s.includes('.hrs')));   // בטופס היבש השעות כבר בחוץ
     const fly = D.day.drone_id || D.day.method === 'רחפן';
     const edit = `<details class="cmore cedit" id="cedit" ${D.local.edit || inEdit ? 'open' : ''}><summary><span class="grow">${icon('pen', 18)} עריכה</span></summary>
         <div class="sec">${isCoord(D.day) ? '' : `<b>חומר</b>${chips('material', D.S.materials || ['Assert Lemon', 'Topax', 'מים בלבד', 'אחר'])}
           <b>גלונים</b><div class="stepper"><button type="button" data-g="-0.5">−</button><input class="days grow" id="gal" type="number" inputmode="decimal" step="0.5" min="0" value="${C.gallons ?? ''}" placeholder="${D.day.gallons_planned ? nf(D.day.gallons_planned) : ''}"><button type="button" data-g="0.5">+</button></div>
           ${D.day.gallons_planned ? `<div class="chips"><button type="button" class="chip" id="galp" aria-pressed="${C.gallons != null && +C.gallons === +D.day.gallons_planned}">כמתוכנן · ${nf(D.day.gallons_planned)}</button></div>` : ''}`}
           <b>סוג העבודה</b>${chips('work', workChoices(D.S.work_types, TT), true)}</div>
-        <div class="sec"><h3>שעות צוות</h3>${crewRows().map(c => { const v = C.hours[c.user_id], clk = D.clockH?.[c.user_id];
-          return `<div class="row hrow"><span class="grow"><b>${esc(c.profiles?.full_name || '')}</b>${clk != null ? `<small class="muted">מהשעון ${nf(clk)}</small>` : ''}</span>
-          ${clk == null && !REPORT ? `<button type="button" class="chip sm" data-h0="${c.user_id}" aria-pressed="${v === 0}">לא הגיע</button>${dh && v == null ? `<button type="button" class="chip sm" data-hd="${c.user_id}">${nf(dh)} ש׳</button>` : ''}` : ''}
-          <input type="number" inputmode="decimal" step="0.5" min="0" class="hrs" data-u="${c.user_id}" value="${v ?? ''}"></div>`; }).join('')}</div>
+        ${dry() ? '' : hoursSec}
         <div class="sec">
           ${fly ? `<div class="row"><label class="field grow">טיסות<input type="number" inputmode="numeric" min="0" id="fl" value="${C.flights ?? ''}"></label><label class="field grow">דקות אוויר<input type="number" inputmode="numeric" min="0" id="am" value="${C.air ?? ''}"></label></div>` : ''}
           <label class="tog"><span>הציוד חזר תקין</span><span class="sw"><input type="checkbox" id="eqok" ${C.equipment_ok ? 'checked' : ''}><i></i></span></label>
@@ -415,8 +430,8 @@ export async function renderDay(el, id) {
           <b>איכות העבודה</b><div class="stars">${[1, 2, 3, 4, 5].map(n => `<button type="button" data-q="${n}" aria-pressed="${C.quality >= n}">★</button>`).join('')}</div>
           <label class="field">${D.day.is_last_day ? 'מה נשאר פתוח' : 'מה נשאר למחר'}<textarea id="tmr">${esc(C.tomorrow)}</textarea></label></div>
       </details>`;
-    return reportTop + zonesHtml(ZD(), C.zones, TT.zone) + (REPORT || !isWorkDay(D.day) ? '' : baBlock()) + edit +
-      (D.day.is_last_day ? `<div class="sec"><h3>החתמת לקוח</h3>
+    return reportTop + dryTop + zonesHtml(ZD(), C.zones, TT.zone) + (REPORT || !isWorkDay(D.day) ? '' : baBlock({ need: light() ? 0 : 1 })) + edit +
+      (D.day.is_last_day && !light() ? `<div class="sec"><h3>החתמת לקוח</h3>
         <label class="field">שם החותם<input type="text" id="sn" value="${esc(C.sign.name)}"></label>
         <label class="field">תפקיד<input type="text" id="sr" value="${esc(C.sign.role)}" placeholder="מנהל אחזקה, מנהל אתר…"></label>
         <label class="tog"><span>הלקוח מרוצה מהעבודה</span><span class="sw"><input type="checkbox" id="ss" ${C.sign.satisfied ? 'checked' : ''}><i></i></span></label>
@@ -481,9 +496,11 @@ export async function renderDay(el, id) {
       ${d.is_last_day && !d.signoff && isManager() && state.profile.role !== 'admin' ? '<div id="dnsreq"></div>' : ''}
       ${d.signoff ? `<div class="stack tight sofin"><div class="eyebrow">חתימת לקוח</div><b>${esc(d.signoff.name || '')}</b> ${d.signoff.role ? '· ' + esc(d.signoff.role) : ''}<div class="small muted">${d.signoff.satisfied ? 'מרוצה' : 'לא מרוצה'}${d.signoff.notes ? ' · ' + esc(d.signoff.notes) : ''}</div></div>` : ''}
       <div class="photos">${D.photos.filter(p => ['before', 'after'].includes(p.kind)).map(p => `<button class="ph" data-z="${esc(p.url || photoUrls[p.storage_path]?.f || '')}"><img src="${esc(p.url || photoUrls[p.storage_path]?.t || '')}" data-full="${esc(p.url || photoUrls[p.storage_path]?.f || '')}" alt=""><span class="q">${p.kind === 'before' ? 'לפני' : 'אחרי'}</span></button>`).join('')}</div>
+      ${isManager() ? `<button type="button" class="btn ghost block" id="amend">${icon('pen', 18)} עריכת סיכום היום</button>` : ''}
       <a class="btn ghost block" href="#/p/${d.project_id}">לפרויקט</a>`;
   }
-  const defHours = () => { const st = D.day.departed_at || D.day.arrived_at; return st ? Math.max(0.5, Math.round((Date.now() - new Date(st)) / 18e5) / 2) : null; };
+  const defHours = () => { if (dry() && C) { const [a, b] = [C.start, C.end].map(x => x.split(':').map(Number)); let m = b[0] * 60 + b[1] - a[0] * 60 - a[1]; if (m < 0) m += 1440; return m ? Math.round(m / 30) / 2 : null; }   // טופס יבש: לפי ההתחלה/סיום שבטופס (לילה — חוצה חצות)
+    const st = D.day.departed_at || D.day.arrived_at; return st ? Math.max(0.5, Math.round((Date.now() - new Date(st)) / 18e5) / 2) : null; };
   // מסך סיום: מצב שליחה אמיתי (התור) + יציאה מהמשמרת בלחיצה
   const mineQ = x => x.rowId === D.day.id || D.missing.some(m => m.id === x.rowId) || D.issues.some(i => i.id === x.rowId) || D.checks.some(c => c.id === x.rowId) ||   // גם עדכון חוסר/תקלה של היום — אותו מספר כמו בפס הקליטה
     x.args?.d === D.day.id || x.row?.work_day_id === D.day.id || x.meta?.work_day_id === D.day.id || (x.table === 'tasks' && D.tasks.some(t => t.id === x.rowId));
@@ -581,10 +598,10 @@ export async function renderDay(el, id) {
     if (s === 2) bindSite(bar);
     if (s === 3) bindWork(bar);
     if (s === 4) bindClose(bar);
-    if (s === 5) doneState();
+    if (s === 5) { doneState(); const am = $('#amend', body); if (am) am.onclick = () => { amend = true; D.local.close = { _v: 2 }; D.local.edit = false; D.tried = false; keep(); draw(); scrollTo(0, 0); }; }
     if (s < 5) document.body.appendChild(bar);
     if (s >= 2 && s <= 3) fabs(bar);   // תקלה / חסר — בתוך הפס התחתון (לא מרחפים מעל מתגים ותוכן)
-    if (s >= 2 && s <= 4 && !REPORT) clockNudge();
+    if (s >= 2 && s <= 4 && !REPORT && !light()) clockNudge();
   }
   // הצוות יצא לדרך (ראש הצוות לחץ "יוצאים") ואני עוד לא במשמרת → "להיכנס למשמרת?" בראש המסך, כניסה בלחיצה אחת לפרויקט של היום
   let nudged = null;
@@ -804,26 +821,29 @@ export async function renderDay(el, id) {
       $('#rs').onchange = e => { setC('start', e.target.value); setAll(); };
       $('#re').onchange = e => { setC('end', e.target.value); setAll(); };
       $$('[data-crew]').forEach(b => b.onclick = () => { const u = b.dataset.crew, L = [...C.crew]; if (L.includes(u)) L.splice(L.indexOf(u), 1); else { L.push(u); setC('hours', span(), u); } setC('crew', L); draw(); });
-      $$('[data-rt]').forEach(b => b.onclick = async () => { const t = D.tasks.find(x => x.id === b.dataset.rt); const on = t.status !== 'done';
-        const patch = on ? { status: 'done', work_day_id: D.day.id, done_by: state.user.id, done_at: new Date().toISOString() } : { status: 'todo', done_by: null, done_at: null };
-        Object.assign(t, patch); await save('tasks', patch, t.id); draw(); });
-    }
+    } else if (dry()) { $('#rs').onchange = e => { setC('start', e.target.value); draw(); }; $('#re').onchange = e => { setC('end', e.target.value); draw(); }; }
+    $$('[data-rt]').forEach(b => b.onclick = async () => { const t = D.tasks.find(x => x.id === b.dataset.rt); const on = t.status !== 'done';
+      const patch = on ? { status: 'done', work_day_id: D.day.id, done_by: state.user.id, done_at: new Date().toISOString() } : { status: 'todo', done_by: null, done_at: null };
+      Object.assign(t, patch); await save('tasks', patch, t.id); draw(); });
     let sig;
-    if (D.day.is_last_day) {
+    if (D.day.is_last_day && !light()) {
       ['sn', 'sr', 'snt'].forEach(k => $('#' + k).oninput = e => { setC('sign', e.target.value, { sn: 'name', sr: 'role', snt: 'notes' }[k]); if (k === 'sn') why(); });
       $('#ss').onchange = e => setC('sign', e.target.checked, 'satisfied');
       sig = pad($('#sig'), C.sign.img, url => { setC('sign', url, 'img'); why(); }); $('#sclr').onclick = () => { sig.clear(); setC('sign', null, 'img'); why(); };
     }
     why();
-    bar.innerHTML = REPORT ? `<button class="btn primary" id="close">שליחת סיכום היום</button>` : `<button class="btn ghost bk" id="bk">חזרה</button><button class="btn primary" id="close">סגירה ושליחה ✓</button>`;
-    if (!REPORT) bar.querySelector('#bk').onclick = () => { D.local.stage = null; keep(); draw(); };
+    bar.innerHTML = amend ? `<button class="btn ghost bk" id="bk">ביטול</button><button class="btn primary" id="close">שמירת השינויים</button>`
+      : REPORT ? `<button class="btn primary" id="close">שליחת סיכום היום</button>` : stale() ? `<button class="btn primary" id="close">סגירה ושליחה ✓</button>`
+      : `<button class="btn ghost bk" id="bk">חזרה</button><button class="btn primary" id="close">סגירה ושליחה ✓</button>`;
+    if (amend) bar.querySelector('#bk').onclick = () => { amend = false; D.local.close = null; D.tried = false; keep(); draw(); scrollTo(0, 0); };
+    else if (!REPORT && !stale()) bar.querySelector('#bk').onclick = () => { D.local.stage = null; keep(); draw(); };
     bar.querySelector('#close').onclick = async () => {
       D.tried = true; const m = why();
       if (m.length) { haptic('warn'); const ce = $('#cedit', body), sel = m[0][1].split(',')[0];
         if (ce && ce.querySelector(sel)) ce.open = true;   // השדה החסר בתוך "עריכה" — פותחים
         $(sel, body)?.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
       let signoff = null;
-      if (D.day.is_last_day) {
+      if (D.day.is_last_day && !light()) {
         if (sig.empty()) { $('#sig', body)?.setAttribute('aria-invalid', 'true'); return; }
         const path = `${state.user.id}/${D.day.id}/signature.png`;
         await enqueue({ kind: 'file', path, blob: await sig.blob(), type: 'image/png' });
@@ -836,17 +856,23 @@ export async function renderDay(el, id) {
         await enqueue({ kind: 'rpc', fn: 'set_day_crew', args: { d: D.day.id, users: C.crew.filter(u => u !== D.day.crew_lead_id) } });
         D.day.work_day_crew = crewRows();
         extra.arrived_at = new Date(`${D.day.day}T${C.start}`).toISOString(); extra.finished_at = new Date(`${D.day.day}T${C.end}`).toISOString();
+      } else if (dry()) {   // זמנים מהטופס: רק מה שחסר או שונה (תיקון שלא נגע בשעות לא כותב אותן). סיום לפני התחלה = למחרת (לילה)
+        if (!D.day.arrived_at || C.start !== T0[0]) extra.arrived_at = new Date(`${D.day.day}T${C.start}`).toISOString();
+        if (!D.day.finished_at || C.end !== T0[1]) extra.finished_at = new Date(`${C.end < C.start ? add1(D.day.day) : D.day.day}T${C.end}`).toISOString();
       }
       D.day.work_day_crew.forEach(c => c.hours = C.hours[c.user_id]);
       await enqueue({ kind: 'rpc', fn: 'set_day_hours', args: { d: D.day.id, rows: D.day.work_day_crew.map(c => ({ user_id: c.user_id, role: c.role, hours: c.hours })) } });
       if (isWorkDay(D.day)) last.set('mat:' + D.day.project_id, { material: C.material, gallons: C.gallons });
-      await save('work_days', { status: 'done', finished_at: now, ...extra, closed_at: now, material_used: C.material, gallons: C.gallons, work_types: C.work, equipment_ok: C.equipment_ok,
-        weather_stop: !!C.weather, quality: C.quality || null, flights: C.flights ?? null, air_minutes: C.air ?? null, notes: C.notes || null, tomorrow: C.tomorrow || null, signoff,
+      const fields = { material_used: C.material, gallons: C.gallons, work_types: C.work, equipment_ok: C.equipment_ok,
+        weather_stop: !!C.weather, quality: C.quality || null, flights: C.flights ?? null, air_minutes: C.air ?? null, notes: C.notes || null, tomorrow: C.tomorrow || null,
         report_text: reportLines().map(x => x[1]).join('\n') || null,   // בדיוק מה שהוצג בתצוגה המקדימה — זה מה שמגיע למאנדי
-        ...(ZD().length ? { zones_done: zonesPayload(C.zones) } : {}) });
+        ...(ZD().length ? { zones_done: zonesPayload(C.zones) } : {}) };
+      // תיקון: בלי סטטוס, זמן סגירה וחתימה — רק נתוני הסיכום. יום שעבר: חתימה קיימת לא נדרסת
+      const wasAmend = amend;
+      await save('work_days', amend ? { ...extra, ...fields, monday_dirty: true } : { status: 'done', finished_at: now, ...extra, closed_at: now, ...(light() && !signoff ? {} : { signoff }), ...fields });
       (D.prep || []).forEach(t => { if (!t.work_day_id || t.work_day_id === D.day.id) t.status = 'done'; });   // השרת סוגר את ההכנות עם היום (db/109) — גם כאן, שלא יופיעו מחר
-      D.local = { stage: null, checks: {}, loaded: null }; D.tried = false; await keep();
-      haptic('success'); celebrate(); draw();
+      D.local = { stage: null, checks: {}, loaded: null }; D.tried = false; amend = false; await keep();
+      haptic('success'); if (wasAmend) { toast(sentTxt('הסיכום עודכן')); scrollTo(0, 0); } else celebrate(); draw();
     };
   }
   function fabs(bar) {
