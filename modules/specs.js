@@ -457,6 +457,8 @@ export async function renderBuilding(el, slug, bid) {
   const imgs = b.plan_images.filter(p => /חזית/.test(p.title || ''));
   const FAC = imgs.length ? imgs.map(p => ({ id: p.id, title: p.title, dir: dirOf(p.title), img: true })) : FACES.map(f => ({ id: f, title: 'חזית ' + f, dir: f }));
   const FD = new Map((Array.isArray(spec.facade_days) ? spec.facade_days : []).map(x => [x.k, { ...x }]));  // k → {k,t,dir,d}
+  // חזית שנטענה מהאפיון לא נעלמת בשמירה, גם עם d=0 ובלי כיוון/הערה (ADR 0007: k יציב — אולי כבר יש לה סימונים, תמונות או משימה)
+  const LOADED = new Set(FD.keys());
   const fget = k => FD.get(k)?.d || 0;
   const FACON = !/פנלים|סולאר|יריעות|הצללה/.test(svc) || [...FD.values()].some(x => x.d > 0);
   const titleOf = k => FAC.find(f => f.id === k)?.title || (FACES.includes(k) ? 'חזית ' + k : 'חזית מצילום');
@@ -468,6 +470,11 @@ export async function renderBuilding(el, slug, bid) {
   const dirTag = k => { const d = FD.get(k)?.dir;
     return editable ? `<button type="button" class="ftag${d ? '' : ' none'}" data-tk="${esc(k)}" aria-label="כיוון החזית: ${d || 'לא סומן'}"><span>${dirTxt(d)}</span></button>`
       : d ? `<span class="ftag ro"><span>${dirTxt(d)}</span></span>` : ''; };
+  // הערה לחזית (v149): מתחת לתמונה ברכבת. לחיצה פותחת את גיליון פרטי החזית (כיוון · ימים · הערה)
+  const noteTag = k => { const n = FD.get(k)?.n || '';
+    return editable ? `<button type="button" class="fnote${n ? '' : ' none'}" data-nk="${esc(k)}">${n ? esc(n) : `${icon('pen', 14)}<span>הערה</span>`}</button>`
+      : n ? `<div class="fnote ro">${esc(n)}</div>` : ''; };
+  const bindNotes = root => $$('[data-nk]', root).forEach(x => x.onclick = () => facDetails([x.dataset.nk], 0));
   const one = s.kind === 'lead' && s.buildings.length === 1;
   // אפשרויות הצעה (specs.variants, 154): ההצעה הבסיסית = א׳; כל אפשרות = ימים לפי חזית + הערות. לפני המיגרציה — לא מוצג ולא נשלח
   const VARS = 'variants' in spec, BASEN = 'base_name' in spec;   // base_name = שם לאפשרות א׳ (154)
@@ -581,7 +588,8 @@ export async function renderBuilding(el, slug, bid) {
     const dirs = [...FD.values()].filter(x => x.d > 0).map(x => dirOfKey(x.k)).filter(Boolean);
     form.facades = vals.length && dirs.length ? [...new Set(dirs)] : null;
     // נשמר כמערך מסודר לפי סדר הכרטיסים, עם כותרת וכיוון — מנוע התכנית קורא אותו כמו שהוא
-    form.facade_days = [...FD.values()].filter(x => x.d > 0 || x.dir).map(x => ({ k: x.k, t: titleOf(x.k), dir: dirOfKey(x.k), d: x.d || 0 }));
+    // n = הערה לחזית (שורה אחת, v149) — נכנסת לתכנית העבודה שנגזרת מהאפיון
+    form.facade_days = [...FD.values()].filter(x => x.d > 0 || x.dir || x.n || LOADED.has(x.k)).map(x => ({ ...x, k: x.k, t: titleOf(x.k), dir: dirOfKey(x.k), d: x.d || 0, ...(x.n ? { n: x.n } : {}) }));
     optA();
   };
   const bindFac = (root, onDir) => {
@@ -619,11 +627,11 @@ export async function renderBuilding(el, slug, bid) {
     const covered = () => new Set(cards.map(c => FD.get(c.id)?.dir).filter(Boolean)), cv = covered();
     const hideC = (f, cs) => cs.has(f) && !(fget(f) > 0);
     box.innerHTML = (editable ? `<label class="fc addfc">${icon('plus', 22)}<b>צילום חזית</b><input type="file" accept="image/*" capture="environment" multiple></label>` : '')
-      + cards.map(c => `<div class="fc" data-pk="${esc(c.id)}"><button class="fcimg" type="button" data-z="${esc(c.id)}"><img src="${esc(c.src)}" data-full="${esc(c.full || c.src)}" alt=""></button>${dirTag(c.id)}${counter(c.id)}</div>`).join('')
+      + cards.map(c => `<div class="fc" data-pk="${esc(c.id)}"><button class="fcimg" type="button" data-z="${esc(c.id)}"><img src="${esc(c.src)}" data-full="${esc(c.full || c.src)}" alt=""></button>${noteTag(c.id)}${dirTag(c.id)}${counter(c.id)}</div>`).join('')
       + FACES.map(f => `<div class="fc compass" data-cf="${esc(f)}" ${hideC(f, cv) ? 'hidden' : ''}><div class="cmp">${esc(f)}</div><div><b>חזית ${esc(f)}</b></div>${counter(f)}</div>`).join('');
     // הגדלה = גלריה של תמונות החזית בלבד, לפי סדר הרכבת, עם הכיוון בכותרת
     $$('[data-z]', box).forEach(i => i.onclick = () => {
-      const g = cards.map(c => ({ src: c.full || c.src, title: FD.get(c.id)?.dir ? 'חזית ' + FD.get(c.id).dir : b.name })), k = cards.findIndex(c => c.id === i.dataset.z);
+      const g = cards.map(c => ({ src: c.full || c.src, title: [FD.get(c.id)?.dir ? 'חזית ' + FD.get(c.id).dir : b.name, FD.get(c.id)?.n].filter(Boolean).join(' · ') })), k = cards.findIndex(c => c.id === i.dataset.z);
       zoom(g[k].src, g[k].title, g); });
     // ניווט לפי כיוון מעל הרכבת: גלילה לתמונה הראשונה של הכיוון; לחיצה חוזרת = הבאה באותו כיוון. לא כותב כלום
     let at = { f: null, i: -1 };
@@ -642,10 +650,12 @@ export async function renderBuilding(el, slug, bid) {
     const onDir = () => { const c2 = covered(); $$('[data-cf]', box).forEach(x => x.hidden = hideC(x.dataset.cf, c2));
       $$('.ftag[data-tk]', box).forEach(t => { const d = FD.get(t.dataset.tk)?.dir; t.classList.toggle('none', !d); t.firstElementChild.innerHTML = dirTxt(d); t.setAttribute('aria-label', 'כיוון החזית: ' + (d || 'לא סומן')); });
       drawNav(); };
-    bindFac(box, onDir);
+    bindFac(box, onDir); bindNotes(box);
     // אחרי עדכון מחוץ לכרטיס (גיליון הפרטים): המונה של הכרטיס מתחלף, התווית/המצפן/הניווט מתעדכנים
     facFresh = k => { const c = box.querySelector(`[data-pk="${CSS.escape(k)}"]`);
-      if (c) { const t = document.createElement('template'); t.innerHTML = counter(k); c.querySelector('.fcount')?.replaceWith(t.content.firstElementChild); bindFac(c, onDir); }
+      if (c) { const t = document.createElement('template'); t.innerHTML = counter(k); c.querySelector('.fcount')?.replaceWith(t.content.firstElementChild); bindFac(c, onDir);
+        const nt = document.createElement('template'); nt.innerHTML = noteTag(k); const old = c.querySelector('.fnote'), nw = nt.content.firstElementChild;
+        if (old && nw) old.replaceWith(nw); else if (old) old.remove(); else if (nw) c.querySelector('.fcimg')?.after(nw); bindNotes(c); }
       onDir(); };
     const inp = $('input[type=file]', box);
     if (inp) inp.onchange = async () => {
@@ -668,19 +678,21 @@ export async function renderBuilding(el, slug, bid) {
     const card = box.querySelector(`[data-pk="${CSS.escape(k)}"]`);
     if (card) { card.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest', inline: 'start' });
       $$('.hl', box).forEach(c => c.classList.remove('hl')); void card.offsetWidth; card.classList.add('hl'); }
-    let dir = FD.get(k)?.dir || null, d = fget(k);
+    let dir = FD.get(k)?.dir || null, d = fget(k), n = FD.get(k)?.n || '';
     const src = card?.querySelector('img')?.getAttribute('src');
     const go = j => setTimeout(() => facDetails(ids, j), 200);
     sheet(`<div class="fdet">${src ? `<img class="fdimg" src="${esc(src)}" alt="">` : ''}<div class="grow"><h3 class="sh">פרטי החזית</h3>${ids.length > 1 ? `<small class="muted"><bdi dir="ltr" class="fdn">${i + 1}/${ids.length}</bdi></small>` : ''}</div></div>
       <div class="field">כיוון<div class="dirpick">${FACES.map(f => `<button type="button" class="chip" data-v="${f}" aria-pressed="${dir === f}"><span class="ar" aria-hidden="true">${ARW[f]}</span>${f}</button>`).join('')}</div></div>
       <div class="field">ימי עבודה לחזית<div class="stepper"><button type="button" data-dd="-0.5" aria-label="פחות">−</button><b class="sval grow" id="fdv">${fmtD(d)}</b><button type="button" data-dd="0.5" aria-label="יותר">+</button></div></div>
+      <label class="field">הערה<input type="text" id="fdnote" maxlength="80" enterkeyhint="done" autocomplete="off" value="${esc(n)}" placeholder="מרפסות בקומה 3, גישה מהחניה"></label>
       <div class="row-btns"><button type="button" class="btn ghost" id="fdskip">דילוג</button><button type="button" class="btn primary" id="fdok">שמירה</button></div>`, (sh, close) => {
       $$('.dirpick button', sh).forEach(x => x.onclick = () => { dir = dir === x.dataset.v ? null : x.dataset.v; $$('.dirpick button', sh).forEach(y => y.setAttribute('aria-pressed', y.dataset.v === dir)); });
       $$('[data-dd]', sh).forEach(x => x.onclick = () => { d = Math.max(0, d + Number(x.dataset.dd)); $('#fdv', sh).textContent = fmtD(d); });
       const next = () => { close(); if (ids[i + 1]) go(i + 1); };
       $('#fdskip', sh).onclick = next;
-      $('#fdok', sh).onclick = () => {
-        if (dir !== (FD.get(k)?.dir || null) || d !== fget(k)) { FD.set(k, { ...(FD.get(k) || { k }), dir, d }); dirty = true; syncTotal(); auto(); facFresh?.(k); }
+      const ni = $('#fdnote', sh); ni.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); $('#fdok', sh).click(); } };
+      $('#fdok', sh).onclick = () => { n = ni.value.replace(/\s+/g, ' ').trim();
+        if (dir !== (FD.get(k)?.dir || null) || d !== fget(k) || n !== (FD.get(k)?.n || '')) { const x = { ...(FD.get(k) || { k }), dir, d }; if (n) x.n = n; else delete x.n; FD.set(k, x); dirty = true; syncTotal(); auto(); facFresh?.(k); }
         next(); };
     }, i ? { back: () => go(i - 1) } : undefined);
   };
@@ -720,9 +732,11 @@ export async function renderBuilding(el, slug, bid) {
   ['notes', 'highlights', 'obstacles_text'].forEach(k => addMic($('#' + k)));
   // ---------- אפשרויות הצעה: "+ עוד אפשרות" משכפל את החלוקה לפי חזית; כל אפשרות נפתחת בלחיצה ----------
   function optA() { const e = $('#optA .odays'); if (e) e.textContent = fmtD(Number(form.days_expected) || 0); }
-  function baseFacs() {   // החזיתות של ההצעה הבסיסית: מה שנספר + שאר הכיוונים שצולמו (ריקים); בלי כלום — 4 כיוונים
-    const on = [...FD.values()].filter(x => x.d > 0).map(x => ({ k: x.k, t: titleOf(x.k), dir: dirOfKey(x.k), d: x.d }));
-    if (imgs.length) return FAC.map(f => ({ k: f.id, t: f.title, dir: f.dir, d: fget(f.id) }));
+  // החזיתות של ההצעה הבסיסית, באותם מפתחות (k) כמו הבסיס (ADR 0007): כל חזית של הבסיס — גם עם 0 ימים — ואחריהן רק כיוונים שאין להם חזית בבסיס.
+  // כך אפשרות ב׳ שהלקוח מאשר מתחברת לאותן תמונות ולאותה תכנית (לא "צפון" במקום מזהה התמונה)
+  function baseFacs() {
+    const on = [...FD.values()].filter(x => x.d > 0 || x.dir || LOADED.has(x.k)).map(x => ({ k: x.k, t: titleOf(x.k), dir: dirOfKey(x.k), d: Number(x.d) || 0 }));
+    if (imgs.length) return [...FAC.map(f => ({ k: f.id, t: f.title, dir: f.dir, d: fget(f.id) })), ...on.filter(x => !FAC.some(f => f.id === x.k))];
     const dirs = new Set([...FD.values()].map(x => dirOfKey(x.k)).filter(Boolean)), has = new Set(on.map(x => x.dir));
     const rest = (dirs.size ? FACES.filter(f => dirs.has(f)) : on.length ? [] : FACES).filter(f => !has.has(f)).map(f => ({ k: f, t: 'חזית ' + f, dir: f, d: 0 }));
     return [...on, ...rest];
@@ -768,6 +782,8 @@ export async function renderBuilding(el, slug, bid) {
     };
   }
   if (VARS) drawOpts();
+  // TODO(ADR 0007 החלטה 5, שלב 2): כפתור מנהל "זו ההצעה שאושרה" — הופך אפשרות לבסיס לפני בניית התכנית.
+  // לא טריוויאלי: אפשרויות ישנות נשמרו במפתחות כיוון ולא במזהי התמונות (צריך מיפוי לפי dir), והבסיס הקודם צריך להישמר כאפשרות בארכיון.
 
   // מה חסר כדי לסיים — פס התקדמות קטן בראש הטופס. לחיצה = קפיצה לשדה
   function ready() {

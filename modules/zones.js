@@ -28,14 +28,15 @@ export function zonePrefill(Zs, tasks, dayId) {
   }
   return [...new Set(out)];
 }
-export function zonesHtml(list, sel, lbl = x => x) {   // lbl = שם האזור בשפת השירות (פנלים: "מערך")
+// part = אזורים שסומנו היום "בתהליך" (facade_progress partial — מקטע של חזית רב-יומית): לחוצים, בלי מ״ר ועם תווית
+export function zonesHtml(list, sel, lbl = x => x, part = new Set()) {   // lbl = שם האזור בשפת השירות (פנלים: "מערך")
   if (!list.length) return '';
-  const multi = new Set(list.map(z => z.b)).size > 1, m2 = list.filter(z => sel.includes(zkey(z))).reduce((s, z) => s + Number(z.m2 || 0), 0);
+  const multi = new Set(list.map(z => z.b)).size > 1, m2 = list.filter(z => sel.includes(zkey(z)) && !part.has(zkey(z))).reduce((s, z) => s + Number(z.m2 || 0), 0);
   return `<div class="sec zsec"><div class="row"><h3 class="grow">מה הושלם היום</h3>${m2 ? `<span class="pill lime" id="zm2">${nf(Math.round(m2))} מ״ר</span>` : '<span id="zm2"></span>'}</div>
-    <div class="chips">${list.map(z => `<button type="button" class="chip zchip" data-z="${esc(zkey(z))}" aria-pressed="${sel.includes(zkey(z))}">${esc(multi ? z.bn + ' · ' + lbl(z.t) : lbl(z.t))}${z.m2 ? `<small>${nf(Math.round(z.m2))}</small>` : ''}</button>`).join('')}</div></div>`;
+    <div class="chips">${list.map(z => `<button type="button" class="chip zchip${part.has(zkey(z)) ? ' part' : ''}" data-z="${esc(zkey(z))}" aria-pressed="${sel.includes(zkey(z))}">${esc(multi ? z.bn + ' · ' + lbl(z.t) : lbl(z.t))}${part.has(zkey(z)) ? '<small>בתהליך</small>' : z.m2 ? `<small>${nf(Math.round(z.m2))}</small>` : ''}</button>`).join('')}</div></div>`;
 }
 export function bindZones(root, list, sel, onChange) {
-  $$('[data-z]', root).forEach(b => b.onclick = () => {
+  $$('.zchip[data-z]', root).forEach(b => b.onclick = () => {   // רק הצ'יפים (גם תמונות בטופס נושאות data-z — להגדלה)
     const k = b.dataset.z, L = sel().slice(); L.includes(k) ? L.splice(L.indexOf(k), 1) : L.push(k); onChange(L);
     b.setAttribute('aria-pressed', L.includes(k));
     const m2 = list.filter(z => L.includes(zkey(z))).reduce((s, z) => s + Number(z.m2 || 0), 0), p = $('#zm2', root);
