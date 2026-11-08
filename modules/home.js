@@ -30,7 +30,7 @@ export async function load() {
   const q = async (p) => { try { const { data, error } = await p; if (error) throw error; return data || []; } catch { return null; } };
   const t = today(), since = addDays(t, -14), M = isManager(), n0 = state.storedN;
   const [projects, reports, visits, drones, team, wdays, sync, pushErr, inbox, shiftReq, vsites] = await Promise.all([
-    q(sb.from('projects').select('id,name,client_name,status_label,engagement,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id,closed_summary,lat,lng,sites(lat,lng)')),
+    q(sb.from('projects').select('id,name,client_name,status_label,engagement,planned_from,planned_to,actual_from,actual_to,monday_group,cover_path,site_id,closed_summary,lat,lng,sites(lat,lng,classification)')),
     q(sb.from('field_reports').select('monday_item_id,project_id,project_label,report_date,crew,work,had_issues,issues,photos').gte('report_date', since).order('report_date', { ascending: false })),
     M ? q(sb.from('spec_visits').select('*')) : [],
     q(sb.from('equipment').select('id,name,health,health_detail,health_date').eq('kind', 'drone').order('name')),

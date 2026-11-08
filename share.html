@@ -118,7 +118,9 @@ function render(d) {
   const tl = (d.days || []).length || ups.length ? `<div class="card rise"><h3>${S ? 'ימי העבודה' : 'לוח העבודה'}</h3><ul class="tl">
       ${(d.days || []).map(x => `<li><b>${esc(fd(x.d))}</b>${x.w ? `<span>${esc(x.w)}</span>` : ''}</li>`).join('')}
       ${S ? '' : ups.map(x => `<li class="up"><b>${esc(fd(x.day))}</b><span>${esc(x.items?.join(' · ') || x.work || 'מתוכנן')}</span></li>`).join('')}</ul></div>` : '';
-  const pairsC = S && d.pairs?.length ? `<div class="card rise"><h3>לפני ואחרי</h3>${d.pairs.map(x => `<div class="pd">${esc(fd(x.d))}</div><div class="pair"><figure><img src="${esc(x.b)}" alt="" loading="lazy"><span class="tag">לפני</span></figure><figure><img src="${esc(x.a)}" alt="" loading="lazy"><span class="tag a">אחרי</span></figure></div>`).join('')}</div>` : '';
+  // זוגות שהמנהל בחר (לא זיווג אוטומטי): זוג יכול לחצות ימים — תאריך משותף בכותרת, אחרת תאריך על כל תמונה
+  const pairsC = S && d.pairs?.length ? `<div class="card rise"><h3>לפני ואחרי</h3>${d.pairs.map(x => { const db = x.db || x.d, da = x.da || x.d, one = db === da, dt = v => one || !v ? '' : ' · ' + esc(fd(v, { day: 'numeric', month: 'numeric' }));
+    return `${one && da ? `<div class="pd">${esc(fd(da))}</div>` : ''}<div class="pair"><figure><img src="${esc(x.b)}" alt="" loading="lazy"><span class="tag">לפני${dt(db)}</span></figure><figure><img src="${esc(x.a)}" alt="" loading="lazy"><span class="tag a">אחרי${dt(da)}</span></figure></div>`; }).join('')}</div>` : '';
   const all = d.photos || [], nPh = all.length >= 6 ? Math.min(S ? 9 : 12, 6 + Math.floor((all.length - 6) / 3) * 3) : all.length, ph = all.slice(0, nPh);
   const galC = ph.length && !(S && d.pairs?.length >= 2) ? `<div class="card rise"><h3>${S ? 'תיעוד' : 'מהשטח'}</h3><div class="gal${ph.length < 6 ? ' flat' : ''}">${ph.map(x => `<button type="button" data-z="${esc(x.u)}"><img src="${esc(x.u)}" alt="" loading="lazy">${x.k === 'before' ? '<span class="tag">לפני</span>' : x.k === 'after' ? '<span class="tag a">אחרי</span>' : ''}</button>`).join('')}</div></div>` : '';
   const ctC = c.phone || c.email ? `<div class="card rise"><h3>שאלה? אנחנו כאן</h3><div class="ct">

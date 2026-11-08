@@ -1,5 +1,5 @@
 // Service worker: האפליקציה נפתחת גם בלי קליטה, ותמונות שכבר נצפו זמינות מהטלפון.
-const VERSION = 'edrone-field-v149';
+const VERSION = 'edrone-field-v150';
 const SHELL = ['./', 'index.html', 'tour/ops.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'mark.png', 'lib/audit.js', 'lib/avail.js', 'lib/bulk.js', 'lib/contacts.js', 'lib/core.js', 'lib/daytype.js', 'lib/facade.js', 'lib/issue.js', 'lib/labor.js', 'lib/night.js', 'lib/pay.js', 'lib/photo.js', 'lib/report.js', 'lib/service.js', 'lib/share.js', 'lib/store.js', 'lib/sun.js', 'lib/track.js', 'lib/viewer.js', 'lib/views.js', 'lib/ws.js', 'lib/wx.js', 'modules/activity.js', 'modules/admin.js', 'modules/agenda.js', 'modules/appreports.js', 'modules/attendance.js', 'modules/attention.js', 'modules/chat.js', 'modules/clientreport.js', 'modules/clients.js', 'modules/closereq.js', 'modules/compliance.js', 'modules/costs.js', 'modules/dayadmin.js', 'modules/decks.js', 'modules/desk.js', 'modules/dispatch.js', 'modules/equipment.js', 'modules/expenses.js', 'modules/files.js', 'modules/home.js', 'modules/inbox.js', 'modules/knowledge.js', 'modules/live.js', 'modules/login.js', 'modules/master.js', 'modules/news.js', 'modules/onboarding.js', 'modules/ops.js', 'modules/pfiles.js', 'modules/plan.js', 'modules/prestart.js', 'modules/projects.js', 'modules/purchase.js', 'modules/repairs.js', 'modules/reports.js', 'modules/signoff.js', 'modules/specs.js', 'modules/staff.js', 'modules/tasks.js', 'modules/today.js', 'modules/tour.js', 'modules/visits.js', 'modules/weather.js', 'modules/welcome.js', 'modules/wizard.js', 'modules/zones.js'];
 
 // קבצי הגרסה נשמרים בהתקנה ישירות מהשרת, כך שכל הגרסה עקבית: cache: 'reload' עוקף את מטמון הדפדפן, ו-?v=גרסה עוקף את ה-CDN של GitHub,
@@ -183,6 +183,8 @@ async function replay() {
     };
     const upsert = async (table, row) => {
       let r = await go(`${A.url}/rest/v1/${table}`, { method: 'POST', headers: { 'content-type': 'application/json', prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify(row) });
+      // רשומה בלי id (מפתח טבעי — סימון חזית): "כבר קיימת" לא מוכיח שהשינוי נשמר. משאירים לאפליקציה, שבודקת מול השרת (core.js runItem)
+      if (!r.ok && !row.id) throw new Error(await r.text());
       if (!r.ok && /row-level security|42501/.test(await r.clone().text())) r = await go(`${A.url}/rest/v1/${table}`, { method: 'POST', headers: { 'content-type': 'application/json', prefer: 'resolution=ignore-duplicates,return=minimal' }, body: JSON.stringify(row) });
       if (!r.ok) throw new Error(await r.text());
     };
@@ -200,7 +202,8 @@ async function replay() {
         if (!r.ok || !(await r.json()).length) break;
       } else if (it.kind === 'insert') { try { await upsert(it.table, it.row); } catch { break; } }
       else if (it.kind === 'delete') { const q = Object.entries(it.match || {}).map(([k, v]) => `${encodeURIComponent(k)}=eq.${encodeURIComponent(v)}`).join('&'); if (!q) break;
-        const r = await go(`${A.url}/rest/v1/${it.table}?${q}`, { method: 'DELETE', headers: { prefer: 'return=minimal' } }); if (!r.ok) break; }
+        // 0 שורות = כבר נמחקה, או שאין הרשאה (RLS מחזיר 0 בשקט) — משאירים לאפליקציה שתבדוק
+        const r = await go(`${A.url}/rest/v1/${it.table}?${q}`, { method: 'DELETE', headers: { prefer: 'return=representation' } }); if (!r.ok || !(await r.json()).length) break; }
       else if (it.kind === 'rpc') { const r = await go(`${A.url}/rest/v1/rpc/${it.fn}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(it.args || {}) }); if (!r.ok) break; }
       else if (it.kind === 'file') { try { await upload(it.path, it.blob, it.type || 'application/octet-stream', it); } catch (err) { if (err instanceof NetErr) { await keep(it); throw err; } break; } }
       else if (it.kind === 'photo') {

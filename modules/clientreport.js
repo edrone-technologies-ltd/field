@@ -1,11 +1,12 @@
 // דוח ללקוח — נבנה לבד מהחתימה האחרונה; "מה נכנס" (פאנל) בוחר מכל מקורות הפרויקט ועורכים בתוך הדוח — נשמר לפרויקט (db/144) (מה שהחותם בחר: ימים, זוגות לפני/אחרי מאותו יום, משימות, כמויות, תקלות שטופלו, דירוג, חתימה). לא נשלח במייל — PDF/קישור/קולאז׳ מהמנהל.
-// כללים: אחריות על משימות = "E-Drone" (לא שמות עובדים); איש קשר בפוטר = החברה; זוג לפני/אחרי רק מאותו יום עבודה (לא זוגות מזויפים).
-import { sb, state, isManager, signedUrls, icon, backBtn, $, $$, esc, toast, dm, coverArt, cache, isoDay, replaceHash, confirmBox } from '../lib/core.js';
+// כללים: אחריות על משימות = "E-Drone" (לא שמות עובדים); איש קשר בפוטר = החברה; לפני/אחרי = רק זוגות שהמנהל בחר בעריכה (DR.ba, מזהי photos) — אין זיווג אוטומטי (טל, v150).
+import { sb, state, isManager, signedUrls, icon, backBtn, $, $$, esc, toast, dm, coverArt, cache, isoDay, replaceHash, confirmBox, sheet } from '../lib/core.js';
 import { shareIcon, shareFile, sharePrint, pdfFrom } from '../lib/share.js';
 import { terms, serviceOf, siteCtx, fixWorks, cleanPlace, isPilot } from '../lib/service.js';
 import { visitDefault, visitPhotos } from './visits.js';
 
-const bdi = t => esc(t).replace(/([+−~≤≥]?[0-9A-Za-z][0-9A-Za-z.,%°~+−≤≥–—/ -]*[0-9A-Za-z%°])/g, '<bdi dir="ltr">$1</bdi>');
+// עוטפים רצפים לטיניים/מספריים בטקסט הגולמי ורק אז מבריחים — אחרת ישות כמו &quot; נחתכת (בע&quot;מ)
+const bdi = t => String(t ?? '').split(/([+−~≤≥]?[0-9A-Za-z][0-9A-Za-z.,%°~+−≤≥–—/ -]*[0-9A-Za-z%°])/g).map((x, i) => i % 2 ? `<bdi dir="ltr">${esc(x)}</bdi>` : esc(x)).join('');
 const fmt = d => d ? new Date(d + 'T12:00').toLocaleDateString('he-IL', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
 const SITE_SEL = 'name,address,contact_name,service,subtitle,scope_text,access_notes';
 // שירות + הקשר האתר (פנלים · "על גגות הלולים") — מהפרויקט, האתר, האפיון ודוחות הביקור
@@ -22,23 +23,43 @@ async function svcFor(p, visits = []) {
 // מפתחות: d:<יום> יום · dl:<יום> שורת היום · r:<יום> דוח יומי מלא · p:<bucket>:<path> תמונה · vf:<ביקור>:<i> ממצא · vp:<ביקור>:<i>:<j> תמונת ממצא
 // vs:<ביקור> סיכום ביקור · t:<משימה> · rp:<תיקון> · is:<תקלה> · so חתימה · nx שבוע הבא · work/intro/summary/title/client… נוסחים
 const DRK = (pid, scope) => `rdraft:${pid}:${scope}`;
+// טיוטה שנשמרה בטלפון ולא הגיעה לשרת (אין קליטה / שגיאה) — נשלחת שוב כשחוזרת קליטה ובכניסה הבאה לדוח.
+// לא דורסים: נשלחת רק אם העותק המקומי חדש מזה שבשרת (updated_at). כיסוי מלא: sel · txt · ba
+const PEND = new Set();
+async function flushDraft(key) {
+  const [pid, scope] = key.split('|'), loc = await cache.get(DRK(pid, scope)).catch(() => null);
+  if (!loc?.at) return PEND.delete(key);
+  const r = await sb.from('project_report_drafts').select('updated_at').eq('project_id', pid).eq('scope', scope).maybeSingle().then(x => x, e => ({ error: e }));
+  if (r.error) return;   // עדיין בלי קליטה — יישלח באירוע online הבא
+  const srvAt = r.data?.updated_at ? Date.parse(r.data.updated_at) : 0;
+  if (loc.at <= srvAt) return PEND.delete(key);   // בשרת יש גרסה חדשה יותר (או זהה) — לא דורסים
+  const data = { sel: loc.sel || {}, txt: loc.txt || {}, ba: loc.ba || [] };
+  const empty = !Object.keys(data.sel).length && !Object.keys(data.txt).length && !data.ba.length;
+  if (empty && !r.data) return PEND.delete(key);
+  const w = await (empty ? sb.from('project_report_drafts').delete().eq('project_id', pid).eq('scope', scope)
+    : sb.from('project_report_drafts').upsert({ project_id: pid, scope, data, updated_by: state.user.id, updated_at: new Date().toISOString() })).then(x => x, e => ({ error: e }));
+  if (!w.error) { PEND.delete(key); toast('הדוח נשמר בשרת'); }
+}
+addEventListener('online', () => PEND.forEach(flushDraft));
 async function loadDraft(pid, scope) {
   const [r, loc] = await Promise.all([sb.from('project_report_drafts').select('data,updated_at').eq('project_id', pid).eq('scope', scope).maybeSingle().then(x => x, e => ({ error: e })),
     cache.get(DRK(pid, scope)).catch(() => null)]);
   // החדש מבין השניים: עריכה שנשמרה בטלפון ולא הגיעה לשרת (קליטה / שגיאה) לא נדרסת בכניסה הבאה
   const srvAt = r.data?.updated_at ? Date.parse(r.data.updated_at) : 0;
   const d = r.error || (loc?.at && loc.at > srvAt) ? loc : r.data?.data;
-  return { sel: { ...(d?.sel || {}) }, txt: { ...(d?.txt || {}) } };
+  if (loc?.at && (r.error || loc.at > srvAt)) { const k = pid + '|' + scope; PEND.add(k); if (!r.error) flushDraft(k); }
+  // ba = זוגות לפני/אחרי שהמנהל בחר בעריכה: [{ b, a }] מזהי photos (בלי בחירה — אין סעיף)
+  return { sel: { ...(d?.sel || {}) }, txt: { ...(d?.txt || {}) }, ba: Array.isArray(d?.ba) ? d.ba.filter(x => x?.b && x?.a) : [] };
 }
 function draftSaver(pid, scope, DR) {
   let tm = null, dirty = false, warned = false;
   const now = async () => {
     clearTimeout(tm); if (!dirty) return; dirty = false;
-    cache.set(DRK(pid, scope), { sel: DR.sel, txt: DR.txt, at: Date.now() }).catch(() => {});
-    const empty = !Object.keys(DR.sel).length && !Object.keys(DR.txt).length;
+    cache.set(DRK(pid, scope), { sel: DR.sel, txt: DR.txt, ba: DR.ba || [], at: Date.now() }).catch(() => {});
+    const empty = !Object.keys(DR.sel).length && !Object.keys(DR.txt).length && !DR.ba?.length;
     const r = await (empty ? sb.from('project_report_drafts').delete().eq('project_id', pid).eq('scope', scope)
       : sb.from('project_report_drafts').upsert({ project_id: pid, scope, data: DR, updated_by: state.user.id, updated_at: new Date().toISOString() })).then(x => x, e => ({ error: e }));
-    if (r.error && !warned) { warned = true; toast('הבחירה נשמרה בטלפון — תישמר בשרת כשתחזור קליטה'); }
+    if (r.error) { PEND.add(pid + '|' + scope); if (!warned) { warned = true; toast('הבחירה נשמרה בטלפון — תישמר בשרת כשתחזור קליטה'); } }
   };
   addEventListener('hashchange', now, { once: true });
   return { soon: () => { dirty = true; clearTimeout(tm); tm = setTimeout(now, 700); }, now: () => { dirty = true; return now(); } };
@@ -126,7 +147,7 @@ function picker(groups, DR, save, redraw) {
     const b = e.target.closest('[data-rpk]'); if (!b) return;
     if (b.dataset.rpk === 'x') return close();
     if (!await confirmBox('לחזור לברירת המחדל?', { body: 'הבחירה והעריכות בדוח הזה יימחקו', ok: 'איפוס', danger: true })) return;
-    for (const k of Object.keys(DR.sel)) delete DR.sel[k]; for (const k of Object.keys(DR.txt)) delete DR.txt[k];
+    for (const k of Object.keys(DR.sel)) delete DR.sel[k]; for (const k of Object.keys(DR.txt)) delete DR.txt[k]; if (DR.ba) DR.ba.length = 0;
     save.now(); draw(); redraw(); toast('חזר לברירת המחדל');
   });
   const close = () => { el.remove(); document.body.classList.remove('rpk-on'); };
@@ -207,7 +228,7 @@ export async function renderClientReport(el, pid) {
     q(sb.from('work_days').select('id,day,status,work_types,signoff,gallons,material,weather_stop,report_text').eq('project_id', pid).eq('status', 'done').order('day')),
     q(sb.from('tasks').select('id,title,status,phase,visit_id,buildings(name)').eq('project_id', pid).neq('status', 'dropped').order('day_no').order('seq')),
     q(sb.from('field_reports').select('report_date,work,gallons,notes,photos').eq('project_id', pid).eq('excluded', false).order('report_date')),
-    q(sb.from('photos').select('kind,storage_path,work_day_id,created_at').eq('project_id', pid).in('kind', ['before', 'after', 'general']).order('created_at')),
+    q(sb.from('photos').select('id,kind,storage_path,work_day_id,created_at').eq('project_id', pid).in('kind', ['before', 'after', 'general']).order('created_at')),
     q(sb.from('project_signoffs').select('*').eq('project_id', pid).order('created_at', { ascending: false }).limit(1)),
     sb.from('app_settings').select('value').eq('key', 'company').maybeSingle(),
     cache.get('signoff-last:' + pid).catch(() => null),
@@ -239,7 +260,7 @@ export async function renderClientReport(el, pid) {
   // ---- תמונות: הכל (לפני/אחרי/כלליות + תמונות הדוחות). ברירת מחדל = מה שנבחר בהחתמה, אחרת לפני/אחרי + תמונות הדוחות
   const wdDay = new Map(days.map(w => [w.id, w.day]));
   const pk = x => `p:${x.b}:${x.p}`;
-  const PH0 = [...ph.map(x => ({ b: 'field', p: x.storage_path, k: x.kind, d: wdDay.get(x.work_day_id) || isoDay(new Date(x.created_at)) })),
+  const PH0 = [...ph.map(x => ({ id: x.id, b: 'field', p: x.storage_path, k: x.kind, d: wdDay.get(x.work_day_id) || isoDay(new Date(x.created_at)) })),
     ...reps.flatMap(r => (r.photos || []).filter(Boolean).map(path => ({ b: 'media', p: path, k: 'doc', d: r.report_date })))];
   for (const x of inc?.photos || []) if (!PH0.some(y => pk(y) === pk(x))) PH0.push(x);
   const defPh = new Set(inc && !sec.photos ? [] : inc?.photos?.length ? inc.photos.map(pk) : PH0.filter(x => x.k !== 'general').map(pk));
@@ -267,6 +288,16 @@ export async function renderClientReport(el, pid) {
   const stars = n => `<span class="cr-stars">${'★'.repeat(n)}<i>${'★'.repeat(5 - n)}</i></span>`;
   const foot = n => `<div class="cr-pf"><span><bdi dir="ltr"><b>E-Drone</b> Technologies</bdi> · ${esc(place)}</span><span>${n}</span></div>`;
   const shot = (x, tag, cls = '') => `<div class="shot ${cls}"><img src="${esc(url(x))}" alt="">${tag ? `<span class="tag ${tag === 'אחרי' ? 'a' : ''}">${tag}</span>` : ''}</div>`;
+  // ---- לפני / אחרי: רק זוגות שהמנהל בחר בעריכה (DR.ba = מזהי photos). בלי בחירה — אין סעיף ואין זיווג אוטומטי
+  const byId = new Map(PH0.filter(x => x.id).map(x => [x.id, x]));
+  // החותם כיבה את סעיף התמונות בהחתמה → אין לפני/אחרי בדוח וב-PDF (כמו בקישור ללקוח, functions/share)
+  const baOn = sec.photos !== false;
+  const pairsOf = () => !baOn ? [] : (DR.ba || []).map(x => [byId.get(x.b), byId.get(x.a)]).filter(([b, a]) => b && a && url(b) && url(a));
+  const baTag = (x, t) => `<span class="tag ${t === 'אחרי' ? 'a' : ''}">${t} · <bdi dir="ltr">${dm(x.d)}</bdi></span>`;
+  const baShot = (x, t) => `<div class="shot"><img src="${esc(url(x))}" alt="">${baTag(x, t)}</div>`;
+  const baPages = (BA, foot) => !BA.length ? '' : Array.from({ length: Math.ceil(BA.length / 2) }, (_, i) => BA.slice(i * 2, i * 2 + 2)).map((pg, i) => `<div class="pg cr-ba"><div class="pad">${i ? '' : '<div class="rsec">BEFORE / AFTER</div><h2>לפני ואחרי</h2><div class="rule"></div>'}
+      ${pg.map(([b, a], j) => `<div class="cr-bap"><div class="row2 cr-pair">${baShot(b, 'לפני')}${baShot(a, 'אחרי')}</div><button type="button" class="cr-x cr-ed" data-bax="${i * 2 + j}" aria-label="הסרת הזוג מהדוח">×</button></div>`).join('')}
+      ${i === Math.ceil(BA.length / 2) - 1 ? '<button type="button" class="btn ghost cr-ed cr-add" data-baadd>+ זוג לפני / אחרי</button>' : ''}</div>${foot()}</div>`).join('');
   // מה בוצע — בשפת השירות: חזיתות לפי הימים; פנלים/הצללה/סריקה — מונח השירות + הקשר האתר ("על גגות הלולים")
   const whatOf = works => ['facade', 'windows'].includes(t.key) ? (works.join(', ') || t.work) : t.key === 'other' ? (works.filter(w => w !== 'אחר').join(', ') || 'את העבודה') : [t.workFull, ...works.filter(w => w !== t.day)].join(', ');
   const whatAll = whatOf([...new Set(allDates.flatMap(d => (D.get(d).work || '').split(/\s*[·,]\s*/).filter(Boolean)))]);
@@ -279,12 +310,12 @@ export async function renderClientReport(el, pid) {
     const dates = allDates.filter(d => on('d:' + d, defDays.has(d)));
     const L = dates.map(d => ({ ...D.get(d), k: 'dl:' + d, work: tx('dl:' + d, wk || D.get(d).work || '') }));
     const works = wk ? [wk] : [...new Set(dates.flatMap(d => (D.get(d).work || '').split(/\s*[·,]\s*/).filter(Boolean)))];
-    const PH = PH0.filter(x => url(x) && on(pk(x), defPh.has(pk(x))));
-    // זוגות אמיתיים בלבד: לפני ואחרי מאותו יום עבודה. השאר — בשורה משלהם
-    const blocks = dates.map(d => { const mine = PH.filter(x => x.d === d), b = mine.filter(x => x.k === 'before'), a = mine.filter(x => x.k !== 'before');
-      const pairs = []; while (b.length && a.length) pairs.push([b.shift(), a.pop()]); return { d, work: L.find(x => x.d === d)?.work, pairs, rest: [...b, ...a] }; }).filter(x => x.pairs.length || x.rest.length);
+    const BA = pairsOf(), inBA = new Set(BA.flat().map(pk));
+    const PH = PH0.filter(x => url(x) && on(pk(x), defPh.has(pk(x))) && !inBA.has(pk(x)));
+    // תיעוד: התמונות שנבחרו לפי יום, בשורות — בלי זיווג אוטומטי (הזוגות רק בסעיף "לפני ואחרי")
+    const blocks = dates.map(d => ({ d, work: L.find(x => x.d === d)?.work, pairs: [], rest: PH.filter(x => x.d === d) })).filter(x => x.rest.length);
     const pages = paginate(blocks);
-    const afterAll = PH.filter(x => x.k !== 'before');
+    const afterAll = BA.length ? BA.map(x => x[1]) : PH.filter(x => x.k !== 'before');
     const hero = (p.cover_path && mu[p.cover_path]) || (afterAll.length && url(afterAll.at(-1))) || (PH[0] && url(PH[0])) || coverArt(p.name);
     const VB = visitSel(visits, vDef, on, tx);
     const T = TI.filter(x => on(x.k, x.on)).map(x => ({ k: x.k, t: tx(x.k, x.l), b: x.b }));
@@ -298,12 +329,14 @@ export async function renderClientReport(el, pid) {
     const html = `<div class="pg"><div class="hero"><img src="${esc(hero)}" alt=""><div class="hero-top"><div class="wordmark"><div class="w">E-DRONE</div><div class="t">TECHNOLOGIES</div></div><div class="kicker">PROJECT REPORT</div></div>
         <div class="hero-txt"><div class="lbl">${pilot ? 'דוח סיכום פיילוט' : 'דוח סיכום פרויקט'}</div><h1 data-ek="title">${bdi(tx('title', place))}</h1><div class="sub" data-ek="client">${bdi(tx('client', p.client_name || ''))}</div></div></div>
         <div class="stats"><div class="stat"><div class="n">${dates.length || '—'}</div><div class="c">ימי עבודה</div></div><div class="stat"><div class="n">${T.length || works.length || '—'}</div><div class="c">${T.length ? 'משימות שבוצעו' : 'סוגי עבודה'}</div></div>
-          <div class="stat"><div class="n">${PH.length || '—'}</div><div class="c">תמונות תיעוד</div></div><div class="stat"><div class="n">${showSo && rating ? `${rating}<em>/5</em>` : showSo && ok != null ? '✓' : '—'}</div><div class="c">${showSo && rating ? 'שביעות רצון' : 'אישור לקוח'}</div></div></div>
+          <div class="stat"><div class="n">${PH.length + inBA.size || '—'}</div><div class="c">תמונות תיעוד</div></div><div class="stat"><div class="n">${showSo && rating ? `${rating}<em>/5</em>` : showSo && ok != null ? '✓' : '—'}</div><div class="c">${showSo && rating ? 'שביעות רצון' : 'אישור לקוח'}</div></div></div>
         <div class="intro"><div class="cr-tx" data-ek="intro">${pp(intro)}</div></div>
         <div class="meta"><div><div class="k">לקוח</div><div class="v" data-ek="mclient">${bdi(tx('mclient', p.client_name || '—'))}</div></div><div><div class="k">אתר</div><div class="v" data-ek="addr">${bdi(tx('addr', p.sites?.address || place || '—'))}</div></div><div><div class="k">מועד ביצוע</div><div class="v">${dates.length ? `<bdi dir="ltr">${dm(dates[0])}${dates.length > 1 ? '–' + dm(dates.at(-1)) : ''}</bdi>` : '—'}</div></div></div>
         <div class="foot"><span><b>E-Drone</b> Technologies</span>${coLine ? `<span>${coLine}</span>` : ''}</div></div>
       ${pilot ? visitPage(VB, x => fu[x], true, () => foot(++pn)) : ''}
-      ${pages.map((pg, i) => `<div class="pg"><div class="pad">${i ? '' : '<div class="rsec">DOCUMENTATION</div><h2>תיעוד העבודה</h2><div class="rule"></div>'}
+      ${baPages(BA, () => foot(++pn))}
+      ${baOn && !BA.length && byId.size > 1 && !pages.length ? '<button type="button" class="btn ghost cr-ed cr-add cr-baadd" data-baadd>+ לפני / אחרי</button>' : ''}
+      ${pages.map((pg, i) => `<div class="pg"><div class="pad">${i ? '' : `<div class="rsec">DOCUMENTATION</div><h2>תיעוד העבודה</h2><div class="rule"></div>${baOn && !BA.length && byId.size > 1 ? '<button type="button" class="btn ghost cr-ed cr-add cr-baadd" data-baadd>+ לפני / אחרי</button>' : ''}`}
         ${pg.map(bl => `<div class="ba"><div class="band"><span class="t">${esc(fmt(bl.d))}${bl.cont ? ' <small class="cont">(המשך)</small>' : ''}</span>${bl.work && !bl.cont ? `<span class="d">${esc(bl.work)}</span>` : ''}<span class="ln"></span></div>
           ${bl.pairs.map(([b, a]) => `<div class="row2 cr-pair">${shot(b, 'לפני')}${shot(a, 'אחרי')}</div>`).join('')}
           ${bl.rest.length ? `<div class="row3">${bl.rest.map(x => shot(x, x.k === 'before' ? 'לפני' : x.k === 'after' ? 'אחרי' : '')).join('')}</div>` : ''}</div>`).join('')}
@@ -330,7 +363,7 @@ export async function renderClientReport(el, pid) {
         <div class="rsec" style="margin-top:${showSo || !hasSo ? 12 : 0}mm">SUMMARY</div><h2>סיכום</h2><div class="rule"></div>
         <ul class="cl" data-ek="summary">${lis(tx('summary', sumDef))}</ul>
         <div class="end"><div class="l"><b>E-Drone Technologies</b>${coLine ? `<br>${coLine}` : ''}</div><img src="logo.png" alt="E-Drone"></div></div>${foot(++pn)}</div>`;
-    return { html, PH, afterAll };
+    return { html, PH, afterAll, BA };
   }
   // הבחירה בפאנל: כל מקורות התוכן של הפרויקט
   const groups = () => [
@@ -346,7 +379,10 @@ export async function renderClientReport(el, pid) {
   ];
   const save = draftSaver(pid, 'final', DR), ref = {};
   let cur;
-  const draw = () => { cur = build(); const cr = $('#cr'); if (!cr) return; cr.innerHTML = cur.html; bindEdits(cr, DR, save, k => ref.pk?.sync(k)); bindScope(cr, DR, save, draw); };
+  const draw = () => { cur = build(); const cr = $('#cr'); if (!cr) return; const y = cr.closest('.app')?.scrollTop; cr.innerHTML = cur.html; bindEdits(cr, DR, save, k => ref.pk?.sync(k)); bindScope(cr, DR, save, draw);
+    $$('[data-baadd]', cr).forEach(b => b.onclick = () => pickPair([...byId.values()].filter(url), url, DR.ba, pr => { DR.ba.push(pr); save.soon(); draw(); }));
+    $$('[data-bax]', cr).forEach(b => b.onclick = () => { const pr = cur.BA[+b.dataset.bax]; if (!pr) return; DR.ba = DR.ba.filter(x => !(x.b === pr[0].id && x.a === pr[1].id)); save.soon(); draw(); });
+    if (y != null) cr.closest('.app').scrollTop = y; };
   el.innerHTML = `<div class="rep-toolbar"><a class="back" href="#/p/${pid}/s" aria-label="חזרה">${icon('back', 20)}</a><b class="grow">דוח ללקוח${hasSo ? '' : ' <span class="pill warn">לפני חתימה</span>'}</b>
       <button class="btn ghost sm" id="rpkb">${icon('check', 16)}<span class="rt-l"> מה נכנס</span></button>
       ${M ? `<button class="btn ghost sm" id="shr">${icon('send', 16)}<span class="rt-l"> קישור</span></button>` : ''}<button class="btn ghost sm" id="collage">קולאז׳</button><button class="btn ghost sm" id="print">הדפסה</button>
@@ -356,11 +392,29 @@ export async function renderClientReport(el, pid) {
   document.body.classList.add('printing-report');
   addEventListener('hashchange', () => document.body.classList.remove('printing-report'), { once: true });
   $('#print').onclick = () => { const tt = document.title; document.title = `E-Drone · ${place}`; window.print(); setTimeout(() => document.title = tt, 500); };
-  $('#collage').onclick = e => collage(cur.PH.filter(x => x.k === 'before').map(url), cur.afterAll.map(url), place, e.currentTarget);
+  // קולאז׳ רק מזוג שנבחר (לא זיווג אוטומטי). אין זוג — פותחים את הבחירה
+  $('#collage').onclick = e => { const pr = cur.BA[0], btn = e.currentTarget;
+    if (!baOn) return toast('סעיף התמונות כבוי בהחתמה');
+    if (pr) return collage([url(pr[0])], [url(pr[1])], place, btn);
+    pickPair([...byId.values()].filter(url), url, DR.ba, x => { DR.ba.push(x); save.soon(); draw(); collage([url(byId.get(x.b))], [url(byId.get(x.a))], place, btn); }); };
   $('#crsh').onclick = e => sharePrint(e.currentTarget, $('#cr'), `דוח E-Drone - ${place}`, `דוח סיכום · ${place}`);
   const sv = $('#crsave'); if (sv) sv.onclick = e => saveReport(e.currentTarget, pid, `דוח E-Drone - ${place}`, `${pilot ? 'דוח סיכום פיילוט' : 'דוח סיכום'} · ${dm(isoDay())}`);
   const sh = $('#shr'); if (sh) sh.onclick = () => shareLink(p, pid);
   bindPicker($('#rpkb'), groups, DR, save, draw, ref);
+}
+
+// בחירת זוג לפני/אחרי מתמונות הפרויקט (photos: לפני / אחרי / מהעבודה). שני שלבים, חץ חזרה בשלב השני
+function pickPair(P, url, used, done) {
+  if (P.length < 2) return toast('אין מספיק תמונות בפרויקט');
+  const KL = { before: 'לפני', after: 'אחרי', general: 'מהעבודה' };
+  const usedB = new Set(used.map(x => x.b)), usedA = new Set(used.map(x => x.a));
+  const order = first => [...P].sort((x, y) => (x.k === first ? 0 : x.k === 'general' ? 1 : 2) - (y.k === first ? 0 : y.k === 'general' ? 1 : 2) || (x.d < y.d ? -1 : x.d > y.d ? 1 : 0));
+  const tile = (x, dim) => `<button type="button" class="bap-t${dim ? ' dim' : ''}" data-ph="${esc(x.id)}"><img src="${esc(url(x))}" alt="" loading="lazy"><span><bdi dir="ltr">${dm(x.d)}</bdi> · ${KL[x.k] || ''}</span></button>`;
+  const step1 = () => sheet(`<h3>תמונת לפני</h3><div class="bap-g">${order('before').map(x => tile(x, usedB.has(x.id))).join('')}</div>`, (sh, close) =>
+    $$('[data-ph]', sh).forEach(b => b.onclick = () => { const bf = P.find(x => x.id === b.dataset.ph); close(); setTimeout(() => step2(bf), 180); }));
+  const step2 = bf => sheet(`<div class="bap-h"><img src="${esc(url(bf))}" alt=""><h3>תמונת אחרי</h3></div><div class="bap-g">${order('after').filter(x => x.id !== bf.id).map(x => tile(x, usedA.has(x.id))).join('')}</div>`, (sh, close) =>
+    $$('[data-ph]', sh).forEach(b => b.onclick = () => { close(); if (used.some(x => x.b === bf.id && x.a === b.dataset.ph)) return toast('הזוג הזה כבר בדוח'); done({ b: bf.id, a: b.dataset.ph }); }), { back: () => setTimeout(step1, 180) });
+  step1();
 }
 
 // קישור ללקוח (share.html): מתקדם לבד מ"התקדמות" ל"דוח סיום" ברגע שנחתם. משתמשים בקישור הפעיל אם יש

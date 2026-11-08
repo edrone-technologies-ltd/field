@@ -197,12 +197,15 @@ async function visitSheet(s, href, after) {
 
 // ---------- מיקום האתר (כפתור אחד לאתר) — לתחזית ולמתכנן השמש בביצוע ----------
 // ---------- מפת אתר (תצ״א / מפת מתחם): אחת לאתר, בראש העמוד ----------
-const siteMapHtml = s => (s.map_path || can('specs')) ? `<div class="card sitemap" id="sitemap"><div class="skel"></div></div>` : '';
+// אתר מסווג (ADR 0008, שלב 0): בלי מצלמה ובלי העלאת מפה באפיון, והקואורדינטות לא יוצאות ל-OSRM ולתחזית בדיוק מלא. לא מוחקים מה שכבר קיים
+const restricted = s => s?.classification === 'restricted';
+const canShoot = s => can('specs') && !restricted(s);
+const siteMapHtml = s => (s.map_path || canShoot(s)) ? `<div class="card sitemap" id="sitemap"><div class="skel"></div></div>` : '';
 async function bindSiteMap(s, after) {
   const box = $('#sitemap'); if (!box) return;
   const url = s.map_path ? (await signedUrls('plans', [s.map_path]))[s.map_path] : '';
-  box.innerHTML = url ? `<button class="smimg" type="button"><img src="${esc(url)}" alt="מפת האתר"></button><div class="row"><b class="grow">מפת האתר</b>${can('specs') ? '<label class="chip">החלפה<input type="file" accept="image/*" hidden></label>' : ''}</div>`
-    : `<label class="row addmap"><span class="mic">${icon('pin', 19)}</span><span class="grow"><b>מפת האתר</b></span><span class="chip">העלאה</span><input type="file" accept="image/*" hidden></label>`;
+  box.innerHTML = url ? `<button class="smimg" type="button"><img src="${esc(url)}" alt="מפת האתר"></button><div class="row"><b class="grow">מפת האתר</b>${canShoot(s) ? '<label class="chip">החלפה<input type="file" accept="image/*" hidden></label>' : ''}</div>`
+    : !canShoot(s) ? '' : `<label class="row addmap"><span class="mic">${icon('pin', 19)}</span><span class="grow"><b>מפת האתר</b></span><span class="chip">העלאה</span><input type="file" accept="image/*" hidden></label>`;
   const im = $('.smimg', box); if (im) im.onclick = () => zoom(url, 'מפת האתר · ' + s.name);
   const inp = $('input[type=file]', box);
   if (inp) inp.onchange = async () => {
@@ -221,7 +224,7 @@ async function bindSiteMap(s, after) {
 // ---------- כלי אתר בשורה אחת: מפה · ניווט ותחזית · מחיר. כל אחד נפתח בלחיצה — לא תופס את המסך ----------
 function siteTools(s, opts = {}) {
   const t = [];
-  t.push(`<button class="stile" type="button" data-st="map">${s.map_path ? '<span class="stimg" id="stmap"></span>' : `<span class="mic">${icon('photo', 19)}</span>`}<b>מפת האתר</b>${s.map_path ? '' : '<small>אין עדיין · העלאה</small>'}</button>`);
+  if (s.map_path || !restricted(s)) t.push(`<button class="stile" type="button" data-st="map">${s.map_path ? '<span class="stimg" id="stmap"></span>' : `<span class="mic">${icon('photo', 19)}</span>`}<b>מפת האתר</b>${s.map_path ? '' : '<small>אין עדיין · העלאה</small>'}</button>`);
   t.push(`<button class="stile ${s.lat ? '' : 'todo'}" type="button" data-st="loc"><span class="mic ${s.lat ? 'ok' : ''}">${icon('pin', 19)}</span><b>${s.lat ? 'ניווט ותחזית' : 'שמירת מיקום'}</b>${s.lat ? '<small>Waze · Maps · 4 ימים</small>' : ''}</button>`);
   if (isManager()) t.push(`<button class="stile" type="button" data-st="task"><span class="mic">${icon('send', 19)}</span><b>משימה לצוות</b><small>${s.contact_name ? 'ליצור קשר עם ' + esc(s.contact_name.split(' ')[0]) : 'מעקב על הליד'}</small></button>`);
   if (isManager() && s.kind === 'lead') t.push(`<button class="stile" type="button" data-st="merge"><span class="mic">${icon('folder', 19)}</span><b>שיוך לאתר קיים</b></button>`);
@@ -237,7 +240,7 @@ function bindSiteTools(s, opts = {}) {
       if (s.map_path) { const u = await signedUrls('plans', [s.map_path]); if (u[s.map_path]) return zoom(u[s.map_path], 'מפת האתר · ' + s.name); }
       sheet(`<h3>מפת האתר</h3>${siteMapHtml(s)}<button class="btn ghost block" data-close>סגירה</button>`, () => bindSiteMap(s, () => location.reload()), { back: null });
     }
-    if (k === 'loc') sheet(`<h3>${esc(s.name)}</h3>${siteLocHtml(s)}${s.map_path && can('specs') ? `<button class="btn ghost block" id="mapre">${icon('photo', 18)} החלפת מפת האתר</button>` : ''}<button class="btn ghost block" data-close>סגירה</button>`, sh => {
+    if (k === 'loc') sheet(`<h3>${esc(s.name)}</h3>${siteLocHtml(s)}${s.map_path && canShoot(s) ? `<button class="btn ghost block" id="mapre">${icon('photo', 18)} החלפת מפת האתר</button>` : ''}<button class="btn ghost block" data-close>סגירה</button>`, sh => {
       bindSiteLoc(s); const m = $('#mapre', sh); if (m) m.onclick = () => sheet(`<h3>מפת האתר</h3>${siteMapHtml(s)}<button class="btn ghost block" data-close>סגירה</button>`, () => bindSiteMap(s, () => location.reload()));
     });
     // ליד שכבר אופיין כאתר (או שיש לו פרויקט) — מאחדים לרשומה אחת: הליד יוצא מהרשימות והאפיון מתקשר אליו במאנדי
@@ -291,6 +294,7 @@ async function loadLeaflet() {
   return window.L;
 }
 async function pickOnMap(s, done) {
+  if (restricted(s) && s.lat) return toast('אתר מוגבל — המיקום כבר שמור');   // אריחי מפה ולוויין ממורכזים על האתר = אותה דליפה כמו OSRM
   if (!navigator.onLine) return toast('המפה דורשת קליטה');
   let L; try { L = await loadLeaflet(); } catch { return toast('המפה לא נטענה — נסו שוב'); }
   sheet(`<h3>מיקום ${esc(s.name)}</h3>
@@ -330,7 +334,8 @@ async function pickOnMap(s, done) {
 async function wx3(s) {
   const box = $('#wx3'); if (!box) return;
   try {
-    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${s.lat}&longitude=${s.lng}&hourly=wind_speed_10m,wind_gusts_10m,precipitation&timezone=Asia%2FJerusalem&forecast_days=4`);
+    const rd = x => restricted(s) ? Math.round(+x * 10) / 10 : x;   // אתר מסווג: רמת עיר בלבד
+    const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${rd(s.lat)}&longitude=${rd(s.lng)}&hourly=wind_speed_10m,wind_gusts_10m,precipitation&timezone=Asia%2FJerusalem&forecast_days=4`);
     const h = (await r.json()).hourly; const days = {};
     h.time.forEach((t, i) => { const d = t.slice(0, 10), hr = +t.slice(11, 13); if (hr < 6 || hr > 17) return; const x = days[d] ||= { w: 0, g: 0, r: 0 }; x.w = Math.max(x.w, h.wind_speed_10m[i]); x.g = Math.max(x.g, h.wind_gusts_10m[i]); x.r += h.precipitation[i] || 0; });
     box.innerHTML = Object.entries(days).slice(0, 4).map(([d, x]) => { const bad = x.g >= 35 || x.w >= 25 || x.r >= 2;
@@ -341,8 +346,8 @@ async function wx3(s) {
 
 // ---------- הערכת מחיר (הרשאת כספים בלבד) — לפי הפרמטרים החיים מלוח התמחור במאנדי ----------
 const BASE = [31.2203, 34.8041]; // המשרד — תוצרת הארץ 3, באר שבע (db/134)
-async function roadKm(lat, lng) {
-  try {
+async function roadKm(lat, lng, noNet = false) {   // noNet: אתר מסווג — קו אווירי בלבד, בלי OSRM
+  if (!noNet) try {
     const r = await fetch(`https://router.project-osrm.org/route/v1/driving/${BASE[1]},${BASE[0]};${lng},${lat}?overview=false`);
     const j = await r.json(); if (j.routes?.[0]) return { km: j.routes[0].distance / 1000, est: false };
   } catch {}
@@ -374,7 +379,7 @@ async function priceCard(s, days, opts = []) {
   const P = Object.fromEntries(data.map(x => [x.key, Number(x.value)]));
   if (!days) { box.innerHTML = `<div class="row"><span class="mic">${icon('cash', 19)}</span><span class="grow"><b>הערכת מחיר</b><small class="muted">חסרים ימי עבודה</small></span></div>`; return; }
   if (!s.lat) { box.innerHTML = `<div class="row"><span class="mic">${icon('cash', 19)}</span><span class="grow"><b>הערכת מחיר</b><small class="muted">חסר מיקום אתר</small></span></div>`; return; }
-  const d = await roadKm(s.lat, s.lng);
+  const d = await roadKm(s.lat, s.lng, restricted(s));
   let m = Math.round(P.margin <= 1 ? P.margin * 100 : P.margin);
   const draw = () => {
     const e = estimate(P, days, d.km, m);
@@ -436,6 +441,7 @@ export async function renderBuilding(el, slug, bid) {
   if (!b) { el.innerHTML = `<header class="phead">${backBtn(s ? '#/site/' + slug : '#/specs')}<h1 class="grow">אפיון</h1></header><div class="empty-line">המבנה לא נמצא</div>`; return; }
   const spec = b.spec; let form = { ...spec, floors: spec.floors ?? (b.floors != null ? Math.round(b.floors) : null) }; let dirty = false;
   const editable = can('specs');
+  const shoot = editable && !restricted(s);   // אתר מסווג: בלי מצלמה (חזית, אתר, מכשולים)
   // שטח ולוגיסטיקה: מה שסומן פעם כ"הידרנטים"/"מקור חשמל" ממלא מראש את הבחירה החדשה
   // מבנה נוסף באותו אתר: המים/הגישה/התיאומים בדרך כלל זהים — ממלאים מהמבנה שכבר אופיין
   const sib = !Object.keys(spec.site_ops || {}).length && s.buildings.map(x => x.spec?.site_ops).find(o => o && Object.keys(o).length);
@@ -626,7 +632,7 @@ export async function renderBuilding(el, slug, bid) {
     // כרטיס מצפן לכל כיוון שעוד אין לו צילום — סופרים ימים גם בלי צילום לכל חזית
     const covered = () => new Set(cards.map(c => FD.get(c.id)?.dir).filter(Boolean)), cv = covered();
     const hideC = (f, cs) => cs.has(f) && !(fget(f) > 0);
-    box.innerHTML = (editable ? `<label class="fc addfc">${icon('plus', 22)}<b>צילום חזית</b><input type="file" accept="image/*" capture="environment" multiple></label>` : '')
+    box.innerHTML = (shoot ? `<label class="fc addfc">${icon('plus', 22)}<b>צילום חזית</b><input type="file" accept="image/*" capture="environment" multiple></label>` : '')
       + cards.map(c => `<div class="fc" data-pk="${esc(c.id)}"><button class="fcimg" type="button" data-z="${esc(c.id)}"><img src="${esc(c.src)}" data-full="${esc(c.full || c.src)}" alt=""></button>${noteTag(c.id)}${dirTag(c.id)}${counter(c.id)}</div>`).join('')
       + FACES.map(f => `<div class="fc compass" data-cf="${esc(f)}" ${hideC(f, cv) ? 'hidden' : ''}><div class="cmp">${esc(f)}</div><div><b>חזית ${esc(f)}</b></div>${counter(f)}</div>`).join('');
     // הגדלה = גלריה של תמונות החזית בלבד, לפי סדר הרכבת, עם הכיוון בכותרת
@@ -788,7 +794,7 @@ export async function renderBuilding(el, slug, bid) {
   // מה חסר כדי לסיים — פס התקדמות קטן בראש הטופס. לחיצה = קפיצה לשדה
   function ready() {
     const box = $('#ready'); if (!box) return;
-    const it = [['ph', 'תמונות', NPH.site + NPH.facade + NPH.obstacle > 0, '#facs, #ph_site'], ['d', 'ימים', Number(form.days_expected) > 0, '#days'],
+    const it = [...(restricted(s) ? [] : [['ph', 'תמונות', NPH.site + NPH.facade + NPH.obstacle > 0, '#facs, #ph_site']]), ['d', 'ימים', Number(form.days_expected) > 0, '#days'],
       ['ops', 'שטח', !!(OPS.water && OPS.access), '#secops'], ['loc', 'מיקום', !!s.lat, '.stools']];
     const n = it.filter(x => x[2]).length;
     box.innerHTML = `<span class="rbar"><i style="width:${Math.round(n / it.length * 100)}%"></i></span>${it.map(([k, l, ok, sel]) => `<button type="button" class="rdot ${ok ? 'ok' : ''}" data-go="${sel}">${ok ? icon('check', 13) : ''}${l}</button>`).join('')}`;
@@ -805,7 +811,7 @@ export async function renderBuilding(el, slug, bid) {
     NPH[kind] = rows.length + pend.length; ready();
     box.innerHTML = rows.map(r => `<div class="ph"><img src="${esc(urls[r.storage_path].t)}" alt="" data-full="${esc(urls[r.storage_path].f)}" data-z="${esc(urls[r.storage_path].f)}"></div>`).join('')
       + pend.map(p => `<div class="ph"><img src="${URL.createObjectURL(p.blob)}" alt=""><span class="q">ממתין</span></div>`).join('')
-      + (editable ? `<label class="addph">${icon('plus', 18)} תמונה<input type="file" accept="image/*" multiple data-k="${kind}"></label>` : '');
+      + (shoot ? `<label class="addph">${icon('plus', 18)} תמונה<input type="file" accept="image/*" multiple data-k="${kind}"></label>` : '');
     $$('[data-z]', box).forEach(i => i.onclick = () => zoom(i.dataset.z, b.name));
     const inp = $('input[type=file]', box);
     if (inp) inp.onchange = async () => {
@@ -849,7 +855,7 @@ export async function renderBuilding(el, slug, bid) {
       if (!(Number(form.days_expected) > 0)) { toast('חסר: ימי עבודה צפויים (יותר מ-0)'); days.focus(); return; }
       const dn = $('#dn'); if (dn.disabled) return; dn.disabled = true;
       await geoSilent(6000);
-      const miss = [!(NPH.site + NPH.facade + NPH.obstacle) && 'אין תמונות', !s.lat && 'אין מיקום'].filter(Boolean);
+      const miss = [!restricted(s) && !(NPH.site + NPH.facade + NPH.obstacle) && 'אין תמונות', !s.lat && 'אין מיקום'].filter(Boolean);
       if (miss.length && !(await confirmBox(miss.join(' · ') + ' — לסיים בכל זאת?', { ok: 'סיום האפיון' }))) { dn.disabled = false; return; }
       const at = Date.now(); await save(true, true); dn.disabled = false; doneSheet(at);
     };

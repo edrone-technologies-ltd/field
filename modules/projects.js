@@ -66,7 +66,7 @@ export async function renderProjects(el) {
   const RDp = isManager() ? sb.rpc('readiness_list').then(r => new Map((r.data || []).map(x => [x.project_id, x]))).catch(() => new Map()) : Promise.resolve(new Map());   // במקביל לרשימה
   let rows;
   try {
-    const { data, error } = await sb.from('projects').select('id,name,client_name,status_label,engagement,service,planned_from,planned_to,monday_group,site_id,cover_path,closed_summary,lat,lng,sites(lat,lng),work_days(id,day,status),tasks(status)').order('planned_from', { nullsFirst: false });
+    const { data, error } = await sb.from('projects').select('id,name,client_name,status_label,engagement,service,planned_from,planned_to,monday_group,site_id,cover_path,closed_summary,lat,lng,sites(lat,lng,classification),work_days(id,day,status),tasks(status)').order('planned_from', { nullsFirst: false });
     if (error) throw error; rows = data || []; await cache.set('projects', rows);
   } catch { rows = (await cache.get('projects')) || []; }
   const t = isoDay();
