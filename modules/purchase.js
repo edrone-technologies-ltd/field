@@ -214,7 +214,7 @@ async function newItemSheet(done) {
   sheet(`<h3>פריט חדש</h3>
     <label class="field">שם הפריט<input id="ni-n" maxlength="80" autocomplete="off" placeholder="למשל: כפפות ניטריל"></label>
     <div class="field">קטגוריה${cats.length ? `<div class="chips" id="ni-cc">${cats.map(c => `<button type="button" class="chip" data-cat="${esc(c)}" aria-pressed="false">${esc(c)}</button>`).join('')}</div>` : ''}
-      ${isAdmin() || !cats.length ? `<input id="ni-c" maxlength="40" autocomplete="off" placeholder="${cats.length ? 'או קטגוריה חדשה' : 'למשל: ציוד בטיחות'}">` : '<input id="ni-c" type="hidden">'}</div>
+      ${isManager() || !cats.length ? `<input id="ni-c" maxlength="40" autocomplete="off" placeholder="${cats.length ? 'או קטגוריה חדשה' : 'למשל: ציוד בטיחות'}">` : '<input id="ni-c" type="hidden">'}</div>
     <label class="field">יחידה<input id="ni-u" maxlength="20" autocomplete="off" list="ni-ul" placeholder="יחידה / גלון / זוג"><datalist id="ni-ul">${units.map(u => `<option value="${esc(u)}">`).join('')}</datalist></label>
     <label class="field">כמות התחלתית
       <span class="qty pr-count"><button type="button" id="ni-m" aria-label="פחות">−</button><input id="ni-q" type="number" inputmode="decimal" min="0" step="any" value="0"><button type="button" id="ni-p" aria-label="יותר">+</button></span></label>
