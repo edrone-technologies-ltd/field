@@ -8,7 +8,7 @@ const low = c => c.min_qty != null && c.stock != null && Number(c.stock) <= Numb
 const isAdmin = () => state.profile?.role === 'admin';
 const OPEN = ['submitted', 'pending'];
 // שגיאות השרת (db/159) → משפט אחד
-const ERR = { received_in_monday: 'הקבלה נרשמה במאנדי. ממשיכים שם', not_ordered: 'הבקשה עוד לא אושרה', bad_photo: 'התמונה לא נשמרה — נסו שוב', bad_input: 'לא נשמר — נסו שוב', empty: 'אין מה לשלוח', too_many: 'יותר מדי הודעות — נסו בעוד שעה', forbidden: 'הבקשה לא מחכה לך', already_decided: 'כבר הוחלט', no_lines: 'השורות עוד לא הגיעו — לנסות שוב בעוד רגע', reason_required: 'צריך לכתוב סיבה', not_approved: 'הבקשה עוד לא אושרה', bad_qty: 'כמות לא תקינה', not_found: 'לא נמצא',
+const ERR = { received_in_monday: 'הקבלה נרשמה במאנדי. ממשיכים שם', not_ordered: 'הבקשה עוד לא אושרה', bad_photo: 'התמונה לא נשמרה — נסו שוב', bad_input: 'לא נשמר — נסו שוב', empty: 'אין מה לשלוח', too_many: 'הגעת למגבלה של השעה האחרונה — אפשר להמשיך בעוד כמה דקות', forbidden: 'הבקשה לא מחכה לך', already_decided: 'כבר הוחלט', no_lines: 'השורות עוד לא הגיעו — לנסות שוב בעוד רגע', reason_required: 'צריך לכתוב סיבה', not_approved: 'הבקשה עוד לא אושרה', bad_qty: 'כמות לא תקינה', not_found: 'לא נמצא',
   exists: 'כבר יש פריט בשם הזה', bad_name: 'צריך שם לפריט', bad_unit: 'צריך יחידה', bad_category: 'צריך קטגוריה', cat_admin: 'קטגוריה חדשה נפתחת רק ע״י שותף — בחרו מהקיימות', busy: 'כבר נשלח — רגע', monday: 'מאנדי לא ענה — נסו שוב', not_ready: 'לא נשמר — נסו שוב' };
 const NOCAT = 'ללא קטגוריה';
 const errMsg = e => ERR[(e?.message || '').trim()] || (/fetch|network|load failed/i.test(e?.message || '') ? 'אין קליטה — נסו שוב' : 'לא נשמר — נסו שוב');
