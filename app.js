@@ -1,5 +1,5 @@
 // E-Drone שטח · נקודת כניסה: כניסה, מסגרת עם ניווט תחתון, ניתוב בין המסכים.
-import { sb, state, loadMe, signIn, signOut, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, goUp, sheet, haptic, navDir, skeleton, freshReads, replaceHash, noteErr, noteRoute } from './lib/core.js';
+import { sb, state, loadMe, signIn, signOut, forceOut, popOutMsg, can, isManager, flush, updateNet, $, $$, esc, initials, ROLE_HE, icon, pushState, enablePush, toast, backBtn, initNav, goBack, goUp, sheet, haptic, navDir, skeleton, freshReads, replaceHash, noteErr, noteRoute } from './lib/core.js';
 import { errText } from './lib/audit.js';
 import './lib/photo.js';   // בכל בחירת תמונה: צילום או מהגלריה
 
@@ -414,8 +414,8 @@ async function wxWarm() {
 }
 async function boot(how = 'open') {
   try { const t = localStorage.getItem('edrone-theme'); if (t) document.documentElement.dataset.theme = t; } catch {}
-  if (!(await loadMe())) return renderLogin();
-  if (!state.profile.is_active) { await sb.auth.signOut(); return renderLogin('הגישה שלך הושבתה. פנו למשרד.'); }
+  if (!(await loadMe())) return renderLogin(popOutMsg());
+  if (!state.profile.is_active) return forceOut();
   await wsSync().catch(e => console.error(e));
   WIDE.addEventListener('change', () => wsSync().then(() => route(NOANIM)).catch(() => {}));
   addEventListener('hashchange', route);

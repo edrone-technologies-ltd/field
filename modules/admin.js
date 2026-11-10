@@ -47,11 +47,12 @@ export async function renderAdmin(el) {
   apl.onclick = e => { if (e.target.closest('.sw')) return; const r = e.target.closest('[data-ed]'); if (r) editPerson(people.find(p => p.id === r.dataset.ed)); };
   apl.onkeydown = e => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-ed]')) { e.preventDefault(); e.target.click(); } };
   apl.onchange = async e => { const c = e.target.closest('[data-act]'); if (!c) return;
-    if (!c.checked && !(await confirmBox('לחסום את הגישה?', { body: 'העובד לא יוכל להיכנס לאפליקציה.', ok: 'חסימה', danger: true }))) { c.checked = true; return; }
-    c.disabled = true; const { error } = await sb.from('profiles').update({ is_active: c.checked }).eq('id', c.dataset.act); c.disabled = false;
+    if (!c.checked && !(await confirmBox('לחסום את הגישה?', { body: 'העובד יתנתק מכל המכשירים ולא יוכל להיכנס או לשלוח נתונים. אפשר להחזיר בכל רגע.', ok: 'חסימה', danger: true }))) { c.checked = true; return; }
+    // offboard_user: השבתה + חסימה ב-Auth + ביטול סשנים + שורה ביומן. reinstate_user: החזרה (db/169)
+    c.disabled = true; const { data: r, error } = await sb.rpc(c.checked ? 'reinstate_user' : 'offboard_user', { p_user: c.dataset.act }); c.disabled = false;
     if (error) { c.checked = !c.checked; return toast(errText(error, 'לא נשמר — נסו שוב')); }
     const p = people.find(x => x.id === c.dataset.act); if (p) { p.is_active = c.checked; c.closest('.lrow').classList.toggle('off', !c.checked); }
-    toast(c.checked ? 'הגישה הופעלה' : 'הגישה נחסמה'); };
+    toast(c.checked ? 'הגישה הופעלה' : r?.future_days ? `הגישה נחסמה · משובץ ב-${r.future_days} ימי עבודה קדימה` : 'הגישה נחסמה', r?.future_days ? 4000 : 2200); };
   $$('[data-rm]').forEach(c => c.onchange = async () => {
     const [role, module] = c.dataset.rm.split('|');
     const q = c.checked ? sb.from('role_modules').insert({ role, module }) : sb.from('role_modules').delete().eq('role', role).eq('module', module);
@@ -76,7 +77,7 @@ function personRow(p) {
   return `<div class="lrow${p.is_active ? '' : ' off'}" data-pid="${p.id}" data-q="${esc((p.full_name || '') + ' ' + (p.phone || ''))}"${ed ? ` data-ed="${p.id}" role="button" tabindex="0" aria-label="${esc('עריכת ' + (p.full_name || ''))}"` : ''}>
       <span class="avatar" aria-hidden="true">${esc(initials(p.full_name))}</span>
       <span class="grow"><b>${esc(p.full_name)}</b><small>${meta}</small>${left != null ? `<small class="${left < 0 ? 'bad' : left <= 45 ? 'warn' : ''}">רישיון ${left < 0 ? 'פג' : 'עד'} ${dateHe(p.pilot_license_expiry)}</small>` : ''}</span>
-      <label class="sw" title="פעיל" aria-label="גישה לאפליקציה"><input type="checkbox" data-act="${p.id}" ${p.is_active ? 'checked' : ''} ${me ? 'disabled' : ''}><i></i></label>
+      <label class="sw" title="פעיל" aria-label="גישה לאפליקציה"><input type="checkbox" data-act="${p.id}" ${p.is_active ? 'checked' : ''} ${me || (p.role === 'admin' && p.is_active) ? 'disabled' : ''}><i></i></label>
       ${ed ? `<span class="chev" aria-hidden="true">${icon('chev', 18)}</span>` : ''}
     </div>`;
 }
