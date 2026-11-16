@@ -21,11 +21,14 @@ const inPulse = (x, d) => Array.isArray(x.pulses) && x.pulses.length > 1 ? x.pul
 
 export async function renderDispatch(el, start, o = {}) {
   if (!isManager()) { el.innerHTML = '<div class="empty-line">למנהלים בלבד</div>'; return; }
+  if (start === 'm' || start === 'y') return rangeView(el, start, location.hash.split('/')[3] || '', o);   // #/dispatch/m/2026-11 · #/dispatch/y/2026
   start = sunday(start || isoDay());
-  const days = [0, 1, 2, 3, 4, 5].map(i => addDays(start, i)), end = days.at(-1);
+  const days = [0, 1, 2, 3, 4, 5].map(i => addDays(start, i)), end = days.at(-1), nowWk = start <= isoDay() && isoDay() <= addDays(start, 6), anchor = nowWk ? isoDay() : start;
   el.innerHTML = `<header class="phead"><a class="back" href="#/schedule" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">${o.title || 'לוח שיבוץ'}</h1><a class="btn primary sm wzbtn" href="#/wizard/${start}">${icon('star', 16)} הקוסם</a></header>
+    ${rangeBar('w', nowWk)}
     <div class="monthbar"><button id="wp" aria-label="שבוע קודם">${icon('back', 18)}</button><b>${dm(start)} – ${dm(end)}</b><button id="wn" aria-label="שבוע הבא">${icon('chev', 18)}</button></div>
     <div id="db"><div class="skel tall"></div></div>`;
+  bindRange(el, 'w', anchor);
   $('#wp').onclick = () => replaceHash('#/dispatch/' + addDays(start, -7));
   $('#wn').onclick = () => replaceHash('#/dispatch/' + addDays(start, 7));
   const [{ data: people }, { data: wds }, { data: abs }, { data: projects }, { data: drones }, SV] = await Promise.all([
@@ -90,9 +93,9 @@ export async function renderDispatch(el, start, o = {}) {
   if (view === 'proj') return projView();
   const conflicts = staff.flatMap(p => days.filter(d => (wds || []).filter(w => w.day === d && (w.crew_lead_id === p.id || (w.work_day_crew || []).some(c => c.user_id === p.id))).length > 1).map(d => `${p.full_name.split(' ')[0]} ב-${dm(d)}`));
   $('#db').innerHTML = `${viewTabs}${needStrip()}${conflicts.length ? `<button class="arow bad card-like" type="button" id="dconf"><span class="aic">${icon('alert', 18)}</span><span class="grow"><b>התנגשות שיבוץ</b><small>${esc(conflicts.join(' · '))}</small></span><span class="chev">${icon('chev', 18)}</span></button>` : ''}
-    <div class="dwrap"><table class="dgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
+    <div class="dwrap"><table class="dgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}" data-fday="${d}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
       <tbody>${svRow()}${staff.map(p => `<tr><th class="who">${esc(p.full_name.split(' ')[0])}${p.is_pilot ? ' <small>מטיס</small>' : ''}</th>${days.map(d => cell(p, d)).join('')}</tr>`).join('')}</tbody></table></div>`;
-  bindView();
+  bindView(); focusMark(el);
   { const c = $('td.conf', el), wr = $('.dwrap', el); if (c && wr) wr.scrollLeft += c.getBoundingClientRect().left - wr.getBoundingClientRect().left - wr.clientWidth / 2 + c.clientWidth / 2; }   // התנגשות: רק גלילה אופקית בתוך הלוח, בלי לקפוץ בדף
   const dc = $('#dconf', el); if (dc) dc.onclick = () => $('td.conf', el)?.scrollIntoView({ inline: 'center', block: 'center', behavior: 'smooth' });
   bindNeed();
@@ -139,9 +142,9 @@ export async function renderDispatch(el, start, o = {}) {
           ${nc.length ? `<span class="pill bad">${nc.length > 1 ? nc.length + ' לא יגיעו' : 'לא יגיע'}</span>` : un ? `<span class="pill warn">${un} לא אישרו</span>` : ''}</button>`; }).join('')}</td>`;
     };
     const svCellP = d => `<td class="${d === isoDay() ? 'today' : ''}">${svOn(d).map(v => `<a class="dpday spec ${svDone(v) ? 'done' : ''}" href="#/site/${esc(v.slug)}"><b>${icon('clipboard', 13)}${esc(v.visit_time ? String(v.visit_time).slice(0, 5) : 'אפיון')}</b><small>${esc(svShort(v))}</small>${svWho(v) ? `<small>${esc(svWho(v))}</small>` : ''}</a>`).join('')}</td>`;
-    $('#db').innerHTML = `${viewTabs}${needStrip()}${rows.length || SV.length ? `<div class="dwrap"><table class="dgrid dpgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
+    $('#db').innerHTML = `${viewTabs}${needStrip()}${rows.length || SV.length ? `<div class="dwrap"><table class="dgrid dpgrid"><thead><tr><th></th>${days.map(d => `<th class="${d === isoDay() ? 'today' : ''}" data-fday="${d}">${HE_D1[new Date(d + 'T12:00').getDay()]}<small>${dm(d)}</small></th>`).join('')}</tr></thead>
       <tbody>${SV.length ? `<tr class="svrow"><th class="who">סיורי אפיון</th>${days.map(svCellP).join('')}</tr>` : ''}${rows.map(r => `<tr><th class="who"><a href="#/p/${r.pid}">${esc(r.x.name)}</a></th>${days.map(d => cellP(r, d)).join('')}</tr>`).join('')}</tbody></table></div>` : '<div class="empty-line">אין עבודות השבוע</div>'}`;
-    bindView(); bindNeed();
+    bindView(); bindNeed(); focusMark(el);
     // גרירה ליום אחר באותה שורה (אותו פרויקט) = הזזת יום השטח
     dnd('td[data-pd]', td => { const [pid, d] = td.dataset.pd.split('|'); return { pid, d }; }, async (src, t) => {
       const [w, pid, d] = src.split('|'); if (t.d === d) return; if (t.pid !== pid) return toast('גוררים ליום אחר באותה שורה');
@@ -160,7 +163,7 @@ export async function renderDispatch(el, start, o = {}) {
       const ab = (abs || []).filter(a => a.date_from <= d && a.date_to >= d);
       const busy = new Map(); wd.forEach(w => new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean)).forEach(u => busy.set(u, (busy.get(u) || 0) + 1)));   // ראש צוות שגם בצוות = פעם אחת
       const sv = svOn(d), free = !wd.length && !ab.length && !sv.length;
-      return `<section class="dday ${d === isoDay() ? 'today' : ''} ${free ? 'free' : ''}"><div class="ddh"><b>${HE_D1[dow]} ${dm(d)}</b>${d === isoDay() ? '<span class="pill lime">היום</span>' : ''}${free ? '<span class="muted">פנוי</span>' : ''}<span class="grow"></span>${dow < 6 ? `<button class="hbtn" type="button" data-add="${d}" aria-label="שיבוץ">${icon('plus', 18)}</button>` : ''}</div>
+      return `<section data-fday="${d}" class="dday ${d === isoDay() ? 'today' : ''} ${free ? 'free' : ''}"><div class="ddh"><b>${HE_D1[dow]} ${dm(d)}</b>${d === isoDay() ? '<span class="pill lime">היום</span>' : ''}${free ? '<span class="muted">פנוי</span>' : ''}<span class="grow"></span>${dow < 6 ? `<button class="hbtn" type="button" data-add="${d}" aria-label="שיבוץ">${icon('plus', 18)}</button>` : ''}</div>
         ${wd.map(w => { const crew = [...new Set([w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean))];
           const nc = w.status === 'planned' ? crew.filter(u => noCome(w, u)) : [], tag = nc.length ? 'button' : 'a';
           return `<${tag} class="dline ${w.status === 'done' ? 'done' : ''}" ${nc.length ? `type="button" data-da="${w.id}"` : `href="#/day/${w.id}"`}><span class="grow"><b>${esc(w.projects?.name || '')}${dtTag(w)}${nightTag(w)}</b><small>${crew.map(u => (noCome(w, u) ? `<s>${esc(NM.get(u) || '')}</s>` : esc(NM.get(u) || '')) + (u === w.crew_lead_id ? leadMark() : '') + ((busy.get(u) || 0) > 1 ? `<span class="dwarn" title="משובץ פעמיים" aria-label="משובץ פעמיים">${icon('alert', 14)}</span>` : '')).join(' · ') || 'בלי צוות'}${w.weather_alerted ? ' · רוח חריגה' : ''}</small></span>${nc.length ? `<span class="pill bad">${nc.length > 1 ? nc.length + ' לא יגיעו' : 'לא יגיע'}</span>` : w.status === 'done' ? '<span class="pill ok">בוצע</span>' : w.projects?.site_id ? `<span data-wx="${w.projects.site_id}|${d}"></span>` : ''}</${tag}>`; }).join('')}
@@ -168,7 +171,7 @@ export async function renderDispatch(el, start, o = {}) {
         ${ab.map(a => `<a class="dline abs" href="#/attendance/${a.user_id}/${a.date_from.slice(0, 7)}"><span class="grow"><small>${esc(NM.get(a.user_id) || '')}: ${ABS[a.kind]}${a.status === 'pending' ? ' (ממתין לאישור)' : ''}</small></span><span class="chev">${icon('chev', 16)}</span></a>`).join('')}
 </section>`;
     }).join('');
-    import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
+    focusMark(el); import('../lib/wx.js').then(m => m.fillWx(box)).catch(() => {});
     $$('.ddh', box).forEach(h => { const b = $('[data-add]', h); if (b) h.onclick = e => { if (!e.target.closest('[data-add]')) b.click(); }; });
     $$('[data-add]', box).forEach(b => b.onclick = () => assign(b.dataset.add));
     bindNeed();   // כל הטווח בגיליון אחד (ראש צוות, רחפן, תחזית) — לא יום-יום
@@ -191,4 +194,83 @@ export async function renderDispatch(el, start, o = {}) {
       });
     }
   }
+}
+
+// ---------- טווח: שבוע (הלוח הקיים) · חודש · שנה (בקשה 033f8d3d) ----------
+// שאילתה אחת לכל טווח (בדפים של 1000, מגבלת השרת), לא שאילתה לכל יום. אותם מקורות כמו בשבוע: ימי שטח שלא בוטלו + סיורי אפיון
+const MONTHS = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
+const mono = x => `<bdi dir="ltr" class="num">${x}</bdi>`;
+const lastOfMonth = ym => isoDay(new Date(+ym.slice(0, 4), +ym.slice(5, 7), 0, 12));
+const allRows = async q => { const out = []; for (let i = 0; ; i += 1000) { const { data, error } = await q().range(i, i + 999); if (error) throw error; out.push(...(data || [])); if ((data || []).length < 1000) return out; } };
+const wdRange = (from, to, sel) => allRows(() => sb.from('work_days').select(sel).gte('day', from).lte('day', to).neq('status', 'cancelled').order('day').order('id'));
+const shortName = n => (n || '').split(/\s[—–-]\s/)[0].trim();
+// יום שנלחץ בחודש: מסומן בשבוע שנפתח (בטלפון גם גלילה אליו). פעם אחת — ניווט אחר לא מסמן
+let focusDay = '';
+function focusMark(el) {
+  const d = focusDay; focusDay = ''; if (!d) return;
+  $$(`[data-fday="${d}"]`, el).forEach(x => x.classList.add('dfocus'));
+  const s = $(`section[data-fday="${d}"]`, el); if (s) requestAnimationFrame(() => s.scrollIntoView({ block: 'center' }));
+}
+
+// מתג שבוע/חודש/שנה + "היום" (מוסתר בתקופה של היום — visibility, בלי קפיצה)
+function rangeBar(mode, isNow) {
+  return `<div class="drange"><div class="tabs" role="tablist">${[['w', 'שבוע'], ['m', 'חודש'], ['y', 'שנה']].map(([k, l]) => `<button type="button" role="tab" data-rg="${k}" aria-selected="${mode === k}">${l}</button>`).join('')}</div>
+    <button type="button" class="btn ghost sm" data-rg="now"${isNow ? ' style="visibility:hidden" tabindex="-1" aria-hidden="true"' : ''}>היום</button></div>`;
+}
+function bindRange(el, mode, anchor) {
+  const to = { w: d => '#/dispatch/' + d, m: d => '#/dispatch/m/' + d.slice(0, 7), y: d => '#/dispatch/y/' + d.slice(0, 4) };
+  $$('[data-rg]', el).forEach(b => b.onclick = () => { const k = b.dataset.rg; if (k !== mode) replaceHash(k === 'now' ? to[mode](isoDay()) : to[k](anchor)); });
+}
+
+async function rangeView(el, mode, arg, o) {
+  const t = isoDay();
+  if (mode === 'm' && !/^\d{4}-(0[1-9]|1[0-2])$/.test(arg)) arg = t.slice(0, 7);
+  if (mode === 'y' && !/^\d{4}$/.test(arg)) arg = t.slice(0, 4);
+  const isNow = arg === (mode === 'm' ? t.slice(0, 7) : t.slice(0, 4)), anchor = isNow ? t : mode === 'm' ? arg + '-01' : arg + '-01-01';
+  const shift = n => mode === 'y' ? String(+arg + n) : isoDay(new Date(+arg.slice(0, 4), +arg.slice(5, 7) - 1 + n, 1, 12)).slice(0, 7);
+  const unit = mode === 'm' ? 'חודש' : 'שנה', label = mode === 'm' ? `${MONTHS[+arg.slice(5, 7) - 1]} ${mono(arg.slice(0, 4))}` : mono(arg);
+  el.innerHTML = `<header class="phead"><a class="back" href="#/schedule" aria-label="חזרה">${icon('back', 20)}</a><h1 class="grow">${o.title || 'לוח שיבוץ'}</h1><a class="btn primary sm wzbtn" href="#/wizard/${sunday(anchor)}">${icon('star', 16)} הקוסם</a></header>
+    ${rangeBar(mode, isNow)}
+    <div class="monthbar"><button id="rp" aria-label="${unit} קודם">${icon('back', 18)}</button><b>${label}</b><button id="rn" aria-label="${unit} הבא">${icon('chev', 18)}</button></div>
+    <div id="db"><div class="skel tall"></div></div>`;
+  bindRange(el, mode, anchor);
+  $('#rp').onclick = () => replaceHash(`#/dispatch/${mode}/${shift(-1)}`);
+  $('#rn').onclick = () => replaceHash(`#/dispatch/${mode}/${shift(1)}`);
+  return mode === 'm' ? monthGrid(arg) : yearGrid(arg);
+}
+
+// חודש: לוח א׳–ש׳. בכל יום: פרויקט (שם קצר + כמה אנשים) וסיור אפיון. לחיצה על יום = השבוע שלו (העמקה: חץ החזרה מחזיר לחודש)
+async function monthGrid(ym) {
+  const t = isoDay(), first = ym + '-01', last = lastOfMonth(ym), g0 = sunday(first), g1 = addDays(sunday(last), 6);
+  const [wds, SV] = await Promise.all([wdRange(g0, g1, 'id,day,status,project_id,crew_lead_id,projects(name),work_day_crew(user_id)'), specVisits(g0, g1)]);
+  const box = $('#db'); if (!box) return;
+  const by = new Map();
+  wds.forEach(w => { const m = by.get(w.day) || new Map(), p = m.get(w.project_id) || { name: shortName(w.projects?.name), st: new Set(), crew: new Set() };
+    p.st.add(w.status); [w.crew_lead_id, ...(w.work_day_crew || []).map(c => c.user_id)].filter(Boolean).forEach(u => p.crew.add(u)); m.set(w.project_id, p); by.set(w.day, m); });
+  const inM = d => d >= first && d <= last, mw = wds.filter(w => inM(w.day)), msv = SV.filter(v => inM(v.visit_date));
+  const sum = mw.length || msv.length ? `<div class="dsum"><b>${mw.length}</b> ימי שטח · <b>${new Set(mw.map(w => w.project_id)).size}</b> פרויקטים${msv.length ? ` · <b>${msv.length}</b> סיורי אפיון` : ''}</div>` : '';
+  const cells = []; for (let d = g0; d <= g1; d = addDays(d, 1)) cells.push(d);
+  const MAX = 3, cell = d => {
+    const ps = [...(by.get(d) || new Map()).values()], sv = SV.filter(v => v.visit_date === d), n = ps.length + sv.length, dow = new Date(d + 'T12:00').getDay();
+    const chips = [...ps.map(p => { const st = p.st.size === 1 && p.st.has('done') ? 'done' : [...p.st].some(s => s !== 'planned' && s !== 'done') ? 'live' : '';
+      return `<span class="mchip ${st}"><span class="mnm">${esc(p.name)}</span>${p.crew.size ? `<span class="mcr">${mono(p.crew.size)}</span>` : ''}</span>`; }),
+      ...sv.map(v => `<span class="mchip spec"><span class="mnm">${esc(shortName(v.name))}</span></span>`)];
+    return `<button type="button" class="mcell${inM(d) ? '' : ' out'}${d === t ? ' today' : ''}${dow === 6 ? ' sat' : ''}" data-go="${d}" aria-label="${HE_D1[dow]} ${dm(d)}${n ? ` · ${n} ${n === 1 ? 'פריט' : 'פריטים'}` : ''}">
+      <span class="mdn">${mono(+d.slice(8, 10))}</span>${chips.slice(0, n > MAX ? MAX - 1 : MAX).join('')}${n > MAX ? `<span class="mmore">${mono('+' + (n - MAX + 1))}</span>` : ''}</button>`;
+  };
+  box.innerHTML = `${sum}<div class="mcal" role="grid"><div class="mhead">${HE_D1.map((x, i) => `<span${i === 6 ? ' class="sat"' : ''}>${x}</span>`).join('')}</div><div class="mbody">${cells.map(cell).join('')}</div></div>`;
+  $$('[data-go]', box).forEach(b => b.onclick = () => { focusDay = b.dataset.go; location.hash = '#/dispatch/' + b.dataset.go; });
+}
+
+// שנה: 12 חודשים. מספר גדול = ימי שטח, מתחת פרויקטים וסיורי אפיון, עוצמת הצבע לפי העומס. לחיצה = החודש
+async function yearGrid(y) {
+  const t = isoDay(), [wds, SV] = await Promise.all([wdRange(y + '-01-01', y + '-12-31', 'id,day,project_id'), specVisits(y + '-01-01', y + '-12-31')]);
+  const box = $('#db'); if (!box) return;
+  const M = MONTHS.map((n, i) => { const k = `${y}-${String(i + 1).padStart(2, '0')}`, ws = wds.filter(w => w.day.startsWith(k));
+    return { k, n, days: ws.length, proj: new Set(ws.map(w => w.project_id)).size, sv: SV.filter(v => (v.visit_date || '').startsWith(k)).length }; });
+  const max = Math.max(1, ...M.map(m => m.days));
+  const sum = wds.length || SV.length ? `<div class="dsum"><b>${wds.length}</b> ימי שטח · <b>${new Set(wds.map(w => w.project_id)).size}</b> פרויקטים${SV.length ? ` · <b>${SV.length}</b> סיורי אפיון` : ''}</div>` : '';
+  box.innerHTML = `${sum}<div class="ygrid">${M.map(m => `<button type="button" class="ycell${m.k === t.slice(0, 7) ? ' now' : ''}${m.days ? '' : ' zero'}" data-ym="${m.k}" style="--h:${Math.round(m.days / max * 100)}%">
+      <span class="ymn">${m.n}</span><b>${m.days ? mono(m.days) : '—'}</b><small>${m.days ? `${m.days === 1 ? 'יום שטח' : 'ימי שטח'} · ${mono(m.proj)} ${m.proj === 1 ? 'פרויקט' : 'פרויקטים'}${m.sv ? ' · ' : ''}` : ''}${m.sv ? `${mono(m.sv)} אפיון` : ''}</small></button>`).join('')}</div>`;
+  $$('[data-ym]', box).forEach(b => b.onclick = () => { location.hash = '#/dispatch/m/' + b.dataset.ym; });
 }

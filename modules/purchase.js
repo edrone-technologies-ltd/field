@@ -9,7 +9,8 @@ const isAdmin = () => state.profile?.role === 'admin';
 const OPEN = ['submitted', 'pending'];
 // שגיאות השרת (db/159) → משפט אחד
 const ERR = { received_in_monday: 'הקבלה נרשמה במאנדי. ממשיכים שם', not_ordered: 'הבקשה עוד לא אושרה', bad_photo: 'התמונה לא נשמרה — נסו שוב', bad_input: 'לא נשמר — נסו שוב', empty: 'אין מה לשלוח', too_many: 'הגעת למגבלה של השעה האחרונה — אפשר להמשיך בעוד כמה דקות', forbidden: 'הבקשה לא מחכה לך', already_decided: 'כבר הוחלט', no_lines: 'השורות עוד לא הגיעו — לנסות שוב בעוד רגע', reason_required: 'צריך לכתוב סיבה', not_approved: 'הבקשה עוד לא אושרה', bad_qty: 'כמות לא תקינה', not_found: 'לא נמצא',
-  exists: 'כבר יש פריט בשם הזה', bad_name: 'צריך שם לפריט', bad_unit: 'צריך יחידה', bad_category: 'צריך קטגוריה', cat_admin: 'קטגוריה חדשה נפתחת רק ע״י שותף — בחרו מהקיימות', busy: 'כבר נשלח — רגע', monday: 'מאנדי לא ענה — נסו שוב', not_ready: 'לא נשמר — נסו שוב' };
+  exists: 'כבר יש פריט בשם הזה', bad_name: 'צריך שם לפריט', bad_unit: 'צריך יחידה', bad_category: 'צריך קטגוריה', cat_admin: 'קטגוריה חדשה נפתחת רק ע״י שותף — בחרו מהקיימות', busy: 'כבר נשלח — רגע', monday: 'מאנדי לא ענה — נסו שוב', not_ready: 'לא נשמר — נסו שוב',
+  bad_min: 'מינימום לא תקין — מספר 0 ומעלה, או ריק' };
 const NOCAT = 'ללא קטגוריה';
 const errMsg = e => ERR[(e?.message || '').trim()] || (/fetch|network|load failed/i.test(e?.message || '') ? 'אין קליטה — נסו שוב' : 'לא נשמר — נסו שוב');
 
@@ -258,6 +259,55 @@ async function newItemSheet(done) {
   });
 }
 
+// ---------- עריכת פריט: קטגוריה + מינימום (db/179, stock-item action:"edit"). נכתב קודם למאנדי (קבוצה / עמודת מינימום), לכן רק עם קליטה ----------
+// מינימום ריק = בלי מינימום (הפריט יוצא מ"מתחת למינימום"). קטגוריה חדשה = קבוצה חדשה בלוח המלאי (כל מנהל, כמו "פריט חדש")
+async function editItemSheet(c, done) {
+  if (!isManager() || !c) return;
+  if (!navigator.onLine) return toast('עריכה נשמרת רק עם קליטה', 4000, 'error');
+  const { data: all } = await sb.from('catalog_items').select('category');
+  const cats = [...new Set((all || []).map(x => (x.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'he'));
+  const cur = (c.category || '').trim(), curMin = c.min_qty == null ? '' : String(Number(c.min_qty));
+  sheet(`<h3>עריכה · ${esc(c.name)}</h3>
+    <div class="field">קטגוריה${cats.length ? `<div class="chips" id="ei-cc">${cats.map(k => `<button type="button" class="chip" data-cat="${esc(k)}" aria-pressed="${k === cur}">${esc(k)}</button>`).join('')}</div>` : ''}
+      <input id="ei-c" maxlength="40" autocomplete="off" value="${esc(cur)}" placeholder="${cats.length ? 'או קטגוריה חדשה' : 'למשל: ציוד בטיחות'}"></div>
+    <label class="field">מינימום במלאי${c.unit ? ` (${esc(c.unit)})` : ''}
+      <span class="qty pr-count"><button type="button" id="ei-m" aria-label="פחות">−</button><input id="ei-q" type="number" inputmode="decimal" min="0" step="any" value="${curMin}" placeholder="בלי"><button type="button" id="ei-p" aria-label="יותר">+</button></span></label>
+    <button type="button" class="pr-link" id="ei-none">בלי מינימום</button>
+    <div class="row-btns"><button class="btn ghost" data-close>ביטול</button><button class="btn primary" id="ei-go">שמירה</button></div>`, (s, close) => {
+    const ci = $('#ei-c', s), qi = $('#ei-q', s);
+    const val = () => Number(String(qi.value).replace(',', '.'));
+    const mark = () => $$('[data-cat]', s).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cat === ci.value.trim())));
+    $$('[data-cat]', s).forEach(b => b.onclick = () => { ci.value = b.dataset.cat; mark(); });
+    ci.oninput = mark;
+    $('#ei-m', s).onclick = () => { if (qi.value !== '') qi.value = Math.max(0, (val() || 0) - 1); };
+    $('#ei-p', s).onclick = () => { qi.value = (val() || 0) + 1; };
+    $('#ei-none', s).onclick = () => { qi.value = ''; };
+    qi.onfocus = () => qi.select();
+    $$('[data-close]', s).forEach(b => b.onclick = close);
+    $('#ei-go', s).onclick = async () => {
+      const go = $('#ei-go', s); if (go.disabled) return;
+      const cat = ci.value.trim(), min = qi.value.trim() === '' ? null : val();
+      if (!cat) { ci.focus(); return toast('צריך קטגוריה'); }
+      if (min != null && (!Number.isFinite(min) || min < 0)) { qi.focus(); return toast(ERR.bad_min); }
+      if (cat === cur && String(min ?? '') === curMin) return close();   // לא שונה כלום
+      if (!navigator.onLine) return toast('עריכה נשמרת רק עם קליטה', 4000, 'error');
+      go.disabled = true; go.classList.add('busy');
+      let data = null, code = '';
+      try {
+        const r = await sb.functions.invoke('stock-item', { body: { action: 'edit', item: c.monday_item_id, category: cat, min } });
+        data = r.data;
+        if (r.error) { try { code = (await r.error.context?.json())?.error || ''; } catch { /* */ } code = code || 'net'; }
+      } catch { code = 'net'; }
+      go.disabled = false; go.classList.remove('busy');
+      if (code) return toast(code === 'net' ? 'אין קליטה — נסו שוב' : ERR[code] || 'לא נשמר — נסו שוב', 4000, 'error');
+      close();
+      if (data?.dry) return toast(`בדיקה: "${c.name}" לא שונה במאנדי (משתמש בדיקה)`);
+      if (!data?.same) toast(`נשמר: ${data?.category || cat} · ${data?.min == null ? 'בלי מינימום' : 'מינימום ' + Number(data.min)}`);
+      done();
+    };
+  });
+}
+
 function stockSheet(c, cat, done, tab = 'in') {
   if (c && !isManager()) return newRequest(cat, c.monday_item_id);
   if (!isManager()) return;
@@ -268,7 +318,7 @@ function stockSheet(c, cat, done, tab = 'in') {
     const box = $('#stk', s);
     const draw = () => {
       const byOrder = c && per(c) > 1 && c.order_unit;
-      box.innerHTML = `<h3>${c ? esc(c.name) : 'כניסה למלאי'}</h3>
+      box.innerHTML = `${c ? `<div class="pr-head"><h3 class="grow">${esc(c.name)}</h3><button type="button" class="btn ghost sm" id="sedit">${icon('pen', 16)} עריכה</button></div>` : '<h3>כניסה למלאי</h3>'}
         ${c ? `<p class="pr-meta">במלאי ${c.stock ?? '—'} ${esc(c.unit || '')}${c.min_qty != null ? ` · מינימום ${Number(c.min_qty)}` : ''}</p>` : ''}
         <div class="tabs" role="tablist"><button role="tab" data-tab="in" aria-selected="${tab === 'in'}">התקבל חומר</button><button role="tab" data-tab="count" aria-selected="${tab === 'count'}">ספירה</button></div>
         ${!c ? `<label class="field">איזה פריט<select id="si"><option value="">בחירה…</option>${cat.map(x => `<option value="${x.monday_item_id}">${esc(x.name)}</option>`).join('')}</select></label>` : ''}
@@ -298,6 +348,7 @@ function stockSheet(c, cat, done, tab = 'in') {
       $('#sp', box).onclick = () => { q.value = (val() || 0) + 1; upd(); };
       q.oninput = upd; q.onfocus = () => q.select(); upd();
       const buy = $('#sbuy', box); if (buy) buy.onclick = () => { close(); newRequest(cat, c.monday_item_id); };
+      const ed = $('#sedit', box); if (ed) ed.onclick = () => { close(); editItemSheet(c, done); };
       const fx = $('#sfix', box); if (fx) fx.onclick = () => { fixMode = !fixMode; draw(); };
       const sf = $('#sf', box); if (sf) sf.onchange = e => { file = e.target.files[0] || null; $('#sfl', box).textContent = file ? 'תעודת משלוח צורפה' : 'צילום תעודת משלוח (לא חובה)'; };
       $('#sgo', box).onclick = async () => {

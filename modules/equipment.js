@@ -1,9 +1,10 @@
 // ציוד: מצב הצי והציוד, היסטוריית תקלות, ודיווח תקלה בציוד. מצב הרחפנים מגיע מלוח בריאות הצי במאנדי.
 import { sb, state, isManager, cache, enqueue, flush, sheet, uid, $, $$, esc, toast, dm, isoDay, icon, backBtn, replaceHash, signedUrls, zoom, confirmBox } from '../lib/core.js';
 import { errText } from '../lib/audit.js';
+import { isGround, maintSmall, loadPending, pendingSection, openService, renderMaintCard, renderMaintService } from './maint.js';
 
-const KIND = { drone: 'רחפנים', battery: 'סוללות', vehicle: 'רכבים', trailer: 'נגררים', pump: 'משאבות', tank: 'מיכלי מים', generator: 'גנרטורים', other: 'אחר' };
-const KIND1 = { drone: 'רחפן', battery: 'סוללה', vehicle: 'רכב', trailer: 'נגרר', pump: 'משאבה', tank: 'מיכל מים', generator: 'גנרטור', other: 'פריט' };
+const KIND = { drone: 'רחפנים', battery: 'סוללות', vehicle: 'רכבים', trailer: 'נגררים', pump: 'משאבות', tank: 'מיכלי מים', generator: 'גנרטורים', filter: 'מערכות סינון', heater: 'דודי חימום', other: 'אחר' };
+const KIND1 = { drone: 'רחפן', battery: 'סוללה', vehicle: 'רכב', trailer: 'נגרר', pump: 'משאבה', tank: 'מיכל מים', generator: 'גנרטור', filter: 'מערכת סינון', heater: 'דוד חימום', other: 'פריט' };
 const HEALTH = { ok: ['תקין', 'ok'], warning: ['במעקב', 'warn'], grounded: ['מקורקע', 'bad'], maintenance: ['בטיפול', 'warn'] };
 const SVC = { ok: ['טיפול תקין', 'ok'], due: ['טיפול מתקרב', 'warn'], overdue: ['נדרש טיפול', 'bad'], unknown: ['לא נרשם טיפול', ''] };
 const RANK = { grounded: 0, maintenance: 1, warning: 2, ok: 3 };
@@ -17,6 +18,7 @@ const issueTxt = (r, i) => String(i.body || '').replace(r.name + ': ', '');
 export async function renderEquipment(el) {
   el.innerHTML = `<header class="phead">${backBtn('#/menu')}<h1 class="grow">ציוד</h1>${isManager() ? `<a class="hbtn" href="#/compliance" aria-label="תוקף ותעודות">${icon('shield', 20)}</a><button class="hbtn" id="add" aria-label="פריט ציוד">${icon('plus', 20)}</button>` : ''}</header><div id="el" class="stack lg"><div class="skel"></div></div>`;
   let rows, iss, days;
+  const pendP = loadPending();   // במקביל: טיפולים שמחכים לאישור מנהל (ריק למי שאינו מנהל)
   try {
     const since = isoDay(new Date(Date.now() - 120 * 864e5));
     const [{ data, error }, { data: i }, { data: w }] = await Promise.all([
@@ -27,6 +29,11 @@ export async function renderEquipment(el) {
     if (error) throw error; rows = data || []; iss = i || []; days = w || []; await cache.set('equipment', { rows, iss, days });
   } catch { ({ rows = [], iss = [], days = [] } = (await cache.get('equipment')) || {}); }
   const M = isManager(), today = isoDay();
+  // אחזקת ציוד קרקע: כרטיס הכלי ומסך הטיפול (maint.js) — #/equipment/<id>[/service]
+  const [, , want0, sub0] = location.hash.split('/');
+  const g0 = want0 && rows.find(x => x.id === want0);
+  if (isGround(g0)) return sub0 === 'service' ? renderMaintService(el, g0) : renderMaintCard(el, g0, { rows, iss, days });
+  const PEND = await pendP;
   const use = id => { const mine = days.filter(d => d.drone_id === id || d.vehicle_id === id);
     return { last: mine.filter(d => d.day <= today).pop() || null, next: mine.find(d => d.day > today) || mine.find(d => d.day === today) || null }; };
   const openOf = id => iss.filter(i => i.equipment_id === id && i.status === 'open');
@@ -53,16 +60,18 @@ export async function renderEquipment(el) {
       const sub = [r.health_date && !stale ? 'נבדק ' + ago(r.health_date) : '', u.next ? `${u.next.day === today ? 'היום' : 'ב-' + dm(u.next.day)} · ${u.next.projects?.name || ''}` : u.last ? 'יצא ' + ago(u.last.day) : '', r.kind === 'battery' && r.cycles != null ? `${r.cycles} מחזורים` : ''].filter(Boolean);
       return `<button class="lrow eqrow ${h[1]}" data-e="${r.id}"><span class="eqdot ${h[1]}" aria-hidden="true"></span><span class="grow"><b>${esc(r.name)}</b>
         ${op.length ? `<small class="eqiss">${icon('alert', 13)} ${esc(issueTxt(r, op[0]))}${op.length > 1 ? ` · ועוד ${op.length - 1}` : ''}</small>` : r.health !== 'ok' && (r.health_detail || r.health_note) ? `<small class="eqiss">${esc(String(r.health_detail || r.health_note).split('\n')[0])}</small>` : ''}
-        ${svc && r.service_state !== 'unknown' ? `<small class="svc ${svc[1]}">${icon('wrench', 13)} ${svc[0]}${r.service_pct != null && r.service_state === 'ok' ? ` · ${Math.max(0, 100 - r.service_pct)}% נותר` : ''}</small>` : ''}
+        ${svc && r.service_state !== 'unknown' ? `<small class="svc ${svc[1]}">${icon('wrench', 13)} ${svc[0]}${r.service_pct != null && r.service_state === 'ok' ? ` · ${Math.max(0, 100 - r.service_pct)}% נותר` : ''}</small>` : maintSmall(r)}
         ${sub.length || stale ? `<small>${stale ? `<span class="stale">${r.health_date ? 'בדיקה אחרונה ' + ago(r.health_date) : 'לא נבדק'}</span>${sub.length ? ' · ' : ''}` : ''}${esc(sub.join(' · '))}</small>` : ''}</span><span class="pill ${h[1]}">${h[0]}</span></button>`;
     };
     const missing = M ? Object.keys(KIND).filter(k => !by[k] && !['drone', 'other'].includes(k)) : [];
     const shown = k => (by[k] || []).filter(r => !FIL || FILTERS[FIL](r));
-    $('#el').innerHTML = summary + Object.entries(KIND).filter(([k]) => shown(k).length).map(([k, t]) => `<section><div class="sh-row"><h3 class="sh">${t}</h3><span class="count">${shown(k).length}</span></div><div class="list">${shown(k).map(line).join('')}</div></section>`).join('')
+    $('#el').innerHTML = summary + (FIL ? '' : pendingSection(PEND, rows)) + Object.entries(KIND).filter(([k]) => shown(k).length).map(([k, t]) => `<section><div class="sh-row"><h3 class="sh">${t}</h3><span class="count">${shown(k).length}</span></div><div class="list">${shown(k).map(line).join('')}</div></section>`).join('')
       + (missing.length && !FIL ? `<div class="chips eqadd">${missing.map(k => `<button class="chip" data-addk="${k}">${icon('plus', 15)} ${KIND1[k]}</button>`).join('')}</div>` : '')
       + (rows.length ? '' : `<div class="ecta"><span class="ei">${icon('drone', 28)}</span><b>עוד אין ציוד</b></div>`);
     // רחפן = יומן טכני מלא (מסך משלו). שאר הציוד — חלון פרטים
-    $$('[data-e]').forEach(b => b.onclick = () => { const r = rows.find(x => x.id === b.dataset.e); if (r?.kind === 'drone') location.hash = '#/equipment/' + r.id; else detail(r); });
+    $$('[data-e]').forEach(b => b.onclick = () => { const r = rows.find(x => x.id === b.dataset.e); if (r?.kind === 'drone' || isGround(r)) location.hash = '#/equipment/' + r.id; else detail(r); });
+    $$('[data-apv]').forEach(b => b.onclick = () => { const x = PEND.find(p => p.id === b.dataset.apv);
+      openService(x, rows.find(r => r.id === x?.equipment_id), { after: () => { if (x.approved_at) PEND.splice(PEND.indexOf(x), 1); draw(); } }); });
     $$('[data-addk]').forEach(b => b.onclick = () => addItem(b.dataset.addk));
     $$('[data-fil]').forEach(b => b.onclick = () => { FIL = FIL === b.dataset.fil ? null : b.dataset.fil; draw(); });
   };
