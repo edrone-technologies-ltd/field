@@ -1,4 +1,5 @@
 // מצגות (שותפים בלבד — admin = אביחי, טל, גל): קישור אישי לכל נמען, מי פתח, מתי, כמה זמן ועד איזה שקף.
+// "הצג" פותח את המצגת ישירות עם ?i=1 — צפייה פנימית, לא נספרת כצפיית לקוח.
 // נתונים: dg_decks / dg_deck_link_summary / dg_deck_sessions (שכבת הדיגיטל, edrone-digital/db/d001). אירועים נקלטים ב-edge function track.
 // הקישור נשלח ע"י השותף בעצמו (העתקה / וואטסאפ) — האפליקציה לא שולחת כלום ללקוח.
 import { sb, state, $, $$, esc, backBtn, icon, sheet, toast, timeAgo } from '../lib/core.js';
@@ -61,7 +62,7 @@ export async function renderDecks(el, linkId = '') {
   el.innerHTML = head + `<div class="stack lg">
     ${live.length ? `<div class="kpis"><div class="kpi"><b>${live.filter(l => !l.internal).length}</b><span>נמענים</span></div><div class="kpi"><b>${opened.length}</b><span>פתחו</span></div><div class="kpi"><b>${dur(opened.reduce((s, l) => s + l.active_sec, 0))}</b><span>זמן צפייה</span></div></div>` : ''}
     ${decks.map(d => { const ls = links.filter(l => l.deck_slug === d.slug);
-      return `<section class="stack"><div class="sh-row"><h3 class="sh">${esc(d.title)}</h3><button class="chip" data-new="${esc(d.slug)}">${icon('plus', 15)} נמען</button></div>
+      return `<section class="stack"><div class="sh-row"><h3 class="sh">${esc(d.title)}</h3><span style="display:flex;gap:8px"><a class="chip" href="${SITE}/p/${esc(d.slug)}/?i=1" target="_blank" rel="noopener" style="text-decoration:none">${icon('play', 15)} הצג</a><button class="chip" data-new="${esc(d.slug)}">${icon('plus', 15)} נמען</button></span></div>
         ${ls.length ? `<div class="list">${ls.map(row).join('')}</div>` : `<button class="empty-card" data-new="${esc(d.slug)}" style="width:100%;font:inherit;cursor:pointer;color:inherit"><span class="ei">${icon('send', 24)}</span><span class="grow" style="text-align:start"><b>עוד לא נשלח לאף אחד</b></span></button>`}</section>`; }).join('')}
   </div>`;
   $('#dk-new').onclick = () => newLink(decks, decks[0]?.slug, () => renderDecks(el));
